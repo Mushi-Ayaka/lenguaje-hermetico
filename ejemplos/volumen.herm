@@ -1,0 +1,31 @@
+scene "Volumen" {
+    axes { X: 400, Y: 300, W: 1 }
+    camera {
+        position: [0, 1, 5];
+        target:   [0, 0, 0];
+        fov:      50;
+    }
+    background: [0.02, 0.02, 0.06];
+}
+
+material "metal" {
+    tensor: [0, 0, 0, 0, 0.8, 0.3, 0.1, 1.0];
+}
+
+material "niebla" {
+    tensor: [0, 0, 0, 0, 1.0, 0.5, 0.1, 1.0];
+}
+
+node "esfera" {
+    sdf: sphere(0.8);
+    material: "metal";
+    position: [0, 0, 0];
+}
+
+node "niebla" {
+    mode: volume;
+    sdf: sphere(2.0);
+    material: "niebla";
+    density_scale: 2.0;
+    position: [0, 0, 0];
+}

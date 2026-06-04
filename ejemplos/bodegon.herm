@@ -1,0 +1,56 @@
+scene "Bodegón" {
+    axes { X: 800, Y: 600, W: 1 }
+
+    camera {
+        position: [0, 1.5, 5];
+        target:   [0, 1, 0];
+        fov:      50;
+    }
+
+    background: [0.05, 0.05, 0.1];
+}
+
+material "madera" {
+    base_color:     [0.4, 0.2, 0.05];
+    roughness:      0.9;
+    metallic:       0.0;
+}
+
+material "cobre" {
+    base_color:     [0.72, 0.45, 0.2];
+    roughness:      0.3;
+    metallic:       1.0;
+}
+
+material "vidrio" {
+    base_color:     [0.9, 0.95, 1.0];
+    roughness:      0.0;
+    metallic:       0.0;
+    ior:            1.5;
+    transmission:   0.9;
+    opacity:        0.3;
+}
+
+node "mesa" {
+    node "tablero" {
+        sdf: box(2.0, 0.1, 1.2);
+        material: "madera";
+        position: [0, 0.8, 0];
+    }
+    node "pata_1"  { sdf: cylinder(0.04, 0.8); material: "madera"; position: [-0.8, 0.4, -0.5]; }
+    node "pata_2"  { sdf: cylinder(0.04, 0.8); material: "madera"; position: [0.8, 0.4, -0.5]; }
+    node "pata_3"  { sdf: cylinder(0.04, 0.8); material: "madera"; position: [-0.8, 0.4, 0.5]; }
+    node "pata_4"  { sdf: cylinder(0.04, 0.8); material: "madera"; position: [0.8, 0.4, 0.5]; }
+}
+
+node "jarron" {
+    sdf: smooth_union(cylinder(0.3, 0.6), sphere(0.35), 0.1);
+    material: "cobre";
+    position: [-0.5, 1.1, 0];
+}
+
+node "esfera" {
+    sdf: sphere(0.3);
+    material: "vidrio";
+    position: [0.5, 1.1, 0];
+}

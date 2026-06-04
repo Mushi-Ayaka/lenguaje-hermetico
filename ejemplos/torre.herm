@@ -1,0 +1,47 @@
+scene "Defs + Instancias" {
+    axes { X: 1024, Y: 768, W: 1 }
+    camera {
+        position: [0, 1, 8];
+        target: [0, 0, 0];
+        fov: 40;
+    }
+    background: [0.01, 0.01, 0.03];
+}
+
+material "oro" {
+    base_color: [1.0, 0.85, 0.4];
+    roughness: 0.2;
+    metallic: 1.0;
+}
+
+material "piedra" {
+    base_color: [0.5, 0.45, 0.4];
+    roughness: 0.9;
+    metallic: 0.0;
+}
+
+def "esfera_oro" {
+    sdf: sphere(0.5);
+    material: "oro";
+}
+
+def "pilar" {
+    sdf: cylinder(0.3, 2.0);
+    material: "piedra";
+    position: [0, 1, 0];
+}
+
+node "torre" {
+    instance "esfera_oro" { position: [-1.5, 0.5, 0]; }
+    instance "esfera_oro" { position: [1.5, 0.5, 0]; }
+    instance "esfera_oro" { position: [0, 2.5, 0]; scale: [0.7, 0.7, 0.7]; }
+
+    node "columnas" {
+        instance "pilar" { position: [-1.2, 1, -1.2]; }
+        instance "pilar" { position: [1.2, 1, -1.2]; }
+        instance "pilar" { position: [-1.2, 1, 1.2]; }
+        instance "pilar" { position: [1.2, 1, 1.2]; }
+    }
+}
+
+instance "esfera_oro" { position: [0, 4.5, 0]; scale: [0.3, 0.3, 0.3]; }

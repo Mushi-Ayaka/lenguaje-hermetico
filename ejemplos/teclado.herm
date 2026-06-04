@@ -1,0 +1,102 @@
+scene "Teclado" {
+    axes { X: 800, Y: 600, W: 33 }
+    camera {
+        position: [0, 4.5, 9];
+        target:   [0, 0, 0];
+        up:       [0, 1, 0];
+        fov:      32;
+    }
+    background: [0.015, 0.015, 0.05];
+}
+
+import "materiales.hm"
+
+material "plateado" {
+    base_color: [0.85, 0.85, 0.88];
+    roughness: 0.08;
+    metallic: 1.0;
+}
+
+material "plastico_negro" {
+    base_color: [0.08, 0.08, 0.10];
+    roughness: 0.9;
+    metallic: 0.0;
+}
+
+// Base del teclado
+node "base" {
+    sdf: rounded_box(5.5, 0.18, 2.6, 0.25);
+    material: "plastico_negro";
+    position: [0, -0.1, 0];
+}
+
+// Tecla estandar
+def "tecla" {
+    sdf: box(0.5, 0.12, 0.5);
+    material: "plateado";
+}
+
+// Barra espaciadora
+def "espacio" {
+    sdf: box(3.0, 0.12, 0.5);
+    material: "plastico_negro";
+}
+
+// Tecla Shift (mas ancha)
+def "shifter" {
+    sdf: box(1.3, 0.12, 0.5);
+    material: "cobre";
+}
+
+// ===== FILA 0: 1 2 3 4 5 6 7 8 9 0 =====
+// 10 teclas en z=-1.2, x desde -2.925
+instance "tecla" { position: [-2.925, 0.2 - max(0, 1 - abs(w - 30)) * 0.12, -1.2]; } // 1 (!)
+instance "tecla" { position: [-2.275, 0.2, -1.2]; } // 2
+instance "tecla" { position: [-1.625, 0.2, -1.2]; } // 3
+instance "tecla" { position: [-0.975, 0.2, -1.2]; } // 4
+instance "tecla" { position: [-0.325, 0.2, -1.2]; } // 5
+instance "tecla" { position: [ 0.325, 0.2, -1.2]; } // 6
+instance "tecla" { position: [ 0.975, 0.2, -1.2]; } // 7
+instance "tecla" { position: [ 1.625, 0.2, -1.2]; } // 8
+instance "tecla" { position: [ 2.275, 0.2, -1.2]; } // 9
+instance "tecla" { position: [ 2.925, 0.2, -1.2]; } // 0
+
+// ===== FILA 1: Q W E R T Y U I O P =====
+// 10 teclas en z=-0.6, x desde -2.925
+instance "tecla" { position: [-2.925, 0.2, -0.6]; } // Q
+instance "tecla" { position: [-2.275, 0.2, -0.6]; } // W
+instance "tecla" { position: [-1.625, 0.2, -0.6]; } // E
+instance "tecla" { position: [-0.975, 0.2, -0.6]; } // R
+instance "tecla" { position: [-0.325, 0.2, -0.6]; } // T
+instance "tecla" { position: [ 0.325, 0.2, -0.6]; } // Y
+instance "tecla" { position: [ 0.975, 0.2 - max(0, 1 - abs(w - 18)) * 0.12, -0.6]; } // U
+instance "tecla" { position: [ 1.625, 0.2, -0.6]; } // I
+instance "tecla" { position: [ 2.275, 0.2 - (max(0, 1 - abs(w - 3)) + max(0, 1 - abs(w - 27))) * 0.12, -0.6]; } // O
+instance "tecla" { position: [ 2.925, 0.2, -0.6]; } // P
+
+// ===== FILA 2: A S D F G H J K L =====
+// 9 teclas en z=0, x desde -2.6
+instance "tecla" { position: [-2.6, 0.2 - max(0, 1 - abs(w - 9)) * 0.12, 0]; } // A
+instance "tecla" { position: [-1.95, 0.2, 0]; } // S
+instance "tecla" { position: [-1.3, 0.2 - max(0, 1 - abs(w - 24)) * 0.12, 0]; } // D
+instance "tecla" { position: [-0.65, 0.2, 0]; } // F
+instance "tecla" { position: [ 0, 0.2, 0]; } // G
+instance "tecla" { position: [ 0.65, 0.2 - max(0, 1 - abs(w - 0)) * 0.12, 0]; } // H
+instance "tecla" { position: [ 1.3, 0.2, 0]; } // J
+instance "tecla" { position: [ 1.95, 0.2, 0]; } // K
+instance "tecla" { position: [ 2.6, 0.2 - max(0, 1 - abs(w - 6)) * 0.12, 0]; } // L
+
+// ===== FILA 3: Z X C V B N M =====
+// 7 teclas en z=0.6, x desde -1.95
+instance "tecla" { position: [-1.95, 0.2, 0.6]; } // Z
+instance "tecla" { position: [-1.3, 0.2, 0.6]; }  // X
+instance "tecla" { position: [-0.65, 0.2, 0.6]; } // C
+instance "tecla" { position: [ 0, 0.2, 0.6]; }    // V
+instance "tecla" { position: [ 0.65, 0.2, 0.6]; } // B
+instance "tecla" { position: [ 1.3, 0.2 - max(0, 1 - abs(w - 21)) * 0.12, 0.6]; } // N
+instance "tecla" { position: [ 1.95, 0.2 - max(0, 1 - abs(w - 15)) * 0.12, 0.6]; } // M
+
+// ===== FILA 4: Shift, Espacio, Shift =====
+instance "shifter" { position: [-2.6, 0.2 - max(0, 1 - abs(w - 30)) * 0.12, 1.2]; } // Shift izq
+instance "espacio" { position: [0, 0.2 - max(0, 1 - abs(w - 12)) * 0.12, 1.2]; }
+instance "shifter" { position: [ 2.6, 0.2, 1.2]; } // Shift der

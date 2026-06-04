@@ -1,0 +1,41 @@
+scene "Animacion" {
+    axes { X: 800, Y: 600, W: 30 }
+    camera {
+        position: [0, 1.5, 6];
+        target:   [0, 1, 0];
+        fov:      50;
+    }
+    background: [0.02, 0.02, 0.06];
+}
+
+material "rojo" {
+    base_color: [1.0, 0.2, 0.1];
+    roughness: 0.3;
+    metallic: 0.0;
+}
+
+material "azul" {
+    base_color: [0.1, 0.3, 1.0];
+    roughness: 0.1;
+    metallic: 0.8;
+}
+
+node "oscilante" {
+    sdf: sphere(0.6);
+    material: "rojo";
+    position: [cos(w * 0.5) * 1.5, 1.0 + sin(w * 0.3) * 0.5, 0];
+    scale: [0.8 + sin(w * 0.2) * 0.3, 0.8 + sin(w * 0.2) * 0.3, 1];
+}
+
+node "rotante" {
+    sdf: box(0.5, 0.5, 1.5);
+    material: "azul";
+    position: [0, 1, 0];
+    rotation: [0, w * 5, 0];
+}
+
+node "rebote" {
+    sdf: cylinder(0.2, 0.4);
+    material: "azul";
+    position: [sin(w * 1.0) * 2.0, abs(sin(w * 0.25)) * 1.5 + 0.2, sin(w * 0.7) * 1.0];
+}

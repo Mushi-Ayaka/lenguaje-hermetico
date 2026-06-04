@@ -1,0 +1,21 @@
+scene "SdfAnimExpr" {
+    axes { X: 400, Y: 300, W: 6 }
+    camera {
+        position: [0, 0, 4];
+        target:   [0, 0, 0];
+        fov:      50;
+    }
+    background: [0.05, 0.05, 0.1];
+}
+
+material "rojo" {
+    base_color: [0.9, 0.1, 0.1];
+    roughness:  0.3;
+    metallic:   0.8;
+}
+
+// Esfera con radio animado: pulsa entre 0.3 y 1.0
+node "pulso" {
+    sdf: sphere(0.65 + sin(w * 2) * 0.35);
+    material: "rojo";
+}

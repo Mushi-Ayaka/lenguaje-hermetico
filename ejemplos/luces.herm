@@ -1,0 +1,56 @@
+scene "Luces" {
+    axes { X: 400, Y: 300, W: 1 }
+    camera {
+        position: [0, 1.5, 5];
+        target:   [0, 0, 0];
+        up:       [0, 1, 0];
+        fov:      50;
+    }
+    background: [0.05, 0.05, 0.1];
+}
+
+light "sol" {
+    type: directional;
+    direction: [0.5, 0.8, 0.3];
+    color: [1, 0.95, 0.8];
+    intensity: 0.7;
+}
+
+lumbre "azul" {
+    type: point;
+    position: [-2, 1, 2];
+    color: [0.2, 0.4, 1];
+    intensity: 0.5;
+    falloff: 0.05;
+}
+
+light "roja" {
+    type: point;
+    position: [2, 0.5, 1];
+    color: [1, 0.2, 0.2];
+    intensity: 0.3;
+    falloff: 0.1;
+}
+
+material "metal" {
+    base_color: [0.8, 0.6, 0.3];
+    metallic: 1.0;
+    roughness: 0.2;
+}
+
+material "suelo" {
+    base_color: [0.2, 0.2, 0.3];
+    roughness: 0.8;
+    metallic: 0.0;
+}
+
+node "esfera" {
+    sdf: sphere(1.0);
+    material: "metal";
+    position: [0, 0.5, 0];
+}
+
+node "plano" {
+    sdf: plane(0, 1, 0, 0.5);
+    material: "suelo";
+}

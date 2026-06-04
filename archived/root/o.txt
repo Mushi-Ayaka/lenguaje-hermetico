@@ -1,0 +1,1 @@
+OK C:\Users\Josue B\Desktop\Josue B\Documents\Jonatan Baron\Proyectos\proyecto de IA artistica\Lenguaje Hermético\ejemplos\bodegon.rih (3 materiales, 8 nodos, 0ms parse + 1ms emit)
