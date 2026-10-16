@@ -75,6 +75,7 @@ const std::unordered_map<std::string, TokenType> Lexer::keywords_en = {
     {"octahedron", TokenType::OCTAHEDRON},
     {"tesseract", TokenType::TESSERACT},
     {"sphere4d", TokenType::SPHERE4D},
+    {"custom", TokenType::CUSTOM},
 
     // SDF operators
     {"union", TokenType::UNION},
@@ -157,6 +158,7 @@ const std::unordered_map<std::string, TokenType> Lexer::keywords_es = {
     {"tesseract", TokenType::TESSERACT},
     {"hipercubo", TokenType::HIPERCUBO},
     {"esfera4d", TokenType::SPHERE4D},
+    {"personalizado", TokenType::CUSTOM},
 
     {"union", TokenType::UNION},
     {"resta", TokenType::SUBTRACT},

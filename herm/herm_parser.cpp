@@ -50,6 +50,7 @@ std::string Parser::parse_string_or_ident() {
         case TokenType::LIGHT: case TokenType::LUMBRE:
         case TokenType::TYPE: case TokenType::TIPO:
         case TokenType::POINT_LIGHT: case TokenType::PUNTUAL:
+        case TokenType::DIRECTIONAL: case TokenType::DIRECCIONAL:
         case TokenType::DIRECTION: case TokenType::DIRECCION:
         case TokenType::INTENSITY: case TokenType::INTENSIDAD:
         case TokenType::FALLOFF: case TokenType::CAIDA:
@@ -218,6 +219,8 @@ std::unique_ptr<AstNode> Parser::parse_instance() {
                 advance(); expect(TokenType::COLON);
                 if (!n->instance_transform) n->instance_transform = AstTransform{};
                 n->instance_transform->scale = parse_vec3(); skip(TokenType::SEMI);
+            } else if (t == TokenType::MATERIAL) {
+                advance(); expect(TokenType::COLON); n->material = parse_string_or_ident(); skip(TokenType::SEMI);
             } else break;
         }
         expect(TokenType::RBRACE);
@@ -369,6 +372,16 @@ AstMaterial Parser::parse_material() {
                 break;
             }
             case TokenType::BLEND_MODE:  advance(); expect(TokenType::COLON); m.blend_mode = fs(); skip(TokenType::SEMI); break;
+            case TokenType::BASE_COLOR:
+            case TokenType::COLOR_BASE: advance(); expect(TokenType::COLON); m.base_color = fc(); skip(TokenType::SEMI); break;
+            case TokenType::ROUGHNESS:
+            case TokenType::RUGOSIDAD:  advance(); expect(TokenType::COLON); m.roughness = fv(); skip(TokenType::SEMI); break;
+            case TokenType::METALLIC:
+            case TokenType::METALICO:   advance(); expect(TokenType::COLON); m.metallic  = fv(); skip(TokenType::SEMI); break;
+            case TokenType::EMISSION:
+            case TokenType::EMISION:    advance(); expect(TokenType::COLON); m.emission  = fc(); skip(TokenType::SEMI); break;
+            case TokenType::OPACITY:
+            case TokenType::OPACIDAD:   advance(); expect(TokenType::COLON); m.opacity   = fv(); skip(TokenType::SEMI); break;
             default: { auto t = peek(); throw ParseError("inesperado en material: '" + t.value + "' en " + locStr(t)); }
         }
     }
@@ -514,6 +527,7 @@ static SdfPrimType tk2prim(TokenType t) {
         case TokenType::OCTAHEDRON: return SdfPrimType::OCTAHEDRON;
         case TokenType::TESSERACT: return SdfPrimType::TESSERACT;
         case TokenType::SPHERE4D: return SdfPrimType::SPHERE4D;
+        case TokenType::CUSTOM:   return SdfPrimType::CUSTOM;
         default: throw ParseError("no es una primitiva SDF");
     }
 }
@@ -531,7 +545,8 @@ static bool isPrim(TokenType t) {
         case TokenType::SPHERE: case TokenType::BOX: case TokenType::CYLINDER:
         case TokenType::CAPSULE: case TokenType::TORUS: case TokenType::PLANE:
         case TokenType::CONE: case TokenType::ROUNDED_BOX: case TokenType::OCTAHEDRON:
-        case TokenType::TESSERACT: case TokenType::SPHERE4D:
+        case TokenType::TESSERACT:         case TokenType::SPHERE4D:
+        case TokenType::CUSTOM:
             return true;
         default: return false;
     }

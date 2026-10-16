@@ -3,7 +3,7 @@ setlocal
 set VS="C:\Program Files (x86)\Microsoft Visual Studio\2022\BuildTools\VC\Auxiliary\Build\vcvars64.bat"
 set HERM_DIR=%~dp0
 set OUT_DIR=%HERM_DIR%..\build
-set SRC="%HERM_DIR%main.cpp" "%HERM_DIR%herm_lexer.cpp" "%HERM_DIR%herm_parser.cpp" "%HERM_DIR%herm_resolver.cpp" "%HERM_DIR%herm_rih.cpp" "%HERM_DIR%herm_eval.cpp" "%HERM_DIR%herm_render.cpp"
+set SRC="%HERM_DIR%main.cpp" "%HERM_DIR%herm_lexer.cpp" "%HERM_DIR%herm_parser.cpp" "%HERM_DIR%herm_resolver.cpp" "%HERM_DIR%herm_rih.cpp" "%HERM_DIR%herm_eval.cpp" "%HERM_DIR%herm_render.cpp" "%HERM_DIR%herm_ont.cpp" "%HERM_DIR%herm_obs.cpp"
 
 if not exist "%OUT_DIR%" mkdir "%OUT_DIR%"
 

@@ -76,6 +76,7 @@ enum class TokenType {
     OCTAHEDRON, OCTAEDRO,
     TESSERACT, HIPERCUBO,
     SPHERE4D, ESFERA4D,
+    CUSTOM, PERSONALIZADO,
 
     // SDF operators
     UNION,

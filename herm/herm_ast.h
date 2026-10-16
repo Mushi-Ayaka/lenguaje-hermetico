@@ -39,7 +39,7 @@ struct AstTransform {
 // --- SDF primitive ---
 enum class SdfPrimType {
     SPHERE, BOX, CYLINDER, CAPSULE, TORUS, PLANE,
-    CONE, ROUNDED_BOX, OCTAHEDRON, TESSERACT, SPHERE4D
+    CONE, ROUNDED_BOX, OCTAHEDRON, TESSERACT, SPHERE4D, CUSTOM
 };
 
 struct SdfPrimitive {
@@ -95,6 +95,11 @@ struct AstMaterial {
     std::string name;
     std::optional<std::vector<ExprNode>> tensor; // 8 expressions
     std::optional<std::string> blend_mode; // alpha | add | replace
+    std::optional<Color3> base_color; // [r, g, b]
+    std::optional<ExprNode> roughness;
+    std::optional<ExprNode> metallic;
+    std::optional<Color3> emission; // [r, g, b]
+    std::optional<ExprNode> opacity;
 };
 
 // --- Node body ---

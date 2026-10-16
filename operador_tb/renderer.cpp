@@ -1,4 +1,4 @@
-#include "renderer.h"
+﻿#include "renderer.h"
 #include <cmath>
 #include <limits>
 #include <algorithm>
@@ -161,49 +161,49 @@ static float evalSdfTree(const std::vector<SdfNode>& nodes, u32 idx, Vec3 p) {
         }
 
         case SdfType::UNION: {
-            float a = evalSdfTree(nodes, node.child_a.value_or(0), p);
-            float b = evalSdfTree(nodes, node.child_b.value_or(0), p);
+            float a = evalSdfTree(nodes, node.child_a.value_or(0xFFFFFFFF), p);
+            float b = evalSdfTree(nodes, node.child_b.value_or(0xFFFFFFFF), p);
             return opUnion(a, b);
         }
         case SdfType::SUBTRACT: {
-            float a = evalSdfTree(nodes, node.child_a.value_or(0), p);
-            float b = evalSdfTree(nodes, node.child_b.value_or(0), p);
+            float a = evalSdfTree(nodes, node.child_a.value_or(0xFFFFFFFF), p);
+            float b = evalSdfTree(nodes, node.child_b.value_or(0xFFFFFFFF), p);
             return opSubtract(a, b);
         }
         case SdfType::INTERSECT: {
-            float a = evalSdfTree(nodes, node.child_a.value_or(0), p);
-            float b = evalSdfTree(nodes, node.child_b.value_or(0), p);
+            float a = evalSdfTree(nodes, node.child_a.value_or(0xFFFFFFFF), p);
+            float b = evalSdfTree(nodes, node.child_b.value_or(0xFFFFFFFF), p);
             return opIntersect(a, b);
         }
         case SdfType::SMOOTH_UNION: {
-            float a = evalSdfTree(nodes, node.child_a.value_or(0), p);
-            float b = evalSdfTree(nodes, node.child_b.value_or(0), p);
+            float a = evalSdfTree(nodes, node.child_a.value_or(0xFFFFFFFF), p);
+            float b = evalSdfTree(nodes, node.child_b.value_or(0xFFFFFFFF), p);
             return opSmoothUnion(a, b, node.k.value_or(0.1f));
         }
         case SdfType::SMOOTH_SUBTRACT: {
-            float a = evalSdfTree(nodes, node.child_a.value_or(0), p);
-            float b = evalSdfTree(nodes, node.child_b.value_or(0), p);
+            float a = evalSdfTree(nodes, node.child_a.value_or(0xFFFFFFFF), p);
+            float b = evalSdfTree(nodes, node.child_b.value_or(0xFFFFFFFF), p);
             return opSmoothSubtract(a, b, node.k.value_or(0.1f));
         }
         case SdfType::SMOOTH_INTERSECT: {
-            float a = evalSdfTree(nodes, node.child_a.value_or(0), p);
-            float b = evalSdfTree(nodes, node.child_b.value_or(0), p);
+            float a = evalSdfTree(nodes, node.child_a.value_or(0xFFFFFFFF), p);
+            float b = evalSdfTree(nodes, node.child_b.value_or(0xFFFFFFFF), p);
             return opSmoothIntersect(a, b, node.k.value_or(0.1f));
         }
         case SdfType::REPEAT: {
             Vec3 q = opRepeatDomain(p, node.spacing.value_or(1.0f));
-            return evalSdfTree(nodes, node.child_a.value_or(0), q);
+            return evalSdfTree(nodes, node.child_a.value_or(0xFFFFFFFF), q);
         }
         case SdfType::TWIST: {
             Vec3 q = opTwist(p, node.params[0].constant);
-            return evalSdfTree(nodes, node.child_a.value_or(0), q);
+            return evalSdfTree(nodes, node.child_a.value_or(0xFFFFFFFF), q);
         }
         case SdfType::ELONGATE: {
             Vec3 q = opElongate(p, {node.params[0].constant, node.params[1].constant, node.params[2].constant});
-            return evalSdfTree(nodes, node.child_a.value_or(0), q);
+            return evalSdfTree(nodes, node.child_a.value_or(0xFFFFFFFF), q);
         }
         case SdfType::DISPLACE: {
-            float d = evalSdfTree(nodes, node.child_a.value_or(0), p);
+            float d = evalSdfTree(nodes, node.child_a.value_or(0xFFFFFFFF), p);
             return opDisplace(d, p, node.params[0].constant);
         }
         default:

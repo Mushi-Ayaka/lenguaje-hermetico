@@ -81,6 +81,7 @@ static void jsonSdf(std::ostringstream& os, const SdfNode& sdf, const std::strin
             case SdfType::OCTAHEDRON: return "octahedron";
             case SdfType::TESSERACT: return "tesseract";
             case SdfType::SPHERE4D: return "sphere4d";
+            case SdfType::CUSTOM:  return "custom";
             case SdfType::UNION:   return "union";
             case SdfType::SUBTRACT: return "subtract";
             case SdfType::INTERSECT: return "intersect";

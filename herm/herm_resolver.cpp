@@ -134,7 +134,9 @@ u32 Resolver::resolveMaterial(const AstMaterial& ast) {
         if (ast.tensor && i < ast.tensor->size()) {
             mat.tensor[i] = toExpr((*ast.tensor)[i], 0.0f);
         } else {
-            mat.tensor[i] = toExpr(ExprNode{}, 0.0f);
+            // Default alpha (tensor[7]) = 1.0: an unset opacity must mean
+            // opaque, otherwise the RI optimizer culls every node as "dead".
+            mat.tensor[i] = toExpr(ExprNode{}, i == 7 ? 1.0f : 0.0f);
         }
     }
 
@@ -145,6 +147,26 @@ u32 Resolver::resolveMaterial(const AstMaterial& ast) {
             mat.blend_mode = BlendMode::REPLACE;
         else
             mat.blend_mode = BlendMode::ALPHA;
+    }
+
+    if (ast.base_color) {
+        auto c = evalColor3(*ast.base_color);
+        auto mkConst = [](f32 v) { Expr e; e.is_expr = false; e.constant = v; return e; };
+        mat.tensor[4] = mkConst(c.r);
+        mat.tensor[5] = mkConst(c.g);
+        mat.tensor[6] = mkConst(c.b);
+    }
+
+    if (ast.roughness) mat.roughness = evalExpr(*ast.roughness);
+    if (ast.metallic)  mat.metallic  = evalExpr(*ast.metallic);
+    if (ast.emission) {
+        auto e = evalColor3(*ast.emission);
+        mat.emission = e;
+    }
+    if (ast.opacity) {
+        float o = evalExpr(*ast.opacity);
+        Expr e; e.is_expr = false; e.constant = o;
+        mat.tensor[7] = e;
     }
 
     rih.materials.push_back(mat);
@@ -204,6 +226,7 @@ static SdfType mapPrimType(SdfPrimType t) {
         case SdfPrimType::OCTAHEDRON: return SdfType::OCTAHEDRON;
         case SdfPrimType::TESSERACT: return SdfType::TESSERACT;
         case SdfPrimType::SPHERE4D: return SdfType::SPHERE4D;
+        case SdfPrimType::CUSTOM:   return SdfType::CUSTOM;
     }
     return SdfType::SPHERE;
 }
@@ -227,6 +250,12 @@ static SdfType mapOpType(SdfOpType t) {
 u32 Resolver::resolveSdfTree(const AstSdf& ast_sdf, std::vector<SdfNode>& sdf_list) {
     SdfNode node;
     u32 idx = (u32)sdf_list.size();
+
+    // Reserve this node's slot FIRST: the contract (rih.h) is that the root of
+    // each node's flat sdf list is at index 0. Children are resolved after the
+    // placeholder, so they get higher indices and child_a/child_b stay valid
+    // even after reallocations (node is written back by index at the end).
+    sdf_list.push_back(SdfNode{});
 
     if (std::holds_alternative<SdfPrimitive>(ast_sdf.data)) {
         auto& prim = std::get<SdfPrimitive>(ast_sdf.data);
@@ -253,7 +282,7 @@ u32 Resolver::resolveSdfTree(const AstSdf& ast_sdf, std::vector<SdfNode>& sdf_li
         }
     }
 
-    sdf_list.push_back(node);
+    sdf_list[idx] = node;
     return idx;
 }
 

@@ -3,6 +3,8 @@
 #include "herm_resolver.h"
 #include "herm_rih.h"
 #include "herm_render.h"
+#include "herm_ont.h"
+#include "herm_obs.h"
 #include <iostream>
 #include <fstream>
 #include <sstream>
@@ -19,6 +21,7 @@ static void printUsage() {
     std::cerr << "  --tb            Emitir .tb directo\n";
     std::cerr << "  --gte           Emitir .gte\n";
     std::cerr << "  --render        Pipeline completo hasta .png\n";
+    std::cerr << "  --ont           Emitir .ont + .obs (formato binario ontológico)\n";
     std::cerr << "  --frames N-M    Cortes en W (defecto: 0..W-1 si W>1)\n";
     std::cerr << "\nEjemplos:\n";
     std::cerr << "  herm escena.herm\n";
@@ -38,6 +41,7 @@ int main(int argc, char* argv[]) {
     bool emit_tb = false;
     bool emit_gte = false;
     bool render = false;
+    bool emit_ont = false;
     bool has_frames = false;
     int frame_start = 0;
     int frame_end = 0;
@@ -49,6 +53,7 @@ int main(int argc, char* argv[]) {
         else if (arg == "--tb") emit_tb = true;
         else if (arg == "--gte") emit_gte = true;
         else if (arg == "--render") render = true;
+        else if (arg == "--ont") emit_ont = true;
         else if (arg == "--frames" && i + 1 < argc) {
             std::string range = argv[++i];
             auto dash = range.find('-');
@@ -95,6 +100,11 @@ int main(int argc, char* argv[]) {
         std::vector<fs::path> search_paths;
         search_paths.push_back(source_dir.empty() ? cwd : source_dir);
         search_paths.push_back(cwd / "libreria");
+        // Search in .gitignored library (standard library lives there)
+        {
+            fs::path gl = R"(D:\documentos\Jonatan Baron\proyectos-index\proyecto de IA artistica\Lenguaje Hermetico\.gitignored\libreria)";
+            if (fs::exists(gl)) search_paths.push_back(gl);
+        }
 
         herm::FileLoader loader = [&](const std::string& path) -> std::string {
             for (auto& base : search_paths) {
@@ -167,8 +177,26 @@ int main(int argc, char* argv[]) {
                     ok = binary_output
                         ? herm::writeRihBinary(frame_rih, out_path)
                         : herm::writeRihJson(frame_rih, out_path);
-                    if (ok) std::cout << "  " << out_path << "\n";
-                    else std::cerr << "Error: no se pudo escribir '" << out_path << "'\n";
+                if (ok) std::cout << "  " << out_path << "\n";
+                else std::cerr << "Error: no se pudo escribir '" << out_path << "'\n";
+
+                // Emit .ont + .obs alongside .rih
+                if (emit_ont) {
+                    auto slash2 = out_path.find_last_of("/\\");
+                    auto dot2 = out_path.rfind('.');
+                    if (dot2 == std::string::npos || (slash2 != std::string::npos && dot2 < slash2))
+                        dot2 = std::string::npos;
+                    auto ont_path = (dot2 != std::string::npos) ? out_path.substr(0, dot2) : out_path;
+                    ont_path += ".ont";
+                    bool ont_ok = herm::writeOnt(frame_rih, ont_path);
+                    if (ont_ok) {
+                        std::cout << "  " << ont_path << "\n";
+                        herm::writeObs(frame_rih, ont_path);
+                        std::cout << "  " << ont_path.substr(0, ont_path.rfind('.')) << ".obs\n";
+                    } else {
+                        std::cerr << "Error: no se pudo escribir '" << ont_path << "'\n";
+                    }
+                }
                 }
 
                 if (ok) frame_count++;
@@ -242,6 +270,22 @@ int main(int argc, char* argv[]) {
                               << " (" << rih.materials.size() << " materiales, "
                               << rih.nodes.size() << " nodos, "
                               << parse_ms << "ms parse + " << (total_ms - parse_ms) << "ms emit)\n";
+                    if (emit_ont) {
+                        auto slash = output_prefix.find_last_of("/\\");
+                        auto dot3 = output_prefix.rfind('.');
+                        // Only use dot if it's after the last directory separator
+                        if (dot3 == std::string::npos || (slash != std::string::npos && dot3 < slash))
+                            dot3 = std::string::npos;
+                        auto ont_path = (dot3 != std::string::npos) ? output_prefix.substr(0, dot3) : output_prefix;
+                        ont_path += ".ont";
+                        bool ont_ok = herm::writeOnt(rih, ont_path);
+                        if (ont_ok) {
+                            herm::writeObs(rih, ont_path);
+                            std::cout << "  " << ont_path << "\n";
+                        } else {
+                            std::cerr << "Error: no se pudo escribir '" << ont_path << "'\n";
+                        }
+                    }
                 } else {
                     std::cerr << "Error: no se pudo escribir '" << output_prefix << "'\n";
                     return 1;

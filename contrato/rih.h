@@ -88,6 +88,10 @@ struct Material {
     std::string  name;
     Expr         tensor[8]; // [x, y, z, w, r, g, b, a]
     BlendMode    blend_mode    = BlendMode::ALPHA;
+    float        roughness     = 0.5f;
+    float        metallic      = 0.0f;
+    ColorRGB     emission      = {0.0f, 0.0f, 0.0f};
+    float        opacity       = 1.0f;
 };
 
 // ============================================================================
@@ -106,6 +110,7 @@ enum class SdfType : u8 {
     OCTAHEDRON  = 8,
     TESSERACT   = 9,  // 4D hypercube
     SPHERE4D    = 10, // 4D hypersphere
+    CUSTOM      = 11, // Custom expression-based SDF
 
     // Operators
     UNION            = 64,
@@ -232,6 +237,12 @@ struct Rih {
     std::vector<Material> materials;
     std::vector<Node>     defs;    // definiciones reutilizables (def)
     std::vector<Node>     nodes;   // grafo de escena
+
+    struct Pipeline {
+        float trace_hit_threshold = 0.001f;
+        float trace_max_distance  = 1000.0f;
+        int   trace_max_steps     = 256;
+    } pipeline;
 };
 
 // ============================================================================
