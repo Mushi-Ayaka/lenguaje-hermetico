@@ -1,0 +1,570 @@
+// ============================================================
+// LIBRERÍA: std_bridge_physchem.hm
+// CAPA:     Intermediario Física-Química (3.4 - Fisicoquímica)
+// VERSIÓN:  1.0
+// FUENTE:   "Physical Chemistry" by Atkins & de Paula
+// DEPS:     std_math_core.hm, std_math_algebra.hm, std_math_calculus.hm
+// DEPS:     std_phys_statmech.hm, std_phys_thermo.hm, std_bridge_atomic.hm
+// FECHA:    6 de junio de 2026
+// ============================================================
+
+// FISICOQUÍMICA: Estudio de principios físicos aplicados a sistemas químicos,
+// termodinámica química, cinética, electroquímica, mecánica estadística aplicada
+
+// ============================================================
+// CONSTANTES FUNDAMENTALES
+// ============================================================
+
+let BOLTZMANN_PHYSCHEM = 1.380649e-23;         // k_B (J/K)
+let BOLTZMANN_EV = 8.617333262e-5;            // k_B (eV/K)
+let GAS_CONSTANT_PHYSCHEM = 8.314462618;      // R = N_A·k_B (J/(mol·K))
+let AVOGADRO_PHYSCHEM = 6.02214076e23;        // N_A (mol⁻¹)
+let FARADAY_CONSTANT = 96485.33212;           // F (C/mol)
+let PLANCK_PHYSCHEM = 6.62607015e-34;         // h (J·s)
+
+// ============================================================
+// INTERFAZ PÚBLICA - TERMODINÁMICA QUÍMICA (fn)
+// ============================================================
+
+// --- Energía Libre de Gibbs de Reacción ---
+// ΔG° = ΔH° - T·ΔS°
+fn "gibbs_free_energy_reaction"(enthalpy_change, entropy_change, temperature) {
+    enthalpy_change - temperature * entropy_change
+}
+
+// --- Constante de Equilibrio Termodinámica ---
+// K_eq = exp(-ΔG°/(RT))
+fn "equilibrium_constant"(gibbs_free_energy, temperature) {
+    exp(-gibbs_free_energy / (GAS_CONSTANT_PHYSCHEM * temperature))
+}
+
+// --- Dependencia de K con T (Van't Hoff) ---
+// d(lnK)/dT = ΔH°/(RT²)
+fn "vant_hoff_equation"(enthalpy_change, temperature1, temperature2) {
+    let ln_K2_over_K1 = (enthalpy_change / GAS_CONSTANT_PHYSCHEM) * 
+                        (1.0/temperature1 - 1.0/temperature2);
+    exp(ln_K2_over_K1)
+}
+
+// --- Entropía de Mezcla (Gases Ideales) ---
+// ΔS_mix = -R·Σ_i x_i·ln x_i
+fn "entropy_of_mixing"(mole_fractions) {
+    let sum = 0.0;
+    for i in range(0, len(mole_fractions)) {
+        let x = mole_fractions[i];
+        sum = sum + x * log(x + 1e-6);
+    }
+    -GAS_CONSTANT_PHYSCHEM * sum
+}
+
+// --- Potencial Químico (Sistema Multicomponente) ---
+// μ_i = μ_i° + RT·ln a_i
+fn "chemical_potential_mixture"(standard_potential, activity, temperature) {
+    standard_potential + GAS_CONSTANT_PHYSCHEM * temperature * log(activity + 1e-6)
+}
+
+// ============================================================
+// INTERFAZ PÚBLICA - FASE Y EQUILIBRIO (fn)
+// ============================================================
+
+// --- Regla de las Fases de Gibbs ---
+// F = C - P + 2
+fn "gibbs_phase_rule"(components, phases) {
+    components - phases + 2
+}
+
+// --- Ecuación de Clapeyron (Transición de Fase) ---
+// dP/dT = ΔH/(T·ΔV)
+fn "clapeyron_equation"(enthalpy_transition, temperature, volume_change) {
+    enthalpy_transition / (temperature * volume_change + 1e-6)
+}
+
+// --- Ecuación de Clausius-Clapeyron (Líquido-Vapor) ---
+// ln(P₂/P₁) = -(ΔH_vap/R)·(1/T₂ - 1/T₁)
+fn "clausius_clapeyron_equation"(vapor_pressure1, temperature1, temperature2, heat_of_vaporization) {
+    let exponent = -(heat_of_vaporization / GAS_CONSTANT_PHYSCHEM) * 
+                   (1.0/temperature2 - 1.0/temperature1);
+    vapor_pressure1 * exp(exponent)
+}
+
+// --- Presión de Vapor sobre Solución (Ley de Raoult) ---
+// P_i = x_i·P_i°
+fn "raoults_law_vapor_pressure"(mole_fraction, pure_component_vapor_pressure) {
+    mole_fraction * pure_component_vapor_pressure
+}
+
+// --- Desviación de Raoult (No idealidad) ---
+// P_i = γ_i·x_i·P_i°
+fn "modified_raoults_law"(mole_fraction, activity_coefficient, pure_vapor_pressure) {
+    activity_coefficient * mole_fraction * pure_vapor_pressure
+}
+
+// ============================================================
+// INTERFAZ PÚBLICA - SOLUCIONES Y PROPIEDADES COLIGATIVAS (fn)
+// ============================================================
+
+// --- Ley de Henry (Gas en Líquido) ---
+// P_gas = k_H·x_gas
+fn "henrys_law"(mole_fraction, henry_constant) {
+    henry_constant * mole_fraction
+}
+
+// --- Descenso del Punto de Congelación ---
+// ΔT_f = K_f·m
+fn "freezing_point_depression"(molality, cryoscopic_constant) {
+    cryoscopic_constant * molality
+}
+
+// --- Elevación del Punto de Ebullición ---
+// ΔT_b = K_b·m
+fn "boiling_point_elevation"(molality, ebullioscopic_constant) {
+    ebullioscopic_constant * molality
+}
+
+// --- Presión Osmótica (Van't Hoff) ---
+// Π = c·R·T
+fn "osmotic_pressure_vanthoff"(concentration, temperature) {
+    concentration * GAS_CONSTANT_PHYSCHEM * temperature
+}
+
+// --- Presión Osmótica (Virial) ---
+// Π = c·R·T·(1 + B·c + C·c² + ...)
+fn "osmotic_pressure_virial"(concentration, temperature, virial_coefficients) {
+    let virial_sum = 1.0;
+    for i in range(0, len(virial_coefficients)) {
+        virial_sum = virial_sum + virial_coefficients[i] * pow(concentration, i+1);
+    }
+    concentration * GAS_CONSTANT_PHYSCHEM * temperature * virial_sum
+}
+
+// ============================================================
+// INTERFAZ PÚBLICA - CINÉTICA QUÍMICA (fn)
+// ============================================================
+
+// --- Ley de Velocidad (Orden n) ---
+// v = k·[A]^n
+fn "rate_law_nth_order"(concentration, rate_constant, order) {
+    rate_constant * pow(concentration, order)
+}
+
+// --- Constante de Velocidad Arrhenius ---
+// k = A·exp(-E_a/(RT))
+fn "arrhenius_equation"(pre_exponential, activation_energy, temperature) {
+    pre_exponential * exp(-activation_energy / (GAS_CONSTANT_PHYSCHEM * temperature))
+}
+
+// --- Dependencia de k con T (Arrhenius) ---
+// ln(k₂/k₁) = -(E_a/R)·(1/T₂ - 1/T₁)
+fn "arrhenius_temperature_dependence"(k1, temperature1, temperature2, activation_energy) {
+    let exponent = -(activation_energy / GAS_CONSTANT_PHYSCHEM) * 
+                   (1.0/temperature2 - 1.0/temperature1);
+    k1 * exp(exponent)
+}
+
+// --- Energía de Activación (de Arrhenius) ---
+fn "activation_energy_from_arrhenius"(k1, k2, temperature1, temperature2) {
+    -GAS_CONSTANT_PHYSCHEM * log(k2/k1) / (1.0/temperature2 - 1.0/temperature1)
+}
+
+// --- Teoría del Complejo Activado (Eyring) ---
+// k = (k_BT/h)·exp(-ΔG‡/(RT))
+fn "eyring_equation"(temperature, activation_free_energy) {
+    (BOLTZMANN_PHYSCHEM * temperature / PLANCK_PHYSCHEM) * 
+    exp(-activation_free_energy / (GAS_CONSTANT_PHYSCHEM * temperature))
+}
+
+// --- Factor Pre-exponencial de Eyring ---
+// A = (k_BT/h)·exp(ΔS‡/R)
+fn "eyring_preexponential"(temperature, activation_entropy) {
+    (BOLTZMANN_PHYSCHEM * temperature / PLANCK_PHYSCHEM) * 
+    exp(activation_entropy / GAS_CONSTANT_PHYSCHEM)
+}
+
+// ============================================================
+// INTERFAZ PÚBLICA - MECANISMOS DE REACCIÓN (fn)
+// ============================================================
+
+// --- Cinética de Primer Orden ---
+// [A] = [A]_0·exp(-k·t)
+fn "first_order_kinetics"(initial_concentration, rate_constant, time) {
+    initial_concentration * exp(-rate_constant * time)
+}
+
+// --- Cinética de Segundo Orden (2A → Productos) ---
+// 1/[A] = 1/[A]_0 + k·t
+fn "second_order_kinetics_same"(initial_concentration, rate_constant, time) {
+    1.0 / (1.0/initial_concentration + rate_constant * time)
+}
+
+// --- Cinética de Segundo Orden (A + B → Productos) ---
+// ln([B]/[A]) = ln([B]_0/[A]_0) + ([B]_0 - [A]_0)·k·t
+fn "second_order_kinetics_different"(concA0, concB0, rate_constant, time) {
+    let delta = concB0 - concA0;
+    let term = exp(log(concB0/concA0) + delta * rate_constant * time);
+    concA0 * concB0 / (concB0 + concA0 * (term - 1.0))
+}
+
+// --- Tiempo de Vida Media (t₁/₂) ---
+fn "half_life_nth_order"(initial_concentration, rate_constant, order) {
+    if order == 1 {
+        log(2.0) / rate_constant
+    } else {
+        (pow(2.0, order-1.0) - 1.0) / ((order-1.0) * rate_constant * pow(initial_concentration, order-1.0))
+    }
+}
+
+// --- Velocidad Inicial (Método de las Velocidades Iniciales) ---
+fn "initial_rate_method"(concentrations, rate_constants, orders) {
+    let rate = 1.0;
+    for i in range(0, min(len(concentrations), len(orders))) {
+        rate = rate * pow(concentrations[i], orders[i]);
+    }
+    rate_constants[0] * rate
+}
+
+// ============================================================
+// INTERFAZ PÚBLICA - CATÁLISIS (fn)
+// ============================================================
+
+// --- Ecuación de Michaelis-Menten (Enzimática) ---
+// v = V_max·[S]/(K_M + [S])
+fn "michaelis_menten_kinetics"(substrate_concentration, vmax, km) {
+    vmax * substrate_concentration / (km + substrate_concentration)
+}
+
+// --- Constante de Michaelis (K_M) ---
+// K_M = (k_neg1 + k_2)/k_1
+fn "michaelis_constant"(k1, k_neg1, k2) {
+    (k_neg1 + k2) / k1
+}
+
+// --- Inhibición Competitiva ---
+// v = V_max·[S]/(K_M·(1+[I]/K_I) + [S])
+fn "competitive_inhibition"(substrate, inhibitor, vmax, km, ki) {
+    vmax * substrate / (km * (1.0 + inhibitor/ki) + substrate)
+}
+
+// --- Inhibición No Competitiva ---
+// v = (V_max/(1+[I]/K_I))·[S]/(K_M + [S])
+fn "noncompetitive_inhibition"(substrate, inhibitor, vmax, km, ki) {
+    (vmax / (1.0 + inhibitor/ki)) * substrate / (km + substrate)
+}
+
+// --- Inhibición Acompetitiva ---
+// v = V_max·[S]/(K_M + [S]·(1+[I]/K_I))
+fn "uncompetitive_inhibition"(substrate, inhibitor, vmax, km, ki) {
+    vmax * substrate / (km + substrate * (1.0 + inhibitor/ki))
+}
+
+// ============================================================
+// INTERFAZ PÚBLICA - FOTOQUÍMICA (fn)
+// ============================================================
+
+// --- Ley de Beer-Lambert (Absorción) ---
+// A = ε·c·l
+fn "beer_lambert_law"(molar_absorptivity, concentration, path_length) {
+    molar_absorptivity * concentration * path_length
+}
+
+// --- Transmitancia ---
+// T = 10^(-A) = I/I₀
+fn "transmittance"(absorbance) {
+    pow(10.0, -absorbance)
+}
+
+// --- Eficiencia Cuántica (Quantum Yield) ---
+// Φ = (Número de eventos)/(Número de fotones absorbidos)
+fn "quantum_yield"(number_of_events, photons_absorbed) {
+    number_of_events / (photons_absorbed + 1e-6)
+}
+
+// --- Constante de Velocidad Fotoquímica ---
+// k_photo = Φ·I_abs
+fn "photochemical_rate_constant"(quantum_yield, absorbed_intensity) {
+    quantum_yield * absorbed_intensity
+}
+
+// --- Vida Media de Estado Excitado ---
+// τ = 1/(k_rad + k_nr)
+fn "excited_state_lifetime"(radiative_rate, nonradiative_rate) {
+    1.0 / (radiative_rate + nonradiative_rate)
+}
+
+// ============================================================
+// INTERFAZ PÚBLICA - SDFs DE FISICOQUÍMICA (def)
+// ============================================================
+
+// --- Superficie de Energía Libre de Gibbs ---
+def "gibbs_free_energy_surface"(reaction_coordinate, temperature_range, intensity_threshold) {
+    // ΔG como función de coordenada y temperatura
+    let rc = sqrt(x*x);  // Coordenada de reacción
+    let T = abs(y) * 100.0 + 200.0;  // Temperatura (K)
+    
+    // Perfil típico: reactivo → estado de transición → producto
+    let energy_profile = 0.0;
+    if rc < 0.3 {
+        energy_profile = rc * rc * 5.0;  // Reactivos
+    } else if rc < 0.6 {
+        energy_profile = 0.45 - (rc - 0.45)*(rc - 0.45) * 20.0;  // TS
+    } else {
+        energy_profile = (rc - 0.7)*(rc - 0.7) * 3.0;  // Productos
+    }
+    
+    // Dependencia con temperatura
+    let temperature_effect = 0.01 * (T - 300.0);
+    
+    sdf: custom(z - energy_profile - temperature_effect - intensity_threshold);
+}
+
+// --- Equilibrio Químico Dinámico ---
+def "chemical_equilibrium_dynamics"(forward_rate, reverse_rate, intensity_threshold) {
+    // Concentraciones en equilibrio dinámico
+    let time = w * 0.1;
+    let concA = exp(-forward_rate * time);
+    let concB = 1.0 - concA;
+    
+    // Flujo neto (forward - reverse)
+    let net_flux = forward_rate * concA - reverse_rate * concB;
+    
+    // Representación de equilibrio
+    let equilibrium_level = 0.5 * (concA + concB);
+    let oscillations = sin(time * 5.0) * 0.05 * net_flux;
+    
+    sdf: custom(y - equilibrium_level - oscillations - intensity_threshold);
+}
+
+// --- Perfil de Reacción Arrhenius ---
+def "arrhenius_reaction_profile"(temperature, activation_energy, intensity_threshold) {
+    // k(T) según Arrhenius
+    let k = arrhenius_equation(1e13, activation_energy, temperature);
+    
+    // Barrera de energía
+    let energy_barrier = activation_energy * 0.01;
+    let barrier_height = step(0.4, x) * step(x, 0.6) * energy_barrier;
+    
+    // Reactivos y productos
+    let reactants = step(-0.5, x) * step(x, 0.4) * 0.0;
+    let products = step(0.6, x) * step(x, 1.5) * -0.1;
+    
+    // Tasa como intensidad
+    let rate_intensity = k * 0.1;
+    
+    sdf: custom(y - reactants - barrier_height - products - rate_intensity - intensity_threshold);
+}
+
+// --- Catálisis Enzimática (Michaelis-Menten) ---
+def "enzyme_catalysis_michaelis_menten"(substrate_range, vmax, km, intensity_threshold) {
+    // Curva de saturación
+    let [S] = sqrt(x*x) * 10.0;  // Concentración de sustrato
+    
+    let velocity = michaelis_menten_kinetics([S], vmax, km);
+    
+    // Sitio activo
+    let active_site = sphere([0, 0, 0], 0.1);
+    
+    // Sustratos uniéndose
+    let substrate_binding = exp(-(x*x + z*z)/0.05) * ([S]/(km + [S]));
+    
+    sdf: union(active_site, custom(y - velocity * 0.1 - substrate_binding - intensity_threshold));
+}
+
+// --- Transición de Fase Líquido-Vapor ---
+def "liquid_vapor_phase_transition"(temperature, critical_temperature, intensity_threshold) {
+    // Diagrama de fases P-V
+    let volume = sqrt(x*x) * 10.0;
+    let pressure = 0.0;
+    
+    if temperature < critical_temperature {
+        // Región de dos fases
+        let vapor_pressure = exp(-1.0/(temperature + 1e-6)) * 5.0;
+        let liquid_density = 1.0 - temperature/critical_temperature * 0.5;
+        let vapor_density = temperature/critical_temperature * 0.2;
+        
+        // Transición
+        let phase_mixture = step(0.3, volume) * vapor_density + 
+                           (1.0 - step(0.3, volume)) * liquid_density;
+        pressure = vapor_pressure * phase_mixture;
+    } else {
+        // Fluido supercrítico
+        pressure = 1.0 / (volume + 1e-6) * temperature/critical_temperature * 3.0;
+    }
+    
+    // Punto crítico
+    let critical_point = sphere([0.1, 0, 0], 0.05 * step(critical_temperature - 0.1, temperature) * 
+                               step(temperature, critical_temperature + 0.1));
+    
+    sdf: union(custom(y - pressure - intensity_threshold), critical_point);
+}
+
+// --- Difusión Molecular (Ley de Fick) ---
+def "molecular_diffusion_fick"(diffusion_coefficient, time, intensity_threshold) {
+    // Perfil de concentración según 2da ley de Fick
+    let position = x;
+    let initial_concentration = step(-0.1, position) * step(position, 0.1);
+    
+    // Solución para difusión 1D desde fuente puntual
+    let concentration = initial_concentration * exp(-position*position/(4.0 * diffusion_coefficient * time + 1e-6)) / 
+                       sqrt(4.0 * pi * diffusion_coefficient * time + 1e-6);
+    
+    // Flujo difusivo
+    let flux = -diffusion_coefficient * concentration * position * 0.1;
+    
+    sdf: custom(y - concentration - flux - intensity_threshold);
+}
+
+// ============================================================
+// INTERFAZ PÚBLICA - FENÓMENOS AVANZADOS (def)
+// ============================================================
+
+// --- Autooscilaciones Químicas (Reacción Belousov-Zhabotinsky) ---
+def "chemical_oscillations_bz"(time, rate_constants, intensity_threshold) {
+    // Patrones oscilatorios espacio-temporales
+    let pattern = sin(x*3.0 + time) * sin(z*3.0 + time*1.5) * 0.3;
+    
+    // Ondas espirales características
+    let r = sqrt(x*x + z*z);
+    let theta = atan2(z, x);
+    let spiral_wave = sin(r * 5.0 - theta - time * 2.0) * 0.2;
+    
+    // Frentes de reacción
+    let reaction_fronts = step(sin(r*8.0 - time*3.0), 0.0) * 0.15;
+    
+    sdf: custom(y - pattern - spiral_wave - reaction_fronts - intensity_threshold);
+}
+
+// --- Membranas de Ósmosis Inversa ---
+def "reverse_osmosis_membrane"(pressure, solute_concentration, intensity_threshold) {
+    // Presión osmótica vs presión aplicada
+    let osmotic_pressure = osmotic_pressure_vanthoff(solute_concentration, 300.0);
+    
+    // Membrana semipermeable
+    let membrane = plane([0.0, 1.0, 0.0], 0.0);
+    
+    // Flujo de solvente (de baja a alta concentración con presión)
+    let solvent_flux = step(pressure, osmotic_pressure) * (pressure - osmotic_pressure) * 0.1;
+    
+    // Gradiente de concentración
+    let concentration_gradient = exp(-y*y/0.1) * solute_concentration * 0.2;
+    
+    sdf: union(membrane, custom(y - solvent_flux - concentration_gradient - intensity_threshold));
+}
+
+// --- Cristalización desde Solución ---
+def "crystallization_from_solution"(supersaturation, nucleation_rate, intensity_threshold) {
+    // Sobresaturación como driver
+    let supersat_field = supersaturation * exp(-(x*x + z*z)/0.2);
+    
+    // Nucleación (aparición de cristales)
+    let nucleation_sites = [];
+    for i in range(0, 5) {
+        let seed_x = sin(i * 1.0) * 0.3;
+        let seed_z = cos(i * 1.0) * 0.3;
+        let crystal = sphere([seed_x, 0, seed_z], 0.05 + nucleation_rate * 0.1);
+        nucleation_sites = append(nucleation_sites, crystal);
+    }
+    
+    // Crecimiento cristalino
+    let crystal_growth = sin(x*8.0) * sin(z*8.0) * supersaturation * 0.05;
+    
+    sdf: union(union_array(nucleation_sites), custom(y - supersat_field - crystal_growth - intensity_threshold));
+}
+
+// --- Cinética de Adsorción (Isoterma de Langmuir) ---
+def "langmuir_adsorption_isotherm"(pressure, adsorption_sites, binding_energy, intensity_threshold) {
+    // θ = K·P/(1 + K·P)
+    let equilibrium_constant = exp(-binding_energy / (BOLTZMANN_EV * 300.0));
+    let coverage = equilibrium_constant * pressure / (1.0 + equilibrium_constant * pressure);
+    
+    // Superficie con sitios de adsorción
+    let surface = plane([0.0, 1.0, 0.0], 0.0);
+    
+    // Moléculas adsorbidas
+    let adsorbed_molecules = 0.0;
+    for i in range(0, adsorption_sites) {
+        let site_x = sin(i * 0.5) * 0.2;
+        let site_z = cos(i * 0.5) * 0.2;
+        let molecule = sphere([site_x, coverage * 0.1, site_z], 0.03);
+        adsorbed_molecules = union(adsorbed_molecules, molecule);
+    }
+    
+    sdf: union(surface, adsorbed_molecules);
+}
+
+// --- Reactor de Flujo Continuo (CSTR) ---
+def "continuous_stirred_tank_reactor"(inflow_rate, reaction_rate, intensity_threshold) {
+    // Balance de masa en CSTR
+    let residence_time = 1.0 / (inflow_rate + 1e-6);
+    let conversion = reaction_rate * residence_time / (1.0 + reaction_rate * residence_time);
+    
+    // Mezcla perfecta
+    let mixing_pattern = sin(x*5.0 + w) * sin(z*5.0) * 0.1;
+    
+    // Concentración uniforme
+    let uniform_concentration = conversion * (1.0 - exp(-(x*x + z*z)/0.3));
+    
+    sdf: custom(y - uniform_concentration - mixing_pattern - intensity_threshold);
+}
+
+// ============================================================
+// EJEMPLOS DE USO CON custom(expr)
+// ============================================================
+
+/*
+// EJEMPLO 1: Superficie de energía libre
+node "gibbs_surface_example" {
+    position: [-4, 0, 0];
+    sdf: gibbs_free_energy_surface(0.0, [200, 400], 0.2);
+    material: "free_energy";
+}
+
+// EJEMPLO 2: Equilibrio químico
+node "chemical_equilibrium_example" {
+    position: [0, 0, 0];
+    sdf: chemical_equilibrium_dynamics(0.5, 0.3, 0.15);
+    material: "equilibrium";
+}
+
+// EJEMPLO 3: Perfil Arrhenius
+node "arrhenius_profile_example" {
+    position: [4, 0, 0];
+    sdf: arrhenius_reaction_profile(300.0, 50.0, 0.18);
+    material: "reaction_kinetics";
+}
+
+// EJEMPLO 4: Catálisis enzimática
+node "enzyme_catalysis_example" {
+    position: [-2, 3, 0];
+    sdf: enzyme_catalysis_michaelis_menten([0, 10], 1.0, 2.0, 0.12);
+    material: "enzyme_kinetics";
+}
+
+// EJEMPLO 5: Transición de fase
+node "phase_transition_example" {
+    position: [2, 3, 0];
+    sdf: liquid_vapor_phase_transition(0.8, 1.0, 0.15);
+    material: "phase_diagram";
+}
+
+// EJEMPLO 6: Oscilaciones químicas
+node "chemical_oscillations_example" {
+    position: [0, -3, 0];
+    sdf: chemical_oscillations_bz(0.0, [0.1, 0.2, 0.3], 0.1);
+    material: "oscillatory_reaction";
+}
+*/
+
+// ============================================================
+// NOTAS PARA USUARIOS
+// ============================================================
+
+// 1. La fisicoquímica une principios físicos con comportamiento químico
+// 2. La termodinámica química predice espontaneidad y equilibrio
+// 3. La cinética química estudia velocidades y mecanismos de reacción
+// 4. Las propiedades coligativas dependen del número de partículas, no de su identidad
+// 5. La catálisis acelera reacciones sin consumirse
+// 6. La fotoquímica involucra reacciones iniciadas por luz
+
+// ============================================================
+// "La fisicoquímica es el puente entre la física y la química,
+//  donde las leyes universales encuentran manifestación química."
+// ============================================================

@@ -1,0 +1,28 @@
+// Test de Capa 7 — Geo (Ocean, Landscape)
+
+scene { background: [0, 0, 0]; }
+
+import "std_math_core.hm"
+import "std_math_noise.hm"
+import "std_geo_atmosphere.hm"
+import "std_geo_ocean.hm"
+import "std_geo_landscape.hm"
+
+material "geo_mat" {}
+
+// --- std_geo_ocean ---
+let ek_depth = ekman_depth(0.1, 0.0001);
+let ek_vel = ekman_surface_velocity(0.1, 1025.0, 0.1, 0.0001);
+let tidal_f = tidal_force_magnitude(6.674e-11, 7.34e22, 6371e3, 3.84e8);
+let eq_tide = equilibrium_tide_height(0.5, 0.785);
+
+// --- std_geo_landscape ---
+let p_thresh = percolation_threshold();
+let mc_size = mean_cluster_size(0.5, p_thresh, 2.3);
+let aridity = aridity_index(500.0, 1000.0);
+
+// --- SDFs ---
+instance "ocean_trench"(2.0, 0.5, 1.0) { position: [0,0,0]; material: "geo_mat"; }
+instance "ocean_eddy"(1.0, 0.5, 0.2) { position: [3.0,0,0]; material: "geo_mat"; }
+instance "fragmented_forest"(2.0, 0.5, 0.2) { position: [-3.0,0,0]; material: "geo_mat"; }
+instance "fractal_river_network"(0.5, 0.2, 0.1) { position: [0,0,3.0]; material: "geo_mat"; }

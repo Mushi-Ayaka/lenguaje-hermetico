@@ -1,0 +1,13 @@
+// Archivo de prueba SIMPLE para SDFs
+// Sin importar librería, definiendo la función directamente
+
+// Definir la función sd_sphere directamente en el archivo
+fn "sd_sphere_simple"(px, py, pz, radius) {
+    sqrt(px*px + py*py + pz*pz) - radius
+}
+
+node "test_sphere" {
+    position: [0, 0, 0];
+    sdf: sd_sphere_simple(x, y, z, 0.5);
+    material: "default";
+}

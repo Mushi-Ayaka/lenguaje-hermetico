@@ -1,0 +1,508 @@
+// ============================================================
+// LIBRERÍA: std_bridge_biochem.hm
+// CAPA:     Intermediario: Química-Biología (5.1/5.2 - Bioquímica y Bioquímica Estructural)
+// VERSIÓN:  1.0
+// FUENTE:   Lehninger "Biochemistry", Stryer "Biochemistry", PDB (Protein Data Bank)
+// DEPS:     std_math_core.hm, std_math_algebra.hm, std_math_calculus.hm
+// DEPS:     std_bridge_atomic.hm, std_chem_optics.hm, std_chem_polymer.hm
+// FECHA:    6 de junio de 2026
+// ============================================================
+
+// BIOQUÍMICA: Estructura y función de biomoléculas, enzimas, metabolismo,
+// membranas biológicas, señalización celular, estructura proteica
+
+// ============================================================
+// CONSTANTES BIOQUÍMICAS
+// ============================================================
+
+// Constantes físicas bioquímicas
+let AVOGADRO_NUMBER = 6.02214076e23;        // N_A (mol⁻¹)
+let GAS_CONSTANT = 8.314462618;            // R (J/(mol·K))
+let R = GAS_CONSTANT;                       // Alias
+let FARADAY_CONSTANT = 96485.33212;        // F (C/mol)
+let BOLTZMANN_CONSTANT = 1.380649e-23;     // k_B (J/K)
+
+// Constantes escaladas
+let NA = AVOGADRO_NUMBER / 1e23;           // N_A escalado
+let RT = R * 310.15;                       // RT a 37°C (escalado)
+let KB_T = 0.0267;                         // k_BT a 37°C (escalado)
+
+// Tamaños moleculares típicos (Å, escalados)
+let AMINO_ACID_LENGTH = 3.8;               // Longitud de aminoácido en proteína
+let BASE_PAIR_LENGTH = 3.4;                // Distancia entre pares de bases en DNA
+let LIPID_BILAYER_THICKNESS = 40.0;        // Espesor de bicapa lipídica
+let PROTEIN_RADIUS_TYPICAL = 20.0;         // Radio típico de proteína globular
+
+// Constantes de reacción
+let MICHAELIS_CONSTANT_TYPICAL = 1e-3;     // K_M típico (M)
+let TURNOVER_NUMBER_TYPICAL = 1e3;         // k_cat típico (s⁻¹)
+
+// ============================================================
+// INTERFAZ PÚBLICA - ESTRUCTURA PROTEICA (fn)
+// ============================================================
+
+// --- Ángulo de Enlace Peptídico (ω) ---
+// ω ≈ 180° para enlace peptídico plano (trans)
+fn "peptide_bond_angle"() {
+    pi  // 180° en radianes
+}
+
+// --- Ángulos de Torsión de Cadena Principal (φ, ψ) ---
+// Restringidos por mapa de Ramachandran
+fn "ramachandran_phi_psi_allowed"(phi, psi) {
+    // Regiones permitidas en mapa de Ramachandran
+    let region1 = step(-pi*0.75, phi) * step(phi, -pi*0.25) * step(-pi*0.5, psi) * step(psi, pi*0.5);
+    let region2 = step(pi*0.25, phi) * step(phi, pi*0.75) * step(-pi*0.5, psi) * step(psi, pi*0.5);
+    region1 + region2
+}
+
+// --- Distancia de Enlace Cα-Cα en Hélice α ---
+// 5.4Å entre Cα separados por 4 residuos (i, i+4)
+fn "alpha_helix_ca_distance"(residue_separation) {
+    1.5 * residue_separation  // Aproximación escalada
+}
+
+// --- Radio de Hélice α ---
+// ~2.3Å radio del cilindro de hélice
+fn "alpha_helix_radius"() {
+    0.6  // Escalado
+}
+
+// --- Paso de Hélice α (Avance por residuo) ---
+// 1.5Å por residuo en dirección del eje
+fn "alpha_helix_rise_per_residue"() {
+    0.4  // Escalado
+}
+
+// --- Distancia de Enlace en Lámina β ---
+// 3.5Å entre cadenas adyacentes en lámina β
+fn "beta_sheet_interstrand_distance"() {
+    0.9  // Escalado
+}
+
+// --- Ángulo entre Cadenas en Lámina β (Antiparalela vs Paralela) ---
+fn "beta_sheet_strand_angle"(antiparallel) {
+    antiparallel * pi * 0.5 + (1.0 - antiparallel) * 0.0  // 90° vs 0°
+}
+
+// ============================================================
+// INTERFAZ PÚBLICA - ENLACES Y INTERACCIONES (fn)
+// ============================================================
+
+// --- Energía de Enlace de Hidrógeno (Proteína) ---
+// 2-8 kcal/mol, típicamente ~5 kcal/mol
+fn "hydrogen_bond_energy"(distance, angle) {
+    let ideal_distance = 2.8;  // Å
+    let ideal_angle = pi * 0.5;  // 90°
+    let dist_term = exp(-(distance - ideal_distance)*(distance - ideal_distance) / 0.5);
+    let angle_term = cos(angle - ideal_angle)*cos(angle - ideal_angle);
+    5.0 * dist_term * angle_term  // kcal/mol escalado
+}
+
+// --- Energía de Interacción Hidrofóbica ---
+// ΔG ≈ -1.3 kcal/mol por Å² de área superficial enterrada
+fn "hydrophobic_interaction_energy"(buried_area) {
+    -1.3 * buried_area  // kcal/mol·Å² escalado
+}
+
+// --- Energía de Interacción Iónica (Sal) ---
+// U = (q₁·q₂)/(4π·ε·ε₀·r) en medio acuoso (ε ≈ 80)
+fn "ionic_interaction_energy"(q1, q2, distance) {
+    let dielectric_water = 80.0;
+    332.0 * q1 * q2 / (dielectric_water * distance)  // kcal/mol escalado
+}
+
+// --- Energía de Interacción de van der Waals (Lennard-Jones) ---
+fn "van_der_waals_energy"(epsilon, sigma, distance) {
+    4.0 * epsilon * (pow(sigma/distance, 12.0) - pow(sigma/distance, 6.0))
+}
+
+// --- Potencial de Campo de Fuerza (Aproximación armónica) ---
+fn "force_field_harmonic"(k, r, r0) {
+    0.5 * k * (r - r0) * (r - r0)
+}
+
+// --- Potencial de Campo de Fuerza (Morse para enlaces) ---
+fn "force_field_morse"(De, a, r, r0) {
+    De * (1.0 - exp(-a * (r - r0))) * (1.0 - exp(-a * (r - r0)))
+}
+
+// ============================================================
+// INTERFAZ PÚBLICA - CINÉTICA ENZIMÁTICA (fn)
+// ============================================================
+
+// --- Ecuación de Michaelis-Menten ---
+// v = V_max·[S]/(K_M + [S])
+fn "michaelis_menten_velocity"(Vmax, Km, substrate_concentration) {
+    Vmax * substrate_concentration / (Km + substrate_concentration + 1e-6)
+}
+
+// --- Constante de Especificidad (k_cat/K_M) ---
+fn "enzyme_specificity_constant"(kcat, Km) {
+    kcat / (Km + 1e-6)
+}
+
+// --- Ecuación de Lineweaver-Burk (Doble Recíproco) ---
+// 1/v = 1/V_max + K_M/(V_max·[S])
+fn "lineweaver_burk_reciprocal"(Vmax, Km, substrate_concentration) {
+    1.0/Vmax + Km/(Vmax * substrate_concentration + 1e-6)
+}
+
+// --- Inhibición Competitiva ---
+// v = V_max·[S]/(K_M·(1+[I]/K_i) + [S])
+fn "competitive_inhibition_velocity"(Vmax, Km, Ki, substrate_concentration, inhibitor_concentration) {
+    Vmax * substrate_concentration / (Km * (1.0 + inhibitor_concentration/Ki) + substrate_concentration + 1e-6)
+}
+
+// --- Inhibición No Competitiva ---
+// v = V_max·[S]/((K_M + [S])·(1+[I]/K_i))
+fn "noncompetitive_inhibition_velocity"(Vmax, Km, Ki, substrate_concentration, inhibitor_concentration) {
+    Vmax * substrate_concentration / ((Km + substrate_concentration) * (1.0 + inhibitor_concentration/Ki) + 1e-6)
+}
+
+// --- Inhibición a Competencia (Mixed) ---
+fn "mixed_inhibition_velocity"(Vmax, Km, Ki, substrate_concentration, inhibitor_concentration) {
+    let alpha = 1.0 + inhibitor_concentration/Ki;
+    Vmax * substrate_concentration / (Km * alpha + substrate_concentration * alpha + 1e-6)
+}
+
+// --- Activación Alostérica (Ecuación de Hill) ---
+// v = V_max·[S]ⁿ/(K₀.₅ⁿ + [S]ⁿ)
+fn "hill_equation_cooperative"(Vmax, K_half, hill_coefficient, substrate_concentration) {
+    Vmax * pow(substrate_concentration, hill_coefficient) / 
+    (pow(K_half, hill_coefficient) + pow(substrate_concentration, hill_coefficient) + 1e-6)
+}
+
+// ============================================================
+// INTERFAZ PÚBLICA - TERMODINÁMICA BIOQUÍMICA (fn)
+// ============================================================
+
+// --- Energía Libre de Gibbs para Reacción Bioquímica ---
+// ΔG = ΔG⁰ + RT·ln(Q)
+fn "biochemical_gibbs_free_energy"(deltaG0, Q) {
+    deltaG0 + RT * log(Q + 1e-6)
+}
+
+// --- Constante de Equilibrio a partir de ΔG⁰ ---
+// K_eq = exp(-ΔG⁰/(RT))
+fn "biochemical_equilibrium_constant"(deltaG0) {
+    exp(-deltaG0 / RT)
+}
+
+// --- Energía de Hidratación (Transferencia de Agua a No Polar) ---
+// ΔG_hyd ≈ 1-2 kcal/mol por grupo CH₂
+fn "hydrophobic_hydration_energy"(num_ch2_groups) {
+    1.5 * num_ch2_groups  // kcal/mol escalado
+}
+
+// --- Energía de Desnaturalización Térmica (Van't Hoff) ---
+// ΔG_denat = ΔH - T·ΔS
+fn "protein_denaturation_free_energy"(deltaH, deltaS, T) {
+    deltaH - T * deltaS
+}
+
+// --- Temperatura de Desnaturalización (Tm) ---
+// T_m = ΔH/ΔS cuando ΔG = 0
+fn "protein_melting_temperature"(deltaH, deltaS) {
+    deltaH / (deltaS + 1e-6)
+}
+
+// --- Coeficiente de Partición Octanol-Agua (log P) ---
+// Predicción de hidrofobicidad
+fn "octanol_water_partition_coefficient"(num_carbons, num_polar_groups) {
+    let hydrophobicity = 0.5 * num_carbons - 1.0 * num_polar_groups;
+    hydrophobicity
+}
+
+// ============================================================
+// INTERFAZ PÚBLICA - MEMBRANAS BIOLÓGICAS (fn)
+// ============================================================
+
+// --- Potencial de Membrana (Ecuación de Nernst) ---
+// E = (RT/(zF))·ln([ion]_out/[ion]_in)
+fn "nernst_membrane_potential"(z, concentration_out, concentration_in) {
+    (RT/(z * 96485.0)) * log(concentration_out/(concentration_in + 1e-6) + 1e-6)
+}
+
+// --- Potencial de Goldman-Hodgkin-Katz (Multi-ión) ---
+// V_m = (RT/F)·ln( (ΣP_cation·[cation]_out + ΣP_anion·[anion]_in) /
+//                  (ΣP_cation·[cation]_in + ΣP_anion·[anion]_out) )
+fn "goldman_hodgkin_katz_potential"(permeabilities_cations, concentrations_cations_out, concentrations_cations_in,
+                                     permeabilities_anions, concentrations_anions_out, concentrations_anions_in) {
+    let numerator = 0.0;
+    let denominator = 0.0;
+    
+    // Sumar contribuciones de cationes
+    for i in range(0, len(permeabilities_cations)) {
+        numerator = numerator + permeabilities_cations[i] * concentrations_cations_out[i];
+        denominator = denominator + permeabilities_cations[i] * concentrations_cations_in[i];
+    }
+    
+    // Sumar contribuciones de aniones
+    for i in range(0, len(permeabilities_anions)) {
+        numerator = numerator + permeabilities_anions[i] * concentrations_anions_in[i];
+        denominator = denominator + permeabilities_anions[i] * concentrations_anions_out[i];
+    }
+    
+    (RT/96485.0) * log((numerator + 1e-6)/(denominator + 1e-6) + 1e-6)
+}
+
+// --- Fluidez de Membrana (Orden de parámetro) ---
+fn "membrane_fluidity_order_parameter"(temperature, cholesterol_content) {
+    // Mayor temperatura → menor orden, mayor colesterol → mayor orden
+    exp(-temperature/300.0) * (1.0 + 0.5 * cholesterol_content)
+}
+
+// --- Curvatura de Membrana (Energía de Helfrich) ---
+// E = (κ/2)·∫(H - H₀)²·dA + κ_G·∫K·dA
+fn "membrane_bending_energy"(kappa, H, H0, kappa_G, K) {
+    0.5 * kappa * (H - H0) * (H - H0) + kappa_G * K
+}
+
+// --- Transición de Fase de Membrana (Gel a Líquido) ---
+fn "membrane_phase_transition"(temperature, transition_temperature, cooperativity) {
+    0.5 + 0.5 * tanh(cooperativity * (temperature - transition_temperature))
+}
+
+// ============================================================
+// INTERFAZ PÚBLICA - SDFs BIOQUÍMICAS (def con custom)
+// ============================================================
+
+// --- Hélice α (Estructura secundaria) ---
+def "alpha_helix_structure"(radius, pitch, residues, residue_spacing) {
+    let t = x * 10.0;  // Parámetro a lo largo del eje
+    let helix_x = radius * cos(t * pitch);
+    let helix_z = radius * sin(t * pitch);
+    let helix_y = t * residue_spacing;
+    
+    sdf: sqrt((x - helix_x)*(x - helix_x) + (y - helix_y)*(y - helix_y) + (z - helix_z)*(z - helix_z)) - 0.2;
+}
+
+// --- Lámina β (Estructura secundaria) ---
+def "beta_sheet_structure"(strand_length, strand_width, strand_spacing, antiparallel) {
+    // Múltiples hebras paralelas o antiparalelas
+    let strand_idx = floor(z / strand_spacing);
+    let z_local = mod(z, strand_spacing) - strand_spacing * 0.5;
+    
+    let strand_offset = strand_idx * (antiparallel * 0.2);  // Desplazamiento para antiparalelas
+    
+    // Hebra individual (cinta)
+    sdf: sqrt(x*x/(strand_length*strand_length) + (y - strand_offset)*(y - strand_offset)/(0.1*0.1) + 
+              z_local*z_local/(strand_width*strand_width)) - 1.0;
+}
+
+// --- Proteína Globular (Esfera con rugosidad) ---
+def "globular_protein"(radius, surface_roughness, core_density) {
+    let r = sqrt(x*x + y*y + z*z);
+    
+    // Núcleo denso + superficie rugosa
+    let core = r - radius * core_density;
+    let surface_noise = surface_roughness * (sin(x*5.0) + sin(y*5.0) + sin(z*5.0)) * 0.1;
+    
+    sdf: core + surface_noise;
+}
+
+// --- Membrana Lipídica (Bicapa) ---
+def "lipid_bilayer"(thickness, fluidity, curvature) {
+    // Dos capas lipídicas separadas por grosor
+    let upper_layer = abs(y - thickness*0.25) - thickness*0.1;
+    let lower_layer = abs(y + thickness*0.25) - thickness*0.1;
+    
+    // Curvatura de membrana
+    let membrane_curvature = curvature * (x*x + z*z) * 0.01;
+    
+    // Fluidez (rugosidad térmica)
+    let thermal_roughness = fluidity * (sin(x*3.0 + w) + sin(z*3.0 + w*1.5)) * 0.05;
+    
+    sdf: min(upper_layer, lower_layer) + membrane_curvature + thermal_roughness;
+}
+
+// --- Sitio Activo Enzimático (Pocket) ---
+def "enzyme_active_site"(pocket_radius, entrance_width, specificity) {
+    // Pocket esférico con entrada estrecha
+    let r = sqrt(x*x + y*y + z*z);
+    let pocket = r - pocket_radius;
+    
+    // Entrada (restricción en dirección y)
+    let entrance = abs(y) - entrance_width;
+    
+    // Especificidad (rugosidad que representa complementariedad)
+    let specificity_pattern = specificity * (sin(x*8.0) * sin(z*8.0)) * 0.1;
+    
+    sdf: max(pocket, entrance) + specificity_pattern;
+}
+
+// --- Canales Iónicos (Poros en membrana) ---
+def "ion_channel"(pore_radius, selectivity_filter_length, gating_state) {
+    // Poro cilíndrico a través de membrana (eje y)
+    let pore = sqrt(x*x + z*z) - pore_radius;
+    
+    // Filtro de selectividad (región más estrecha)
+    let filter = abs(y) - selectivity_filter_length * 0.5;
+    let narrow_pore = sqrt(x*x + z*z) - pore_radius * 0.5;
+    
+    // Estado de compuerta (abierto/cerrado)
+    let gate = gating_state * (abs(y) - 0.3);  // 1 = abierto, 0 = cerrado
+    
+    sdf: max(pore, min(filter, narrow_pore)) + (1.0 - gating_state) * 10.0;  // Cerrado = muy grande
+}
+
+// --- ADN de Doble Hélice ---
+def "dna_double_helix"(helix_radius, pitch, base_pair_spacing) {
+    let t = y * 10.0;  // Eje largo es y
+    
+    // Dos hebras antiparalelas
+    let strand1_x = helix_radius * cos(t * pitch);
+    let strand1_z = helix_radius * sin(t * pitch);
+    
+    let strand2_x = helix_radius * cos(t * pitch + pi);
+    let strand2_z = helix_radius * sin(t * pitch + pi);
+    
+    // Bases nitrogenadas (conectando las hebras)
+    let base_pair = sqrt((x - (strand1_x + strand2_x)*0.5)*(x - (strand1_x + strand2_x)*0.5) + 
+                         (z - (strand1_z + strand2_z)*0.5)*(z - (strand1_z + strand2_z)*0.5)) - 0.1;
+    
+    // Hebras de azúcar-fosfato
+    let backbone1 = sqrt((x - strand1_x)*(x - strand1_x) + (z - strand1_z)*(z - strand1_z)) - 0.05;
+    let backbone2 = sqrt((x - strand2_x)*(x - strand2_x) + (z - strand2_z)*(z - strand2_z)) - 0.05;
+    
+    sdf: min(min(backbone1, backbone2), base_pair);
+}
+
+// ============================================================
+// INTERFAZ PÚBLICA - SISTEMAS BIOQUÍMICOS (def)
+// ============================================================
+
+// --- Complejo Enzima-Sustrato (Michaelis) ---
+def "enzyme_substrate_complex"(enzyme_radius, substrate_radius, binding_affinity) {
+    // Enzima grande, sustrato pequeño
+    let enzyme = sqrt(x*x + y*y + z*z) - enzyme_radius;
+    
+    // Sustrato unido en sitio activo (desplazado)
+    let substrate = sqrt((x - enzyme_radius*0.7)*(x - enzyme_radius*0.7) + y*y + z*z) - substrate_radius;
+    
+    // Puente de unión (representando interacciones)
+    let binding_bridge = sqrt(x*x + y*y + z*z) - enzyme_radius*0.8;
+    
+    sdf: min(enzyme, min(substrate, binding_bridge));
+}
+
+// --- Cadena de Transporte de Electrones (Mitocondria) ---
+def "electron_transport_chain"(complex_spacing, membrane_thickness) {
+    // Membrana interna mitocondrial
+    let membrane = abs(y) - membrane_thickness * 0.5;
+    
+    // Complejos I-IV espaciados a lo largo del eje x
+    let complex_positions = [-1.5, -0.5, 0.5, 1.5];
+    let complexes = 100.0;  // Inicializar alto
+    
+    for i in range(0, len(complex_positions)) {
+        let cx = complex_positions[i];
+        let complex_i = sqrt((x - cx)*(x - cx) + y*y + z*z) - 0.2;
+        complexes = min(complexes, complex_i);
+    }
+    
+    // Cadena de transporte (conexiones entre complejos)
+    let chain = custom(sin(x*3.0) * 0.1 + cos(z*3.0) * 0.1);
+    
+    sdf: min(membrane, min(complexes, chain));
+}
+
+// --- Ciclo de Krebs (Metabolismo) ---
+def "krebs_cycle_metabolism"(cycle_radius, metabolite_count) {
+    // Ciclo circular de reacciones
+    let angle = atan2(z, x);
+    let radius = sqrt(x*x + z*z);
+    
+    // Metabolitos en el ciclo
+    let metabolites = 100.0;
+    for i in range(0, metabolite_count) {
+        let metabolite_angle = (i * 2.0 * pi) / metabolite_count;
+        let mx = cycle_radius * cos(metabolite_angle);
+        let mz = cycle_radius * sin(metabolite_angle);
+        let metabolite = sqrt((x - mx)*(x - mx) + (z - mz)*(z - mz)) - 0.15;
+        metabolites = min(metabolites, metabolite);
+    }
+    
+    // Trayectoria del ciclo
+    let cycle_path = abs(radius - cycle_radius) - 0.05;
+    
+    sdf: min(metabolites, cycle_path);
+}
+
+// --- Transducción de Señal (Receptor-Ligando) ---
+def "signal_transduction_complex"(receptor_size, ligand_size, amplification_factor) {
+    // Receptor en membrana (extendido)
+    let receptor = sqrt(x*x/(receptor_size*receptor_size) + y*y/(0.2*0.2) + z*z/(receptor_size*receptor_size)) - 1.0;
+    
+    // Ligando unido (esférico)
+    let ligand = sqrt((x - receptor_size*0.8)*(x - receptor_size*0.8) + y*y + z*z) - ligand_size;
+    
+    // Señal amplificada (patrón radial desde complejo)
+    let signal = sqrt(x*x + y*y + z*z) - amplification_factor * 0.1 * sin(w * 5.0);
+    
+    sdf: min(receptor, min(ligand, signal));
+}
+
+// ============================================================
+// EJEMPLOS DE USO CON custom(expr)
+// ============================================================
+
+/*
+// EJEMPLO 1: Hélice α de proteína
+node "alpha_helix_example" {
+    position: [-4, 0, 0];
+    sdf: alpha_helix_structure(0.3, 0.5, 10, 0.2);
+    material: "protein_secondary";
+}
+
+// EJEMPLO 2: Membrana lipídica con canales iónicos
+node "lipid_membrane_example" {
+    position: [0, 0, 0];
+    sdf: union(lipid_bilayer(0.8, 0.3, 0.1), ion_channel(0.1, 0.3, 1.0));
+    material: "biological_membrane";
+}
+
+// EJEMPLO 3: ADN de doble hélice
+node "dna_helix_example" {
+    position: [4, 0, 0];
+    sdf: dna_double_helix(0.2, 0.3, 0.15);
+    material: "dna";
+}
+
+// EJEMPLO 4: Complejo enzima-sustrato
+node "enzyme_complex_example" {
+    position: [-2, 3, 0];
+    sdf: enzyme_substrate_complex(0.4, 0.15, 0.8);
+    material: "enzyme";
+}
+
+// EJEMPLO 5: Sitio activo enzimático
+node "active_site_example" {
+    position: [2, 3, 0];
+    sdf: enzyme_active_site(0.3, 0.15, 0.5);
+    material: "catalytic_site";
+}
+
+// EJEMPLO 6: Ciclo de Krebs metabólico
+node "krebs_cycle_example" {
+    position: [0, -3, 0];
+    sdf: krebs_cycle_metabolism(0.5, 8);
+    material: "metabolism";
+}
+*/
+
+// ============================================================
+// NOTAS PARA USUARIOS
+// ============================================================
+
+// 1. Las estructuras bioquímicas son representaciones geométricas simplificadas
+// 2. Las constantes están escaladas para visualización
+// 3. Las interacciones moleculares son aproximaciones energéticas
+// 4. Las cinéticas enzimáticas siguen modelos clásicos (Michaelis-Menten, etc.)
+// 5. Los sistemas bioquímicos son abstracciones de procesos reales
+
+// ============================================================
+// "La vida es química con memoria, evolución con propósito,
+//  y complejidad emergente de simplicidad molecular."
+// ============================================================

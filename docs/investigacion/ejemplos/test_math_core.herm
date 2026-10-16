@@ -1,0 +1,324 @@
+// ============================================================
+// ARCHIVO DE PRUEBA: test_math_core.herm
+// Propósito: Validar std_math_core.hm con sintaxis fn
+// ============================================================
+
+scene "Test Matemáticas Core" {
+    axes { X: 800, Y: 600, W: 30 }  // 30 frames para animación
+    
+    camera {
+        position: [0, 2, 10];
+        target:   [0, 0, 0];
+        up:       [0, 1, 0];
+        fov:      50;
+    }
+    
+    background: [0.05, 0.05, 0.1];
+}
+
+// Importar la librería de matemáticas core
+import "std_math_core.hm"
+
+// ============================================================
+// MATERIALES
+// ============================================================
+
+material "rojo_vivo" {
+    base_color: [0.8, 0.1, 0.1];
+    roughness:  0.3;
+    metallic:   0.0;
+}
+
+material "verde_vivo" {
+    base_color: [0.1, 0.8, 0.1];
+    roughness:  0.3;
+    metallic:   0.0;
+}
+
+material "azul_vivo" {
+    base_color: [0.1, 0.1, 0.8];
+    roughness:  0.3;
+    metallic:   0.0;
+}
+
+material "amarillo" {
+    base_color: [0.8, 0.8, 0.1];
+    roughness:  0.4;
+    metallic:   0.0;
+}
+
+material "blanco" {
+    base_color: [0.9, 0.9, 0.9];
+    roughness:  0.2;
+    metallic:   0.0;
+}
+
+material "purpura" {
+    base_color: [0.6, 0.1, 0.8];
+    roughness:  0.3;
+    metallic:   0.0;
+}
+
+// ============================================================
+// DEMOSTRACIÓN 1: FUNCIONES BÁSICAS Y CONSTANTES
+// ============================================================
+
+node "demo_constantes" {
+    position: [-3, 2, 0];
+    
+    // Esfera con radio basado en PI
+    node "esfera_pi" {
+        sdf: sphere(PI / 10);  // Radio = π/10 ≈ 0.314
+        material: "rojo_vivo";
+        position: [0, 0, 0];
+    }
+    
+    // Esfera con radio basado en e
+    node "esfera_e" {
+        sdf: sphere(E / 10);  // Radio = e/10 ≈ 0.272
+        material: "verde_vivo";
+        position: [1, 0, 0];
+    }
+    
+    // Esfera con radio basado en √2
+    node "esfera_sqrt2" {
+        sdf: sphere(SQRT2 / 5);  // Radio = √2/5 ≈ 0.283
+        material: "azul_vivo";
+        position: [2, 0, 0];
+    }
+}
+
+// ============================================================
+// DEMOSTRACIÓN 2: INTERPOLACIONES Y ANIMACIÓN
+// ============================================================
+
+node "demo_interpolacion" {
+    position: [0, 2, 0];
+    
+    // Esfera que se mueve con interpolación lineal
+    node "esfera_lerp" {
+        sdf: sphere(0.3);
+        material: "amarillo";
+        position: [lerp(-2, 2, w/30), 0, 0];  // w va de 0 a 29
+    }
+    
+    // Esfera que se mueve con smoothstep
+    node "esfera_smooth" {
+        sdf: sphere(0.25);
+        material: "purpura";
+        position: [lerp(-2, 2, smoothstep(0, 1, w/30)), -1, 0];
+    }
+    
+    // Esfera que oscila con onda triangular
+    node "esfera_triangular" {
+        sdf: sphere(0.2);
+        material: "blanco";
+        position: [triangle_wave(w, 15) * 2, -2, 0];  // Periodo 15 frames
+    }
+}
+
+// ============================================================
+// DEMOSTRACIÓN 3: FUNCIONES ESPECIALES EN SDFs
+// ============================================================
+
+node "demo_funciones_especiales" {
+    position: [3, 2, 0];
+    
+    // Esfera con radio gaussiano
+    node "esfera_gaussiana" {
+        sdf: sphere(gaussian_norm(w - 15, 0, 5) * 0.4 + 0.1);
+        material: "rojo_vivo";
+        position: [0, 0, 0];
+    }
+    
+    // Caja con altura sigmoidal
+    node "caja_sigmoidal" {
+        sdf: box(0.4, sigmoid((w - 15) * 0.3) * 0.8 + 0.2, 0.4);
+        material: "verde_vivo";
+        position: [1.5, 0, 0];
+    }
+    
+    // Cilindro con radio pulsante
+    node "cilindro_pulsante" {
+        sdf: cylinder(pulse_smooth(w, 15, 10, 2) * 0.2 + 0.1, 0.6);
+        material: "azul_vivo";
+        position: [-1.5, 0, 0];
+    }
+}
+
+// ============================================================
+// DEMOSTRACIÓN 4: USO DE FUNCIONES EN EXPRESIONES COMPLEJAS
+// ============================================================
+
+node "demo_expresiones" {
+    position: [0, -1, 0];
+    
+    // Superficie ondulada usando múltiples funciones
+    def "superficie_ondulada"(amplitude, frequency) {
+        sdf: plane(0, 1, 0, 0);
+        material: "blanco";
+        position: [0, 0, 0];
+        // NOTA: Para desplazamiento real, necesitaríamos displace()
+        // Esta es una demostración conceptual
+    }
+    
+    // Instancia de la superficie
+    instance "superficie_ondulada"(0.3, 2) {
+        position: [0, -1, 0];
+        scale: [3, 0.1, 3];
+    }
+    
+    // Esferas en patrón matemático
+    node "esfera_patron_1" {
+        sdf: sphere(0.15);
+        material: "rojo_vivo";
+        position: [sin_deg(w * 12) * 2, cos_deg(w * 8) * 1.5, 0];
+    }
+    
+    node "esfera_patron_2" {
+        sdf: sphere(0.15);
+        material: "verde_vivo";
+        position: [cos_deg(w * 10) * 2, sin_deg(w * 6) * 1.5, 1];
+    }
+    
+    node "esfera_patron_3" {
+        sdf: sphere(0.15);
+        material: "azul_vivo";
+        position: [sin_deg(w * 8) * 2, cos_deg(w * 12) * 1.5, -1];
+    }
+}
+
+// ============================================================
+// DEMOSTRACIÓN 5: OPERACIONES MATEMÁTICAS EN TIEMPO REAL
+// ============================================================
+
+node "demo_calculos" {
+    position: [0, -3, 0];
+    
+    // Línea de esferas que muestran funciones matemáticas
+    def "esfera_calculada"(index) {
+        sdf: sphere(0.1);
+        material: "amarillo";
+        position: [index * 0.6, 0, 0];
+    }
+    
+    // Serie de esferas con propiedades calculadas
+    instance "esfera_calculada"(0) {
+        scale: [mean(1, 1 + sin(w * 0.1)), 1, 1];  // Escala promedio
+    }
+    
+    instance "esfera_calculada"(1) {
+        scale: [geometric_mean(1, 1 + sin(w * 0.1)), 1, 1];  // Media geométrica
+    }
+    
+    instance "esfera_calculada"(2) {
+        scale: [harmonic_mean(1, 1 + sin(w * 0.1)), 1, 1];  // Media armónica
+    }
+    
+    instance "esfera_calculada"(3) {
+        scale: [smootherstep(0, 1, mod_unit(w/30)), 1, 1];  // Smoothstep mejorado
+    }
+    
+    instance "esfera_calculada"(4) {
+        scale: [triangle_wave(w, 20)/2 + 0.5, 1, 1];  // Onda triangular
+    }
+}
+
+// ============================================================
+// LUCES
+// ============================================================
+
+light "luz_principal" {
+    type: directional;
+    direction: [0.5, 0.8, 0.3];
+    color: [1, 0.95, 0.8];
+    intensity: 0.8;
+}
+
+lumbre "luz_ambiente" {
+    type: point;
+    position: [0, 5, 5];
+    color: [0.3, 0.4, 0.8];
+    intensity: 0.3;
+    falloff: 0.02;
+}
+
+// ============================================================
+// ANOTACIONES DE VALIDACIÓN
+// ============================================================
+
+/*
+VALIDACIÓN ESPERADA:
+
+1. COMPILACIÓN:
+   - herm test_math_core.herm --render test_output.png
+   - Debe compilar SIN errores
+   - Debe generar .rih y .png exitosamente
+
+2. VISUAL:
+   - 5 grupos de objetos visibles
+   - Animación suave (30 frames)
+   - Movimientos matemáticamente correctos:
+     * Interpolación lineal (amarillo)
+     * Interpolación suave (purpura)  
+     * Onda triangular (blanco)
+     * Gaussiana (rojo)
+     * Sigmoidal (verde)
+     * Pulso (azul)
+
+3. FUNCIONALIDAD:
+   - Constantes PI, E, SQRT2 funcionando
+   - Funciones fn siendo evaluadas
+   - Expresiones complejas trabajando
+   - Animación por variable w funcionando
+
+4. MÉTRICAS:
+   - Tiempo de compilación similar a escenas básicas
+   - Tiempo de render aumentado modestamente
+   - Estabilidad numérica (sin artefactos)
+
+ERRORES COMUNES A VERIFICAR:
+1. "fn no definido" - problema de sintaxis
+2. "constante no definida" - problema de scope
+3. "expresión inválida" - error en evaluación
+4. Render fallido - error en pipeline
+*/
+
+// ============================================================
+// EJEMPLOS DE USO CONCEPTUAL DE FUNCIONES fn
+// ============================================================
+
+/*
+// Estas son anotaciones conceptuales, no código ejecutable
+
+// Uso de funciones matemáticas en SDFs:
+let radio_dinamico = gaussian_norm(w - 15, 0, 5) * 0.5;
+let esfera_animada = sphere(radio_dinamico);
+
+// Uso en transformaciones:
+let angulo = lerp(0, 360, smoothstep(0, 1, w/30));
+let rotacion = [0, angulo, 0];
+
+// Uso en materiales (concepto futuro):
+let roughness_calculado = clamp_sym(sin(w * 0.2), 0.3) + 0.5;
+
+// Patrones matemáticos complejos:
+let patron_x = sin_deg(w * 10) * cos_deg(w * 8) * 2;
+let patron_y = triangle_wave(w, 20) * cos_deg(w * 12) * 1.5;
+let patron_z = sawtooth_wave(w, 15) * sin_deg(w * 6);
+*/
+
+// ============================================================
+// NOTAS FINALES
+// ============================================================
+
+// Este archivo prueba:
+// 1. Sintaxis fn correcta
+// 2. Import de librerías .hm
+// 3. Uso de constantes matemáticas
+// 4. Evaluación de funciones en tiempo real
+// 5. Animación basada en w
+// 6. Compatibilidad con pipeline existente
+
+// Si esta prueba funciona, std_math_core.hm es VÁLIDA
+// y podemos proceder con std_math_algebra.hm, std_math_calculus.hm, etc.

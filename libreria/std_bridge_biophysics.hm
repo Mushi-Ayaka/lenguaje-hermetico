@@ -1,0 +1,464 @@
+// ============================================================
+// LIBRERÍA: std_bridge_biophysics.hm
+// CAPA:     Intermediario Química-Biología (5.5 - Biofísica Molecular)
+// VERSIÓN:  1.0
+// FUENTE:   "Biophysics" by Glaser
+// DEPS:     std_math_core.hm, std_math_algebra.hm, std_phys_statmech.hm
+// DEPS:     std_bridge_biochem.hm, std_bridge_quantchem.hm
+// FECHA:    6 de junio de 2026
+// ============================================================
+
+// BIOFÍSICA MOLECULAR: Aplicación de física a sistemas biológicos,
+// plegamiento de proteínas, dinámica conformacional, fuerzas intermoleculares
+
+// ============================================================
+// CONSTANTES FUNDAMENTALES
+// ============================================================
+
+let BOLTZMANN_BIOPHYS = 1.380649e-23;          // k_B (J/K)
+let AVOGADRO_BIOPHYS = 6.02214076e23;          // N_A (mol⁻¹)
+let GAS_CONSTANT_BIOPHYS = 8.314462618;        // R (J/(mol·K))
+let PLANCK_BIOPHYS = 6.62607015e-34;           // h (J·s)
+
+// ============================================================
+// INTERFAZ PÚBLICA - PLEGAMIENTO DE PROTEÍNAS (fn)
+// ============================================================
+
+// --- Energía Libre de Plegamiento ---
+fn "folding_free_energy"(hydrophobic_effect, hydrogen_bonds, van_der_waals, conformational_entropy) {
+    // ΔG_fold = ΔG_hydro - ΔG_Hbond + ΔG_vdw - T·ΔS_conf
+    hydrophobic_effect + hydrogen_bonds + van_der_waals - conformational_entropy * 300.0
+}
+
+// --- Temperatura de Fusión (Tm) ---
+fn "protein_melting_temperature"(folding_enthalpy, folding_entropy) {
+    // Tm = ΔH/ΔS
+    folding_enthalpy / (folding_entropy + 1e-6)
+}
+
+// --- Estabilidad Térmica ---
+fn "thermal_stability"(delta_g_folding, temperature, melting_temperature) {
+    // Fracción plegada a temperatura dada
+    let delta_g_at_T = delta_g_folding * (1.0 - temperature / (melting_temperature + 1e-6));
+    1.0 / (1.0 + exp(-delta_g_at_T * 1000.0 / (GAS_CONSTANT_BIOPHYS * temperature)))
+}
+
+// --- Estabilidad Cinética ---
+fn "kinetic_stability"(unfolding_rate, refolding_rate) {
+    unfolding_rate / (refolding_rate + 1e-6)
+}
+
+// --- Barrera de Activación para Desplegamiento ---
+fn "unfolding_activation_energy"(folding_energy, transition_state_energy) {
+    transition_state_energy - folding_energy
+}
+
+// --- Tiempo de Vida Media del Estado Plegado ---
+fn "folded_state_halflife"(unfolding_rate_constant) {
+    log(2.0) / (unfolding_rate_constant + 1e-6)
+}
+
+// ============================================================
+// INTERFAZ PÚBLICA - FUERZAS INTERMOLECULARES (fn)
+// ============================================================
+
+// --- Interacción Hidrofóbica ---
+fn "hydrophobic_interaction_energy"(surface_area_buried, temperature) {
+    // ΔG_hydro ∝ -γ·ΔA donde γ ~ 25 cal/(mol·Å²)
+    -surface_area_buried * 25.0 * 4.184  // Convertir a J/mol
+}
+
+// --- Puente de Hidrógeno ---
+fn "hydrogen_bond_energy"(donor_acceptor_distance, angle, dielectric_constant) {
+    // Energía típica: 1-5 kcal/mol
+    let distance_factor = exp(-(donor_acceptor_distance - 2.8) / 0.5);
+    let angle_factor = cos(angle) * cos(angle);
+    
+    -4.0 * distance_factor * angle_factor / dielectric_constant  // kcal/mol
+}
+
+// --- Interacción Electroestática (Debye-Hückel) ---
+fn "electrostatic_interaction"(charge1, charge2, distance, ionic_strength, dielectric_constant) {
+    // V = (q1·q2)/(4πε₀ε_r·r)·exp(-κ·r)
+    let debye_length = 1.0 / sqrt(ionic_strength * 0.1);
+    
+    let coulomb = charge1 * charge2 / (4.0 * pi * 8.854e-12 * dielectric_constant * distance + 1e-6);
+    coulomb * exp(-distance / debye_length)
+}
+
+// --- Interacción ión-π ---
+fn "ion_pi_interaction_energy"(charge, quadrupole_moment, distance) {
+    // V ∝ Q·q/r²
+    quadrupole_moment * charge / (distance * distance + 1e-6)
+}
+
+// --- Interacción π-π (Apilamiento) ---
+fn "pi_pi_stacking_energy"(distance, offset, interaction_type) {
+    // Face-to-face: ~2 kcal/mol, T-shaped: ~2.5 kcal/mol
+    let base_energy = if interaction_type == "face_to_face" { -2.0 }
+                      else if interaction_type == "t_shaped" { -2.5 }
+                      else { -1.0 };
+    
+    base_energy * exp(-(distance - 3.5) * (distance - 3.5) / 0.5) * exp(-offset * offset / 2.0)
+}
+
+// ============================================================
+// INTERFAZ PÚBLICA - DINÁMICA CONFORMACIONAL (fn)
+// ============================================================
+
+// --- RMSD (Root Mean Square Deviation) ---
+fn "rmsd_calculation"(coordinates1, coordinates2) {
+    let sum_squared = 0.0;
+    
+    for i in range(0, min(len(coordinates1), len(coordinates2))) {
+        let dx = coordinates1[i][0] - coordinates2[i][0];
+        let dy = coordinates1[i][1] - coordinates2[i][1];
+        let dz = coordinates1[i][2] - coordinates2[i][2];
+        sum_squared = sum_squared + dx*dx + dy*dy + dz*dz;
+    }
+    
+    sqrt(sum_squared / min(len(coordinates1), len(coordinates2)))
+}
+
+// --- Radio Giro (Radius of Gyration) ---
+fn "radius_of_gyration"(coordinates, center_of_mass) {
+    let sum_squared = 0.0;
+    
+    for i in range(0, len(coordinates)) {
+        let dx = coordinates[i][0] - center_of_mass[0];
+        let dy = coordinates[i][1] - center_of_mass[1];
+        let dz = coordinates[i][2] - center_of_mass[2];
+        sum_squared = sum_squared + dx*dx + dy*dy + dz*dz;
+    }
+    
+    sqrt(sum_squared / len(coordinates))
+}
+
+// --- Flexibilidad (B-factor) ---
+fn "b_factor_fluctuation"(mean_square_displacement) {
+    // B = 8π²·⟨u²⟩/3
+    8.0 * pi * pi * mean_square_displacement / 3.0
+}
+
+// --- Tiempo de Correlación Rotacional ---
+fn "rotational_correlation_time"(molecular_volume, viscosity, temperature) {
+    // τ_rot = (η·V)/(k_B·T)
+    viscosity * molecular_volume / (BOLTZMANN_BIOPHYS * temperature)
+}
+
+// --- Coeficiente de Difusión Rotacional ---
+fn "rotational_diffusion_coefficient"(correlation_time) {
+    // D_rot = 1/(6·τ_rot)
+    1.0 / (6.0 * correlation_time + 1e-6)
+}
+
+// --- Movimiento Browniano ---
+fn "brownian_motion_displacement"(diffusion_coefficient, time) {
+    // ⟨r²⟩ = 6·D·t
+    sqrt(6.0 * diffusion_coefficient * time)
+}
+
+// ============================================================
+// INTERFAZ PÚBLICA - UNIÓN PROTEÍNA-LIGANDO (fn)
+// ============================================================
+
+// --- Constante de Disociación (Kd) ---
+fn "dissociation_constant"(kon, koff) {
+    koff / (kon + 1e-6)
+}
+
+// --- Energía de Unión ---
+fn "binding_free_energy"(kd, temperature) {
+    // ΔG = RT·ln(Kd)
+    GAS_CONSTANT_BIOPHYS * temperature * log(kd + 1e-6)
+}
+
+// --- Entalpía de Unión (Calorimetría) ---
+fn "binding_enthalpy"(heat_evolved, moles_complex_formed) {
+    heat_evolved / (moles_complex_formed + 1e-6)
+}
+
+// --- Entropía de Unión ---
+fn "binding_entropy"(delta_g, delta_h, temperature) {
+    // ΔS = (ΔH - ΔG)/T
+    (delta_h - delta_g) / temperature
+}
+
+// --- Termódinámica de Unión (ITC) ---
+fn "itc_binding_thermodynamics"(binding_enthalpy, binding_entropy, heat_capacity_change, temperature) {
+    // ΔG = ΔH - T·ΔS, ΔH(T) = ΔH(T₀) + ΔCp·(T - T₀)
+    let delta_h_at_T = binding_enthalpy + heat_capacity_change * (temperature - 298.0);
+    let delta_g = delta_h_at_T - temperature * binding_entropy;
+    
+    [delta_g, delta_h_at_T, binding_entropy]
+}
+
+// --- Especificidad de Unión ---
+fn "binding_specificity"(target_affinity, off_target_affinities) {
+    let specificity_ratio = 1.0;
+    
+    for i in range(0, len(off_target_affinities)) {
+        specificity_ratio = specificity_ratio * off_target_affinities[i] / (target_affinity + 1e-6);
+    }
+    
+    specificity_ratio
+}
+
+// ============================================================
+// INTERFAZ PÚBLICA - CANALES IÓNICOS Y TRANSPORTE (fn)
+// ============================================================
+
+// --- Conductancia de Canal ---
+fn "channel_conductance"(single_channel_current, voltage) {
+    single_channel_current / (voltage + 1e-6)
+}
+
+// --- Probabilidad de Apertura ---
+fn "open_probability"(open_time, closed_time) {
+    open_time / (open_time + closed_time + 1e-6)
+}
+
+// --- Permeabilidad Selectiva ---
+fn "permeability_ratio"(permeability_ion1, permeability_ion2) {
+    permeability_ion1 / (permeability_ion2 + 1e-6)
+}
+
+// --- Potencial de Nernst ---
+fn "nernst_potential"(concentration_inside, concentration_outside, charge, temperature) {
+    // E = (RT/zF)·ln([ion]_out/[ion]_in)
+    GAS_CONSTANT_BIOPHYS * temperature / (charge * 96485.0) * 
+    log(concentration_outside / (concentration_inside + 1e-6))
+}
+
+// --- Tasa de Transporte ---
+fn "transport_rate"(permeability, concentration_gradient, surface_area) {
+    permeability * concentration_gradient * surface_area
+}
+
+// ============================================================
+// INTERFAZ PÚBLICA - SDFs DE BIOFÍSICA MOLECULAR (def)
+// ============================================================
+
+// --- Plegamiento de Proteína ---
+def "protein_folding_visualization"(unfolded_chain, folded_structure, folding_progress, intensity_threshold) {
+    // Interpolación entre estados
+    let positions = [];
+    
+    for i in range(0, min(len(unfolded_chain), len(folded_structure))) {
+        let t = folding_progress;
+        let pos = [unfolded_chain[i][0] * (1.0 - t) + folded_structure[i][0] * t,
+                  unfolded_chain[i][1] * (1.0 - t) + folded_structure[i][1] * t,
+                  unfolded_chain[i][2] * (1.0 - t) + folded_structure[i][2] * t];
+        
+        let residue = sphere(pos, 0.02);
+        positions = append(positions, residue);
+    }
+    
+    // Estructura secundaria (hélices/hojas)
+    let secondary_structure = [];
+    for i in range(0, len(positions) - 3) {
+        if i % 5 < 3 {
+            // Hélice
+            let helix_segment = cylinder([positions[i][0], positions[i][1], positions[i][2]],
+                                        [positions[i+3][0], positions[i+3][1], positions[i+3][2]], 0.01);
+            secondary_structure = append(secondary_structure, helix_segment);
+        }
+    }
+    
+    // Núcleo hidrofóbico
+    let hydrophobic_core = sphere([0, 0, 0], 0.1 * folding_progress);
+    
+    sdf: union(union_array(positions), union(union_array(secondary_structure), hydrophobic_core));
+}
+
+// --- Puente de Hidrógeno en Proteína ---
+def "hydrogen_bond_in_protein"(donor_position, acceptor_position, angle, intensity_threshold) {
+    // Donador (N-H)
+    let donor = sphere(donor_position, 0.03);
+    let hydrogen = sphere([donor_position[0] + 0.05 * sin(angle),
+                          donor_position[1] + 0.05 * cos(angle),
+                          donor_position[2]], 0.015);
+    
+    // Aceptor (O)
+    let acceptor = sphere(acceptor_position, 0.03);
+    
+    // Puente de hidrógeno (línea punteada)
+    let hbond_strength = cos(angle) * cos(angle);
+    let bond = cylinder([donor_position[0] + 0.05, donor_position[1], donor_position[2]],
+                       acceptor_position, 0.005 * hbond_strength);
+    
+    // Densidad electrónica del enlace
+    let electron_density = torus([(donor_position[0] + acceptor_position[0])/2,
+                                 (donor_position[1] + acceptor_position[1])/2,
+                                 (donor_position[2] + acceptor_position[2])/2],
+                                [0, 1, 0], 0.02, 0.005);
+    
+    sdf: union(union(union(donor, hydrogen), acceptor), union(bond, electron_density));
+}
+
+// --- Dinámica Conformacional ---
+def "conformational_dynamics_visualization"(ground_state, excited_states, population_weights, intensity_threshold) {
+    // Estado fundamental
+    let ground = sphere(ground_state, 0.05 * population_weights[0]);
+    
+    // Estados excitados
+    let excited = [];
+    for i in range(0, len(excited_states)) {
+        let state = sphere(excited_states[i], 0.04 * population_weights[i+1]);
+        excited = append(excited, state);
+        
+        // Transición entre estados
+        let transition = cylinder(ground_state, excited_states[i], 0.01 * sqrt(population_weights[i+1]));
+        excited = append(excited, transition);
+    }
+    
+    // Paisaje energético
+    let energy_landscape = custom(sin(x*3.0) * sin(z*3.0) * 0.1);
+    
+    sdf: union(ground, union(union_array(excited), energy_landscape));
+}
+
+// --- Unión Proteína-Ligando ---
+def "protein_ligand_binding_visualization"(binding_site, ligand_structure, binding_energy, intensity_threshold) {
+    // Bolsillo de unión
+    let pocket = custom(-x*x - y*y - z*z + 0.1);
+    
+    // Ligando en sitio
+    let ligand = [];
+    for i in range(0, len(ligand_structure)) {
+        let atom = sphere(ligand_structure[i], 0.025);
+        ligand = append(ligand, atom);
+    }
+    
+    // Interacciones
+    let interactions = [];
+    for i in range(0, min(4, len(ligand_structure))) {
+        // Puentes de H
+        let angle = i * pi / 2.0;
+        let interaction_end = [ligand_structure[i][0] + 0.1 * cos(angle),
+                              ligand_structure[i][1] + 0.05,
+                              ligand_structure[i][2] + 0.1 * sin(angle)];
+        let interaction = cylinder(ligand_structure[i], interaction_end, 0.005);
+        interactions = append(interactions, interaction);
+    }
+    
+    // Energía de unión visualizada
+    let binding_energy_sphere = sphere([0, 0, 0], 0.15 * exp(-binding_energy * 0.01));
+    
+    sdf: union(union(pocket, union_array(ligand)), 
+               union(union_array(interactions), binding_energy_sphere));
+}
+
+// --- Canal Iónico ---
+def "ion_channel_visualization"(pore_radius, channel_length, selectivity_filter, intensity_threshold) {
+    // Paredes del canal
+    let channel_wall = difference(cylinder([0, -channel_length/2, 0], [0, channel_length/2, 0], pore_radius * 1.5),
+                                  cylinder([0, -channel_length/2, 0], [0, channel_length/2, 0], pore_radius));
+    
+    // Filtro de selectividad
+    let selectivity = [];
+    for i in range(0, 4) {
+        let ring_y = -channel_length/4 + i * channel_length/6.0;
+        let ring_atom = torus([0, ring_y, 0], [0, 1, 0], pore_radius * 0.8, 0.01);
+        selectivity = append(selectivity, ring_atom);
+    }
+    
+    // Ión pasando
+    let ion_position = [0, sin(w * 0.5) * channel_length/3, 0];
+    let ion = sphere(ion_position, pore_radius * 0.3);
+    
+    // Gradiente electroquímico
+    let gradient = custom(y * 0.1);
+    
+    sdf: union(union(channel_wall, union_array(selectivity)), union(ion, gradient));
+}
+
+// --- Membrana Biológica ---
+def "biological_membrane_visualization"(lipid_count, membrane_thickness, intensity_threshold) {
+    // Bicapa lipídica
+    let lipids = [];
+    
+    for i in range(0, lipid_count) {
+        let x = sin(i * 1.5) * 0.3;
+        let z = cos(i * 1.8) * 0.3;
+        
+        // Cabezas polares (arriba y abajo)
+        let head_top = sphere([x, membrane_thickness/2, z], 0.02);
+        let head_bottom = sphere([x, -membrane_thickness/2, z], 0.02);
+        lipids = append(lipids, head_top);
+        lipids = append(lipids, head_bottom);
+        
+        // Colas hidrofóbicas
+        let tail = cylinder([x, -membrane_thickness/2 + 0.02, z], 
+                           [x, membrane_thickness/2 - 0.02, z], 0.008);
+        lipids = append(lipids, tail);
+    }
+    
+    // Dominios lipídicos
+    let domains = custom(sin(x*5.0) * sin(z*5.0) * 0.02);
+    
+    sdf: union(union_array(lipids), domains);
+}
+
+// ============================================================
+// EJEMPLOS DE USO CON custom(expr)
+// ============================================================
+
+/*
+// EJEMPLO 1: Plegamiento de proteína
+node "protein_folding_example" {
+    position: [-4, 0, 0];
+    sdf: protein_folding_visualization([[0,0,0], [0.2,0,0], [0.4,0,0]], [[0,0,0], [0.1,0.1,0], [0,0,0.1]], 0.5, 0.12);
+    material: "folding_dynamics";
+}
+
+// EJEMPLO 2: Puente de hidrógeno
+node "hydrogen_bond_example" {
+    position: [0, 0, 0];
+    sdf: hydrogen_bond_in_protein([0, 0, 0], [0.15, 0, 0], pi/6, 0.1);
+    material: "noncovalent_interaction";
+}
+
+// EJEMPLO 3: Dinámica conformacional
+node "conformational_dynamics_example" {
+    position: [4, 0, 0];
+    sdf: conformational_dynamics_visualization([0, 0, 0], [[0.1, 0.1, 0], [-0.1, 0, 0.1]], [0.7, 0.2, 0.1], 0.1);
+    material: "energy_landscape";
+}
+
+// EJEMPLO 4: Unión proteína-ligando
+node "binding_example" {
+    position: [-2, 3, 0];
+    sdf: protein_ligand_binding_visualization([0, 0, 0], [[0.05,0,0], [0,0.05,0], [-0.05,0,0]], -10.0, 0.15);
+    material: "molecular_recognition";
+}
+
+// EJEMPLO 5: Canal iónico
+node "ion_channel_example" {
+    position: [2, 3, 0];
+    sdf: ion_channel_visualization(0.05, 0.3, "K+", 0.12);
+    material: "membrane_protein";
+}
+
+// EJEMPLO 6: Membrana biológica
+node "membrane_example" {
+    position: [0, -3, 0];
+    sdf: biological_membrane_visualization(20, 0.1, 0.1);
+    material: "lipid_bilayer";
+}
+*/
+
+// ============================================================
+// NOTAS PARA USUARIOS
+// ============================================================
+
+// 1. La biofísica molecular aplica principios físicos a sistemas biológicos
+// 2. El plegamiento de proteínas está gobernado por fuerzas termodinámicas
+// 3. Las interacciones no covalentes estabilizan estructuras biológicas
+// 4. La dinámica conformacional permite función y regulación
+// 5. La unión proteína-ligando es clave para función y fármacos
+// 6. Los canales y membranas controlan transporte y señalización
+
+// ============================================================
+// "La biofísica desvela la física oculta en la danza molecular de la vida."
+// ============================================================

@@ -1,0 +1,241 @@
+// ============================================================
+// LIBRERÍA: std_math_core.hm
+// CAPA:     1.1 — Base Matemática (Fundamentos abstractos)
+// VERSIÓN:  0.2
+// FUENTE:   Análisis matemático clásico, formas algebraicas cerradas
+// DEPS:     Ninguna (capa base del árbol ontológico)
+// FECHA:    5 de junio de 2026
+// ============================================================
+
+// ============================================================
+// CONSTANTES FUNDAMENTALES
+// ============================================================
+
+let PI       = 3.14159265358979323846;
+let PI2      = 6.28318530717958647692;
+let PI_HALF  = 1.57079632679489661923;
+let INV_PI   = 0.31830988618379067154;
+let INV_PI2  = 0.15915494309189533577;
+let E        = 2.71828182845904523536;
+let SQRT2    = 1.41421356237309504880;
+let SQRT3    = 1.73205080756887729353;
+let PHI      = 1.61803398874989484820;   // Número áureo
+let EPSILON  = 0.00001;
+let INF      = 1e20;
+
+// Constantes trigonométricas derivadas
+let SIN30  = 0.5;
+let COS30  = 0.86602540378;
+let SIN45  = 0.70710678118;
+let COS45  = 0.70710678118;
+let SIN60  = 0.86602540378;
+let COS60  = 0.5;
+let DEG2RAD = 0.01745329251994329577;
+let RAD2DEG = 57.29577951308232087684;
+
+// ============================================================
+// FUNCIONES DE COMPARACIÓN Y SELECCIÓN (algebraicas puras)
+// ============================================================
+
+// step(edge, x) ya es nativa. Alias para claridad:
+fn "heaviside"(x)         { step(0.0, x) }
+fn "heaviside_smooth"(x, k) { smoothstep(-k, k, x) }
+fn "sign_approx"(x)       { step(0.0, x) * 2.0 - 1.0 }
+fn "select"(cond, a, b)   { a * (1.0 - step(0.5, cond)) + b * step(0.5, cond) }
+
+// ============================================================
+// FUNCIONES ARITMÉTICAS EXTENDIDAS
+// ============================================================
+
+fn "sq"(x)         { x * x }
+fn "cb"(x)         { x * x * x }
+fn "inv"(x)        { 1.0 / (x + EPSILON) }
+fn "inv_safe"(x, eps) { 1.0 / (x + eps) }
+fn "rcp"(x)        { 1.0 / x }
+fn "frac"(x)       { x - floor(x) }
+fn "mod_unit"(x)   { x - floor(x) }
+
+// Saturar en [0,1]
+fn "sat"(x)        { clamp(x, 0.0, 1.0) }
+fn "sat01"(x)      { clamp(x, 0.0, 1.0) }
+fn "clamp_sym"(x, r) { clamp(x, -r, r) }
+
+// Redondeo y discretización
+fn "round_to"(x, n) { floor(x / n + 0.5) * n }
+fn "snap"(x, n)    { floor(x / n) * n }
+fn "thresh"(x, t)  { step(t, x) }
+
+// ============================================================
+// INTERPOLACIÓN Y TRANSICIÓN
+// ============================================================
+
+// smoothstep y smootherstep — versiones más suaves
+fn "smootherstep"(edge0, edge1, x) {
+    sat((x - edge0) / (edge1 - edge0 + EPSILON)) * sat((x - edge0) / (edge1 - edge0 + EPSILON)) * sat((x - edge0) / (edge1 - edge0 + EPSILON)) *
+    (6.0 * sat((x - edge0) / (edge1 - edge0 + EPSILON)) * sat((x - edge0) / (edge1 - edge0 + EPSILON)) - 15.0 * sat((x - edge0) / (edge1 - edge0 + EPSILON)) + 10.0)
+}
+
+// Lerp seguro con sat
+fn "lerp_sat"(a, b, t)   { a + (b - a) * sat(t) }
+fn "bilerp"(a, b, c, d, u, v) { lerp(lerp(a, b, u), lerp(c, d, u), v) }
+
+// Mapeo de rango
+fn "remap"(x, a, b, c, d)  { c + (x - a) / (b - a + EPSILON) * (d - c) }
+fn "remap01"(x, a, b)       { (x - a) / (b - a + EPSILON) }
+
+// ============================================================
+// FUNCIONES TRIGONOMÉTRICAS EXTENDIDAS
+// ============================================================
+
+fn "sin_deg"(d)   { sin(d * DEG2RAD) }
+fn "cos_deg"(d)   { cos(d * DEG2RAD) }
+fn "tan_safe"(x)  { sin(x) / (cos(x) + EPSILON) }
+fn "cot"(x)       { cos(x) / (sin(x) + EPSILON) }
+fn "sec"(x)       { 1.0 / (cos(x) + EPSILON) }
+fn "csc"(x)       { 1.0 / (sin(x) + EPSILON) }
+fn "sinc"(x)      { select(step(EPSILON, abs(x)), sin(PI * x) / (PI * x), 1.0) }
+
+// Funciones hiperbólicas
+fn "sinh_approx"(x) { (exp(x) - exp(-x)) * 0.5 }
+fn "cosh_approx"(x) { (exp(x) + exp(-x)) * 0.5 }
+fn "tanh_approx"(x) { (exp(x) - exp(-x)) / (exp(x) + exp(-x) + EPSILON) }
+
+// ============================================================
+// FUNCIONES DE ONDA Y MODULACIÓN
+// ============================================================
+
+// Onda cuadrada algebraica (sin Fourier)
+fn "square_wave"(x, period)    { sign_approx(sin(PI2 * x / period)) }
+
+// Onda triangular — |sawtooth|
+fn "triangle_wave"(x, period)  { abs(mod_unit(x / period) * 2.0 - 1.0) * 2.0 - 1.0 }
+
+// Onda diente de sierra
+fn "sawtooth_wave"(x, period)  { mod_unit(x / period) * 2.0 - 1.0 }
+
+// Pulso rectangular suavizado
+fn "pulse_smooth"(x, center, width, k) {
+    smoothstep(center - width * 0.5 - k, center - width * 0.5, x) -
+    smoothstep(center + width * 0.5, center + width * 0.5 + k, x)
+}
+
+// Oscilación amortiguada
+fn "damped_osc"(x, freq, decay) { exp(-decay * abs(x)) * cos(freq * x) }
+
+// ============================================================
+// ESTADÍSTICAS Y MEDIAS
+// ============================================================
+
+fn "mean"(a, b)            { (a + b) * 0.5 }
+fn "geometric_mean"(a, b)  { sqrt(abs(a * b)) }
+fn "harmonic_mean"(a, b)   { 2.0 * a * b / (a + b + EPSILON) }
+fn "power_mean"(a, b, p)   { pow((pow(abs(a), p) + pow(abs(b), p)) * 0.5, 1.0 / p) }
+fn "weighted_mean"(a, b, w) { a * (1.0 - w) + b * w }
+
+// ============================================================
+// FUNCIONES ESPECIALES DE SEÑAL
+// ============================================================
+
+// Función gaussiana normalizada: e^(-x²/2σ²) / (σ√2π)
+fn "gaussian"(x, sigma)     { exp(-0.5 * x * x / (sigma * sigma + EPSILON)) }
+fn "gaussian_norm"(x, mu, sigma) { exp(-0.5 * (x - mu) * (x - mu) / (sigma * sigma + EPSILON)) }
+
+// Sigmoide logística
+fn "sigmoid"(x)             { 1.0 / (1.0 + exp(-x)) }
+fn "sigmoid_k"(x, k)        { 1.0 / (1.0 + exp(-k * x)) }
+
+// Función de Laplace (suavizado absoluto)
+fn "laplace"(x, b)          { exp(-abs(x) / (b + EPSILON)) / (2.0 * b + EPSILON) }
+
+// Función sinc normalizada
+fn "sinc_norm"(x)           { select(step(EPSILON, abs(x)), sin(PI * x) / (PI * x + EPSILON), 1.0) }
+
+// ============================================================
+// FUNCIONES GEOMÉTRICAS PURAS
+// ============================================================
+
+// Longitud 2D/3D sin primitiva native
+fn "len2"(a, b)             { sqrt(a * a + b * b) }
+fn "len3"(a, b, c)          { sqrt(a * a + b * b + c * c) }
+
+// Distancia entre puntos
+fn "dist2d"(x1, y1, x2, y2)           { sqrt((x2-x1)*(x2-x1) + (y2-y1)*(y2-y1)) }
+fn "dist3d"(x1, y1, z1, x2, y2, z2)  { sqrt((x2-x1)*(x2-x1) + (y2-y1)*(y2-y1) + (z2-z1)*(z2-z1)) }
+
+// Producto punto (2D, 3D)
+fn "dot2"(ax, ay, bx, by)             { ax*bx + ay*by }
+fn "dot3"(ax, ay, az, bx, by, bz)     { ax*bx + ay*by + az*bz }
+
+// Ángulo entre vectores
+fn "angle_between"(ax, ay, az, bx, by, bz) {
+    acos(clamp(dot3(ax, ay, az, bx, by, bz) / (len3(ax, ay, az) * len3(bx, by, bz) + EPSILON), -1.0, 1.0))
+}
+
+// ============================================================
+// FUNCIONES DE COMBINACIÓN SDF (suaves)
+// ============================================================
+
+// Unión suave (opmin de Inigo Quilez)
+fn "smin"(a, b, k) {
+    max(k, min(a, b)) - pow(max(0.0, k - abs(a - b)), 2.0) / (4.0 * k + EPSILON)
+}
+
+// Intersección suave
+fn "smax"(a, b, k) {
+    -smin(-a, -b, k)
+}
+
+// ============================================================
+// CONVERSIÓN DE COORDENADAS
+// ============================================================
+
+// Esféricas → Cartesianas
+fn "sph2cart_x"(r, theta, phi) { r * sin(theta) * cos(phi) }
+fn "sph2cart_y"(r, theta, phi) { r * cos(theta) }
+fn "sph2cart_z"(r, theta, phi) { r * sin(theta) * sin(phi) }
+
+// Polares → Cartesianas (2D en plano XZ)
+fn "pol2x"(r, theta) { r * cos(theta) }
+fn "pol2z"(r, theta) { r * sin(theta) }
+
+// Cartesianas → Radio (polar/esférico)
+fn "cart2r"(a, b, c) { sqrt(a*a + b*b + c*c) }
+fn "cart2theta"(x_val, y_val, z_val) { acos(clamp(y_val / (cart2r(x_val, y_val, z_val) + EPSILON), -1.0, 1.0)) }
+fn "cart2phi"(x_val, z_val)         { atan(z_val, x_val) }
+
+// ============================================================
+// OPERACIONES DE COLOR Y CANAL
+// ============================================================
+
+// Luminancia estándar CIE
+fn "luminance"(r_val, g_val, b_val) { 0.2126 * r_val + 0.7152 * g_val + 0.0722 * b_val }
+
+// Mezcla aditiva / multiplicativa
+fn "blend_add"(a, b)      { clamp(a + b, 0.0, 1.0) }
+fn "blend_mul"(a, b)      { a * b }
+fn "blend_screen"(a, b)   { 1.0 - (1.0 - a) * (1.0 - b) }
+fn "blend_overlay"(a, b)  { select(step(0.5, a), 1.0 - 2.0*(1.0-a)*(1.0-b), 2.0*a*b) }
+
+// ============================================================
+// FUNCIONES DE HASH DETERMINISTA
+// (Base para ruido procedural en capa 1.4)
+// ============================================================
+
+fn "hash11"(x)          { frac(sin(x * 127.1) * 43758.5453123) }
+fn "hash12"(x_val, y_val) { frac(sin(dot2(x_val, y_val, 127.1, 311.7)) * 43758.5453) }
+fn "hash21_x"(x_val, y_val) { frac(sin(dot2(x_val, y_val, 127.1, 311.7)) * 43758.5453) }
+fn "hash21_y"(x_val, y_val) { frac(sin(dot2(x_val, y_val, 269.5, 183.3)) * 43758.5453) }
+fn "hash13"(x_val, y_val, z_val) { frac(sin(dot3(x_val, y_val, z_val, 127.1, 311.7, 74.7)) * 43758.5453) }
+
+// ============================================================
+// NOTAS PARA USUARIOS
+// ============================================================
+//
+// 1. NUNCA usar 'return' en fn — la última expresión es el valor
+// 2. NUNCA usar 'let' dentro de fn — solo constantes globales
+// 3. Usar step/smoothstep para condicionales algebraicas
+// 4. Las fn se expanden textualmente en O(1) — sin overhead
+// 5. Palabras reservadas prohibidas como params: alpha, target,
+//    position, rotation, scale, color, type, mode, etc.
+//
+// ============================================================

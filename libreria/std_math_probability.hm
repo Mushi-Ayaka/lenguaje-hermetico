@@ -1,0 +1,121 @@
+// ============================================================
+// LIBRERÍA: std_math_probability.hm
+// CAPA:     1.4 — Teoría de la Probabilidad y Estadística
+// VERSIÓN:  0.2
+// FUENTE:   Estadística matemática, distribuciones de probabilidad
+// DEPS:     std_math_core.hm
+// FECHA:    5 de junio de 2026
+// ============================================================
+
+import "std_math_core.hm";
+
+// ============================================================
+// DISTRIBUCIONES DE PROBABILIDAD (PDFs y CDFs)
+// ============================================================
+
+// Distribución Normal (Gaussiana): PDF
+fn "normal_pdf"(x_val, mu, sigma) {
+    (1.0 / (sigma * sqrt(PI2) + EPSILON)) * exp(-0.5 * sq((x_val - mu) / (sigma + EPSILON)))
+}
+
+// Distribución Normal estándar: PDF
+fn "std_normal_pdf"(x_val) { exp(-0.5 * x_val * x_val) / sqrt(PI2) }
+
+// Aproximación CDF de normal estándar (Abramowitz & Stegun)
+fn "normal_cdf_approx"(x_val) {
+    0.5 * (1.0 + tanh_approx(x_val * 0.7071067811865476))
+}
+
+// Distribución de Cauchy: PDF = 1/(π*γ*(1+(x-x0/γ)²))
+fn "cauchy_pdf"(x_val, x0, gamma) {
+    1.0 / (PI * gamma * (1.0 + sq((x_val - x0) / (gamma + EPSILON))) + EPSILON)
+}
+
+// Distribución de Laplace: PDF = exp(-|x-μ|/b)/(2b)
+fn "laplace_pdf"(x_val, mu, b) { exp(-abs(x_val - mu) / (b + EPSILON)) / (2.0 * b + EPSILON) }
+
+// Distribución de Pareto (power law): PDF = (a*m^a)/(x^(a+1))
+fn "pareto_pdf"(x_val, x_min, shape_a) {
+    select(step(x_min, x_val), shape_a * pow(x_min, shape_a) / pow(x_val + EPSILON, shape_a + 1.0), 0.0)
+}
+
+// Distribución exponencial: PDF = λ*exp(-λx) para x≥0
+fn "exp_pdf"(x_val, lambda) {
+    select(step(0.0, x_val), lambda * exp(-lambda * x_val), 0.0)
+}
+
+// Distribución de Weibull: PDF = (k/λ)(x/λ)^(k-1) exp(-(x/λ)^k)
+fn "weibull_pdf"(x_val, k, lambda) {
+    select(step(EPSILON, x_val),
+        (k / lambda) * pow(x_val / lambda, k - 1.0) * exp(-pow(x_val / lambda, k)),
+        0.0)
+}
+
+// ============================================================
+// FUNCIONES DE ERROR Y ESPECIALES
+// ============================================================
+
+// Error function: erf(x) ≈ 1 - (1/t)^n*exp(-x²) aproximación de Abramowitz
+fn "erf_approx"(x_val) { tanh_approx(1.2533141373 * x_val) }
+
+// Función Gamma aproximada (Stirling): Γ(n) ≈ √(2π/n) * (n/e)^n
+fn "gamma_stirling"(n) { sqrt(PI2 / (n + EPSILON)) * pow((n + EPSILON) / E, n) }
+
+// Función Beta: B(a,b) = Γ(a)Γ(b)/Γ(a+b)
+fn "beta_approx"(a, b) {
+    gamma_stirling(a) * gamma_stirling(b) / (gamma_stirling(a + b) + EPSILON)
+}
+
+// ============================================================
+// ESTADÍSTICAS DESCRIPTIVAS
+// ============================================================
+
+fn "variance"(x1, x2, x3, mu)  { (sq(x1-mu) + sq(x2-mu) + sq(x3-mu)) / 3.0 }
+fn "std_dev"(x1, x2, x3, mu)   { sqrt(variance(x1, x2, x3, mu)) }
+
+// Coeficiente de variación: CV = σ/μ
+fn "coef_var"(sigma, mu) { sigma / (abs(mu) + EPSILON) }
+
+// Skewness (asimetría) de 3 puntos
+fn "skewness3"(x1, x2, x3, mu, sigma) {
+    (cb(x1 - mu) + cb(x2 - mu) + cb(x3 - mu)) / (3.0 * cb(sigma + EPSILON))
+}
+
+// ============================================================
+// PROCESADO DE SEÑALES PROBABILÍSTICO
+// ============================================================
+
+// Entropía de Shannon para distribución discreta de 3 estados
+fn "entropy3"(p1, p2, p3) {
+    -select(step(EPSILON, p1), p1 * log(p1 + EPSILON) / log(2.0 + EPSILON), 0.0) +
+    -select(step(EPSILON, p2), p2 * log(p2 + EPSILON) / log(2.0 + EPSILON), 0.0) +
+    -select(step(EPSILON, p3), p3 * log(p3 + EPSILON) / log(2.0 + EPSILON), 0.0)
+}
+
+// Información mutua (aproximada)
+fn "mutual_info"(p_xy, p_x, p_y) {
+    select(step(EPSILON, p_xy), p_xy * log((p_xy + EPSILON) / (p_x * p_y + EPSILON)), 0.0)
+}
+
+// Divergencia KL: DKL(P||Q) = Σ p(x) log(p(x)/q(x))
+fn "kl_divergence"(p_x, q_x) {
+    select(step(EPSILON, p_x), p_x * log((p_x + EPSILON) / (q_x + EPSILON)), 0.0)
+}
+
+// ============================================================
+// DISTRIBUCIONES ESPACIALES
+// ============================================================
+
+// Kernel de densidad gaussiano para 2D (estima densidad en punto)
+fn "kde2d"(sample_x, sample_y, query_x, query_y, bandwidth) {
+    normal_pdf(query_x, sample_x, bandwidth) * normal_pdf(query_y, sample_y, bandwidth)
+}
+
+// ============================================================
+// SDFs PROBABILÍSTICAS (superficies de iso-probabilidad)
+// ============================================================
+
+// Superficie de iso-probabilidad gaussiana 3D (elipsoide de confianza)
+def "gaussian_isosurface"(mu_x, mu_y, mu_z, sigma_val, iso_level) {
+    sdf: custom(normal_pdf(x, mu_x, sigma_val) * normal_pdf(y, mu_y, sigma_val) * normal_pdf(z, mu_z, sigma_val) - iso_level);
+}

@@ -1,0 +1,176 @@
+// ============================================================
+// LIBRERÍA: std_bio_development.hm
+// CAPA:     Biología (6.3 - Biología del Desarrollo y Morfogénesis)
+// VERSIÓN:  1.0
+// FUENTE:   "Principles of Development" (Wolpert), "The Chemical Basis of Morphogenesis" (Turing)
+// DEPS:     std_math_core.hm, std_math_calculus.hm, std_math_dynamics.hm
+// DEPS:     std_bio_cell.hm, std_bio_genetics.hm
+// FECHA:    6 de junio de 2026
+// ============================================================
+
+// Importar dependencias
+import "std_math_core.hm";
+import "std_math_calculus.hm";
+import "std_math_dynamics.hm";
+
+// BIOLOGÍA DEL DESARROLLO Y MORFOGÉNESIS: Estudio de los procesos que controlan
+// el crecimiento, diferenciación y organización espacial de células y tejidos
+// durante el desarrollo embrionario y regenerativo.
+
+// ============================================================
+// CONSTANTES DEL DESARROLLO
+// ============================================================
+
+let DIFFUSION_COEFFICIENT_TYPICAL = 1.0e-10;    // m²/s - coeficiente de difusión típico
+let REACTION_RATE_TYPICAL = 0.1;               // 1/s - tasa de reacción típica
+let PATTERN_WAVELENGTH_TYPICAL = 1.0;          // m - longitud de onda de patrón típica
+
+// Constantes de modelos de desarrollo
+let TURING_PATTERN_SCALE = 1.0;                // Escala para patrones de Turing
+let MORPHOGEN_GRADIENT_SCALE = 1.0;            // Escala para gradientes morfogénicos
+
+// ============================================================
+// INTERFAZ PÚBLICA - PATRONES DE TURING (fn)
+// ============================================================
+
+// --- Sistema de Reacción-Difusión Básico (Modelo de Turing) ---
+// ∂u/∂t = D_u∇²u + f(u,v), ∂v/∂t = D_v∇²v + g(u,v)
+// Versión estacionaria simplificada: u = A·sin(k·x)
+fn "turing_pattern_amplitude"(position_x, wavelength, pattern_amplitude, phase) {
+    pattern_amplitude * sin(2.0 * pi * position_x / wavelength + phase)
+}
+
+// --- Patrón de Estrías (Stripe Pattern) ---
+// Formación de bandas periódicas
+fn "stripe_pattern"(position_x, stripe_width, spacing, stripe_amplitude) {
+    stripe_amplitude * (sin(2.0 * pi * position_x / (stripe_width + spacing)) * 0.5 + 0.5)
+}
+
+// --- Patrón de Manchas (Spot Pattern) ---
+// Formación de puntos periódicos
+fn "spot_pattern"(position_x, position_y, spot_radius, spot_spacing, spot_amplitude) {
+    sqrt(position_x * position_x + position_y * position_y);
+    spot_amplitude * exp(-(position_x * position_x + position_y * position_y) / (spot_radius * spot_radius))
+}
+
+// ============================================================
+// INTERFAZ PÚBLICA - GRADIENTES MORFOGÉNICOS (fn)
+// ============================================================
+
+// --- Gradiente Exponencial (Modelo Francés) ---
+// C(x) = C₀·exp(-x/λ)
+fn "exponential_gradient"(position_x, source_concentration, decay_length) {
+    source_concentration * exp(-abs(position_x) / decay_length)
+}
+
+// --- Gradiente Lineal (Modelo Simple) ---
+// C(x) = C₀·(1 - x/L) para 0 ≤ x ≤ L
+fn "linear_gradient"(position_x, source_concentration, gradient_length) {
+    source_concentration * max(0.0, 1.0 - abs(position_x) / gradient_length)
+}
+
+// --- Gradiente con Umbral (Activación de Genes) ---
+// Expresión génica = 1 si C(x) > threshold, 0 si no
+fn "thresholded_gradient_response"(morphogen_concentration, activation_threshold, steepness) {
+    1.0 / (1.0 + exp(-steepness * (morphogen_concentration - activation_threshold)))
+}
+
+// ============================================================
+// INTERFAZ PÚBLICA - DESARROLLO EMBRIONARIO (fn)
+// ============================================================
+
+// --- Segmentación (Somito-génesis) ---
+// Formación de segmentos periódicos durante el desarrollo
+fn "segmentation_clock"(time, period, phase_offset, segment_count) {
+    sin(2.0 * pi * time / period + phase_offset) * 0.5 + 0.5
+}
+
+// --- Especificación del Eje Corporal (A-P, D-V) ---
+// Gradiente de posición a lo largo del eje
+fn "body_axis_specification"(position_along_axis, axis_length, anterior_strength, posterior_strength) {
+    anterior_strength * (1.0 - position_along_axis / axis_length) + posterior_strength * (position_along_axis / axis_length)
+}
+
+// --- Modelo de Campo de Desarrollo (Wolpert) ---
+// Especificación posicional basada en gradientes
+fn "positional_information"(position_x, field_size, pattern_type) {
+    // pattern_type: 0 = anterior-posterior, 1 = dorsal-ventral, 2 = proximal-distal
+    position_x / field_size * (1.0 + pattern_type * 0.1)
+}
+
+// ============================================================
+// INTERFAZ PÚBLICA - MORFOGÉNESIS TISULAR (fn)
+// ============================================================
+
+// --- Plegamiento Epitelial ---
+// Deformación de láminas celulares
+fn "epithelial_folding"(position_x, fold_frequency, fold_amplitude, tissue_thickness) {
+    tissue_thickness + fold_amplitude * sin(fold_frequency * position_x)
+}
+
+// --- Invaginación (Gastrulación) ---
+// Formación de hendiduras y bolsillos
+fn "invagination_depth"(radial_distance, invagination_strength, opening_angle) {
+    invagination_strength * exp(-radial_distance * radial_distance) * sin(opening_angle)
+}
+
+// --- Migración Celular ---
+// Movimiento dirigido de células
+fn "cell_migration_trajectory"(time, migration_speed, direction_angle, persistence_time) {
+    migration_speed * time * cos(direction_angle) * exp(-time / persistence_time)
+}
+
+// ============================================================
+// INTERFAZ PÚBLICA - SDFs DE DESARROLLO (def)
+// ============================================================
+
+// --- Embrión Temprano (Blástula) ---
+def "early_embryo_blastula"(embryo_radius, cell_count, intensity_threshold) {
+    sdf: sphere([0, 0, 0], embryo_radius) * (1.0 + 0.1 * sin(cell_count * 0.5))
+}
+
+// --- Patrón de Segmentación (Somitos) ---
+def "segmentation_pattern"(segment_count, segment_size, intensity_threshold) {
+    sdf: custom(abs(y) - segment_size * 0.5 + 0.1 * sin(x * segment_count * 0.5))
+}
+
+// --- Plegamiento Tisular ---
+def "tissue_folding_pattern"(fold_frequency, fold_depth, intensity_threshold) {
+    sdf: custom(z - 0.1 * sin(x * fold_frequency) * fold_depth)
+}
+
+// ============================================================
+// EJEMPLOS DE USO
+// ============================================================
+
+/*
+// EJEMPLO 1: Patrón de Turing
+let pattern = turing_pattern_amplitude(1.0, 2.0, 0.5, 0.0);
+
+// EJEMPLO 2: Gradiente morfogénico
+let gradient = exponential_gradient(0.5, 1.0, 2.0);
+
+// EJEMPLO 3: Segmentación
+let segment = segmentation_clock(10.0, 5.0, 0.0, 12);
+
+// EJEMPLO 4: Embrión temprano
+instance "embryo_example" {
+    position: [0, 0, 0];
+    sdf: early_embryo_blastula(0.3, 16);
+}
+*/
+
+// ============================================================
+// NOTAS PARA USUARIOS
+// ============================================================
+
+// 1. La morfogénesis es el proceso de formación de patrones y estructuras
+// 2. Los modelos de Turing explican patrones periódicos en biología
+// 3. Los gradientes morfogénicos proporcionan información posicional
+// 4. El desarrollo embrionario sigue programas genéticos conservados
+// 5. La regeneración repite aspectos del desarrollo embrionario
+
+// ============================================================
+// "Cómo crece un organismo a partir de una sola célula es uno de los
+//  misterios más profundos y hermosos de la biología."
+// ============================================================

@@ -1,0 +1,108 @@
+// ============================================================
+// LIBRERÍA: std_chem_polymer.hm
+// CAPA:     3.6 — Química de Polímeros y Materiales Blandos
+// VERSIÓN:  0.2
+// FUENTE:   Flory, de Gennes, teoría de cadenas estadísticas
+// DEPS:     std_math_core.hm, std_math_probability.hm, std_math_noise.hm
+// FECHA:    6 de junio de 2026
+// ============================================================
+
+import "std_math_core.hm";
+import "std_math_probability.hm";
+import "std_math_noise.hm";
+
+// ============================================================
+// ESTADÍSTICA DE CADENAS POLIMÉRICAS
+// ============================================================
+
+// Radio de giro (random walk): Rg = l * sqrt(N / 6)
+fn "radius_of_gyration"(l_bond, N_segments) {
+    l_bond * sqrt(N_segments / 6.0 + EPSILON)
+}
+
+// Radio de extremo a extremo (RMS): R_ee = l * sqrt(N)
+fn "end_to_end_rms"(l_bond, N_segments) { l_bond * sqrt(N_segments + EPSILON) }
+
+// Longitud de persistencia (cadena semi-rígida): Lp
+fn "persistence_length"(kappa_bend, kB, T_temp) { kappa_bend / (kB * T_temp + EPSILON) }
+
+// Distribución de extremo a extremo (gaussiana): P(R) = (3/(2πNl²))^(3/2) * exp(-3R²/(2Nl²))
+fn "polymer_end_to_end_prob"(R_val, l_bond, N_segments) {
+    pow(3.0 / (PI2 * N_segments * sq(l_bond) + EPSILON), 1.5) *
+    exp(-3.0 * sq(R_val) / (2.0 * N_segments * sq(l_bond) + EPSILON))
+}
+
+// ============================================================
+// TERMODINÁMICA DE FLORY-HUGGINS
+// ============================================================
+
+// Energía de mezcla de Flory-Huggins: ΔGmix = nkT(φ1*ln(φ1) + φ2*ln(φ2)/N + χ*φ1*φ2)
+fn "flory_huggins_dG"(phi1, N_poly, chi_param, kT) {
+    kT * (phi1 * log(phi1 + EPSILON) +
+          (1.0 - phi1) * log(1.0 - phi1 + EPSILON) / (N_poly + EPSILON) +
+          chi_param * phi1 * (1.0 - phi1))
+}
+
+// Parámetro crítico de Flory: χc = (1 + 1/sqrt(N))² / 2
+fn "flory_chi_critical"(N_poly) {
+    sq(1.0 + 1.0 / sqrt(N_poly + EPSILON)) * 0.5
+}
+
+// ============================================================
+// MECÁNICA DE GELES Y ELASTÓMEROS
+// ============================================================
+
+// Módulo de elasticidad de red (teoría affine): G = NkT (N = densidad de cadenas)
+fn "rubber_modulus"(chain_density, kB, T_temp) { chain_density * kB * T_temp }
+
+// Presión osmótica de Flory (en solución diluída): Π = kT(c/N + c²*B2)
+fn "osmotic_pressure"(conc, N_poly, B2_virial, kB, T_temp) {
+    kB * T_temp * (conc / (N_poly + EPSILON) + B2_virial * sq(conc))
+}
+
+// ============================================================
+// SDFs DE POLÍMEROS Y MATERIALES BLANDOS
+// ============================================================
+
+// Cadena polimérica (tubo sinuoso con ruido FBM)
+def "polymer_chain"(chain_len, tube_r, noise_scale, noise_amp) {
+    sdf: custom(
+        sqrt(
+            sq(y - noise_amp * fbm2d_4(x * noise_scale, z * noise_scale)) +
+            sq(z - noise_amp * fbm2d_4(x * noise_scale + 5.0, y * noise_scale))
+        ) - tube_r
+    );
+}
+
+// Red polimérica entrecruzada (foam sponge)
+def "polymer_network"(cell_size, strand_radius) {
+    sdf: custom(
+        min(
+            min(abs(frac(x / cell_size) - 0.5) - strand_radius,
+                abs(frac(y / cell_size) - 0.5) - strand_radius),
+            abs(frac(z / cell_size) - 0.5) - strand_radius
+        )
+    );
+}
+
+// Glóbulo colapso (esfera densa con interior FBM)
+def "polymer_globule"(r_globule, d_scale) {
+    sdf: custom(
+        sqrt(x*x + y*y + z*z) - r_globule * (1.0 + 0.1 * fbm3d_4(x * d_scale, y * d_scale, z * d_scale))
+    );
+}
+
+// Micela esférica (capa exterior + núcleo interior)
+def "micelle"(r_core, shell_thick) {
+    sdf: custom(abs(sqrt(x*x + y*y + z*z) - r_core) - shell_thick);
+}
+
+// Vesícula bicapa (doble membrana esférica)
+def "vesicle"(r_ves, membrane_thick, gap) {
+    sdf: custom(
+        min(
+            abs(sqrt(x*x + y*y + z*z) - r_ves) - membrane_thick,
+            abs(sqrt(x*x + y*y + z*z) - (r_ves - gap - membrane_thick * 2.0)) - membrane_thick
+        )
+    );
+}

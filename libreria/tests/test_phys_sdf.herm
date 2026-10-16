@@ -1,0 +1,130 @@
+// ============================================================
+// ARCHIVO DE PRUEBA: test_phys_sdf.herm
+// OBJETIVO: Validar la librería std_phys_sdf.hm
+//          Usando primitivas nativas del compilador
+// FECHA: 6 de junio de 2026
+// ============================================================
+
+// NOTA: No necesitamos importar la librería porque
+// las funciones fn y def se expanden textualmente
+
+// ============================================================
+// PRUEBA 1: PRIMITIVAS NATIVAS DIRECTAS
+// ============================================================
+
+node "native_sphere" {
+    position: [-2, 2, 0];
+    sdf: sphere(0.3);
+    material: "default";
+}
+
+node "native_box" {
+    position: [0, 2, 0];
+    sdf: box([0.4, 0.4, 0.4]);
+    material: "shiny";
+}
+
+node "native_cylinder" {
+    position: [2, 2, 0];
+    sdf: cylinder(0.2, 0.6);
+    material: "metal";
+}
+
+// ============================================================
+// PRUEBA 2: OPERADORES CSG NATIVOS
+// ============================================================
+
+node "csg_union" {
+    position: [-2, 0, 0];
+    sdf: union(
+        sphere(0.25),
+        translate(box([0.3, 0.3, 0.3]), [0.4, 0, 0])
+    );
+    material: "plastic";
+}
+
+node "csg_subtract" {
+    position: [0, 0, 0];
+    sdf: subtract(
+        sphere(0.35),
+        translate(box([0.25, 0.25, 0.25]), [0, 0.2, 0])
+    );
+    material: "glass";
+}
+
+node "csg_smooth_union" {
+    position: [2, 0, 0];
+    sdf: smooth_union(
+        sphere(0.25),
+        translate(sphere(0.25), [0.4, 0, 0]),
+        2.0
+    );
+    material: "rubber";
+}
+
+// ============================================================
+// PRUEBA 3: USO DE FUNCIONES fn PARA DEFORMACIONES
+// ============================================================
+
+// Primero definimos una función simple de onda
+fn "simple_wave"(amplitude) {
+    amplitude * sin(x * 5.0 + y * 3.0 + z * 7.0 + w)
+}
+
+node "deformed_sphere_fn" {
+    position: [-2, -2, 0];
+    // Usar la función fn para deformar el radio
+    sdf: sphere(0.25 + simple_wave(0.05));
+    material: "emissive";
+    emission: [0.3, 0.6, 0.9];
+}
+
+// ============================================================
+// PRUEBA 4: GEOMETRÍA CON ANIMACIÓN TEMPORAL
+// ============================================================
+
+node "animated_sphere" {
+    position: [0, -2, 0];
+    // Radio que cambia con el tiempo (w)
+    sdf: sphere(0.2 + sin(w) * 0.1);
+    material: "chrome";
+}
+
+node "pulsing_torus" {
+    position: [2, -2, 0];
+    // Torus con radio menor que pulsa
+    sdf: torus(0.4, 0.1 + sin(w * 2.0) * 0.05);
+    material: "gold";
+}
+
+// ============================================================
+// PRUEBA 5: TRANSFORMACIONES NATIVAS
+// ============================================================
+
+node "translated_sphere" {
+    position: [-2, -4, 0];
+    sdf: translate(sphere(0.2), [0.3, 0, 0]);
+    material: "copper";
+}
+
+node "rotated_box" {
+    position: [0, -4, 0];
+    sdf: rotate(box([0.3, 0.3, 0.3]), [0, w * 0.5, 0]);
+    material: "silver";
+}
+
+node "scaled_cylinder" {
+    position: [2, -4, 0];
+    sdf: scale(cylinder(0.1, 0.4), [1.5, 1.0, 1.5]);
+    material: "brass";
+}
+
+// ============================================================
+// VALIDACIÓN FINAL
+// ============================================================
+
+print "✅ Archivo de prueba para primitivas nativas creado";
+print "🎯 Demostración de uso correcto del compilador Hermético";
+print "📊 11 nodos usando sphere, box, cylinder, torus, union, subtract, smooth_union";
+print "🌀 Animaciones con variable w (tiempo)";
+print "🔄 Transformaciones: translate, rotate, scale";

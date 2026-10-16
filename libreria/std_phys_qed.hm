@@ -1,0 +1,64 @@
+// ============================================================
+// LIBRERÍA: std_phys_qed.hm
+// CAPA:     2.3 — Electrodinámica Cuántica (QED)
+// VERSIÓN:  0.2
+// FUENTE:   Feynman, Schwinger, Tomonaga
+// DEPS:     std_math_core.hm, std_phys_sdf.hm, std_phys_relativity.hm
+// FECHA:    6 de junio de 2026
+// ============================================================
+
+import "std_math_core.hm";
+import "std_phys_sdf.hm";
+import "std_phys_relativity.hm";
+
+// ============================================================
+// CONSTANTES QED
+// ============================================================
+
+// Constante de estructura fina: α ≈ 1/137
+let ALPHA_FINE = 0.0072973525693;
+
+// ============================================================
+// SECCIONES EFICACES (Aproximaciones en nivel árbol)
+// ============================================================
+
+// Dispersión de Coulomb e- e- (Møller scattering, límite no relativista)
+// dσ/dΩ ∝ α² / (m² v⁴ sin⁴(θ/2))
+fn "moller_cross_section_nr"(v_val, theta, mass) {
+    sq(ALPHA_FINE) / (sq(mass) * pow(v_val, 4.0) * pow(sin(theta * 0.5) + EPSILON, 4.0))
+}
+
+// Dispersión e+ e- → μ+ μ- (Bhabha/Aniquilación a alta energía s >> m²)
+// σ = 4π α² / (3 s)  donde s es el centro de masa de energía al cuadrado
+fn "annihilation_cross_section"(s_mandelstam) {
+    4.0 * PI * sq(ALPHA_FINE) / (3.0 * s_mandelstam + EPSILON)
+}
+
+// Dispersión Compton (fotón - electrón, fórmula de Klein-Nishina simplificada para baja energía)
+// σ_Th = 8π/3 * r_e² (Sección transversal de Thomson)
+fn "thomson_cross_section"(r_e) { 8.0 * PI / 3.0 * sq(r_e) }
+
+// Cambio de longitud de onda Compton: Δλ = (h/mc)(1 - cosθ)
+fn "compton_shift"(theta, mass) { (PLANCK / (mass * SPEED_OF_LIGHT)) * (1.0 - cos(theta)) }
+
+// ============================================================
+// CORRECCIONES CUÁNTICAS (Lazos - Loops)
+// ============================================================
+
+// Polarización del vacío (efecto de par e+e- virtual en potencial de Coulomb)
+// Potencial de Uehling (aproximación para r >> 1/m)
+fn "uehling_potential"(q_charge, r_val, m_e) {
+    (-ALPHA_FINE / r_val) * (1.0 + (ALPHA_FINE / (4.0 * PI * sqrt(PI))) * exp(-2.0 * m_e * r_val) / pow(m_e * r_val + EPSILON, 1.5))
+}
+
+// Momento magnético anómalo del electrón: g/2 = 1 + α/2π
+fn "anomalous_magnetic_moment"() { 1.0 + ALPHA_FINE / (2.0 * PI) }
+
+// ============================================================
+// SDFs DE QED
+// ============================================================
+
+// Diagrama de vértice primitivo (intersección difusa probabilística)
+def "feynman_vertex"(sc_val) {
+    sdf: custom(sqrt(sq(x) + sq(y) + sq(z)) - sc_val * exp(-sqrt(sq(x) + sq(y))));
+}

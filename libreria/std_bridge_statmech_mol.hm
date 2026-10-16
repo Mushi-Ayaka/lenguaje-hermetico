@@ -1,0 +1,560 @@
+// ============================================================
+// LIBRERÍA: std_bridge_statmech_mol.hm
+// CAPA:     Intermediario Física-Química (3.6 - Mecánica Estadística Molecular)
+// VERSIÓN:  1.0
+// FUENTE:   "Molecular Statistical Mechanics" by McQuarrie
+// DEPS:     std_math_core.hm, std_math_algebra.hm, std_math_calculus.hm
+// DEPS:     std_phys_statmech.hm, std_bridge_atomic.hm, std_bridge_quantchem.hm
+// FECHA:    6 de junio de 2026
+// ============================================================
+
+// MECÁNICA ESTADÍSTICA MOLECULAR: Aplicación de mecánica estadística a sistemas moleculares,
+// funciones de partición molecular, termodinámica de gases, líquidos, soluciones
+
+// ============================================================
+// CONSTANTES FUNDAMENTALES
+// ============================================================
+
+let BOLTZMANN_MOLSTAT = 1.380649e-23;         // k_B (J/K)
+let BOLTZMANN_EV_MOLSTAT = 8.617333262e-5;    // k_B (eV/K)
+let GAS_CONSTANT_MOLSTAT = 8.314462618;       // R = N_A·k_B (J/(mol·K))
+let AVOGADRO_MOLSTAT = 6.02214076e23;         // N_A (mol⁻¹)
+let PLANCK_MOLSTAT = 6.62607015e-34;          // h (J·s)
+
+// ============================================================
+// INTERFAZ PÚBLICA - FUNCIONES DE PARTICIÓN MOLECULARES (fn)
+// ============================================================
+
+// --- Función de Partición Molecular Total ---
+// q = q_trans·q_rot·q_vib·q_elec
+fn "total_molecular_partition_function"(translational, rotational, vibrational, electronic) {
+    translational * rotational * vibrational * electronic
+}
+
+// --- Función de Partición Translacional ---
+// q_trans = (2πmkT/h²)^(3/2)·V
+fn "translational_partition_function"(mass, temperature, volume) {
+    let term = 2.0 * pi * mass * BOLTZMANN_MOLSTAT * temperature / 
+               (PLANCK_MOLSTAT * PLANCK_MOLSTAT);
+    pow(term, 1.5) * volume
+}
+
+// --- Función de Partición Rotacional (Molécula Lineal) ---
+// q_rot = T/(σ·Θ_rot)
+fn "rotational_partition_function_linear"(temperature, rotational_temperature, symmetry_number) {
+    temperature / (symmetry_number * rotational_temperature + 1e-6)
+}
+
+// --- Función de Partición Rotacional (Molécula No Lineal) ---
+// q_rot = √(π/σ)·(T³/(Θ_A·Θ_B·Θ_C))^(1/2)
+fn "rotational_partition_function_nonlinear"(temperature, rotational_temperatures, symmetry_number) {
+    let product = 1.0;
+    for i in range(0, len(rotational_temperatures)) {
+        product = product * rotational_temperatures[i];
+    }
+    sqrt(pi / symmetry_number) * pow(temperature*temperature*temperature / (product + 1e-6), 0.5)
+}
+
+// --- Función de Partición Vibracional (Oscilador Armónico) ---
+// q_vib = 1/(1 - exp(-Θ_vib/T))
+fn "vibrational_partition_function_harmonic"(vibrational_temperature, temperature) {
+    1.0 / (1.0 - exp(-vibrational_temperature / (temperature + 1e-6)))
+}
+
+// --- Función de Partición Vibracional (Múltiples Modos) ---
+// q_vib_total = Π_i 1/(1 - exp(-Θ_vib_i/T))
+fn "total_vibrational_partition_function"(vibrational_temperatures, temperature) {
+    let product = 1.0;
+    for i in range(0, len(vibrational_temperatures)) {
+        product = product * vibrational_partition_function_harmonic(vibrational_temperatures[i], temperature);
+    }
+    product
+}
+
+// --- Función de Partición Electrónica ---
+// q_elec = Σ_i g_i·exp(-ε_i/(kT))
+fn "electronic_partition_function"(electronic_energies, degeneracies, temperature) {
+    let sum = 0.0;
+    for i in range(0, min(len(electronic_energies), len(degeneracies))) {
+        sum = sum + degeneracies[i] * exp(-electronic_energies[i] / (BOLTZMANN_EV_MOLSTAT * temperature));
+    }
+    sum
+}
+
+// ============================================================
+// INTERFAZ PÚBLICA - TERMODINÁMICA MOLECULAR (fn)
+// ============================================================
+
+// --- Energía Interna Molecular ---
+// U = kT²·(∂lnq/∂T)_V
+fn "molecular_internal_energy"(partition_function, temperature) {
+    let kT = BOLTZMANN_MOLSTAT * temperature;
+    let derivative = (log(partition_function * 1.1 + 1e-6) - log(partition_function + 1e-6)) / (0.1 * temperature);
+    kT * kT * derivative
+}
+
+// --- Entropía Translacional (Sackur-Tetrode) ---
+// S_trans = Nk·[ln(q_trans·e/N) + 5/2]
+fn "sackur_tetrode_entropy"(translational_partition, number_of_molecules, temperature) {
+    let term = translational_partition * exp(1.0) / (number_of_molecules + 1e-6);
+    number_of_molecules * BOLTZMANN_MOLSTAT * (log(term + 1e-6) + 2.5)
+}
+
+// --- Entropía Rotacional ---
+fn "rotational_entropy"(rotational_partition, temperature, symmetry_number) {
+    let kT = BOLTZMANN_MOLSTAT * temperature;
+    kT * (log(rotational_partition) + 1.0)
+}
+
+// --- Entropía Vibracional ---
+fn "vibrational_entropy"(vibrational_partition, vibrational_temperature, temperature) {
+    let x = vibrational_temperature / (temperature + 1e-6);
+    let term = x / (exp(x) - 1.0) - log(1.0 - exp(-x));
+    BOLTZMANN_MOLSTAT * term
+}
+
+// --- Capacidad Calorífica a Volumen Constante (Molecular) ---
+// C_V = (∂U/∂T)_V = Σ_α C_V^α
+fn "molecular_heat_capacity"(translational_cv, rotational_cv, vibrational_cv, electronic_cv) {
+    translational_cv + rotational_cv + vibrational_cv + electronic_cv
+}
+
+// --- Capacidad Calorífica Translacional ---
+// C_V_trans = (3/2)·Nk
+fn "translational_heat_capacity"(number_of_molecules) {
+    1.5 * number_of_molecules * BOLTZMANN_MOLSTAT
+}
+
+// --- Capacidad Calorífica Rotacional (Lineal) ---
+// C_V_rot = Nk
+fn "rotational_heat_capacity_linear"(number_of_molecules) {
+    number_of_molecules * BOLTZMANN_MOLSTAT
+}
+
+// --- Capacidad Calorífica Rotacional (No Lineal) ---
+// C_V_rot = (3/2)·Nk
+fn "rotational_heat_capacity_nonlinear"(number_of_molecules) {
+    1.5 * number_of_molecules * BOLTZMANN_MOLSTAT
+}
+
+// --- Capacidad Calorífica Vibracional (Oscilador) ---
+// C_V_vib = Nk·(Θ_vib/T)²·exp(Θ_vib/T)/(exp(Θ_vib/T)-1)²
+fn "vibrational_heat_capacity_harmonic"(number_of_molecules, vibrational_temperature, temperature) {
+    let x = vibrational_temperature / (temperature + 1e-6);
+    let term = x*x * exp(x) / ((exp(x) - 1.0)*(exp(x) - 1.0) + 1e-6);
+    number_of_molecules * BOLTZMANN_MOLSTAT * term
+}
+
+// ============================================================
+// INTERFAZ PÚBLICA - GASES MOLECULARES (fn)
+// ============================================================
+
+// --- Distribución de Velocidades de Maxwell-Boltzmann Molecular ---
+// f(v) = 4π·(m/(2πkT))^(3/2)·v²·exp(-mv²/(2kT))
+fn "maxwell_boltzmann_molecular"(velocity, mass, temperature) {
+    let prefactor = 4.0 * pi * pow(mass / (2.0 * pi * BOLTZMANN_MOLSTAT * temperature), 1.5);
+    prefactor * velocity * velocity * exp(-mass * velocity * velocity / (2.0 * BOLTZMANN_MOLSTAT * temperature))
+}
+
+// --- Velocidad Más Probable ---
+// v_mp = √(2kT/m)
+fn "most_probable_speed"(mass, temperature) {
+    sqrt(2.0 * BOLTZMANN_MOLSTAT * temperature / (mass + 1e-6))
+}
+
+// --- Velocidad Promedio ---
+// v_avg = √(8kT/(πm))
+fn "average_speed"(mass, temperature) {
+    sqrt(8.0 * BOLTZMANN_MOLSTAT * temperature / (pi * mass + 1e-6))
+}
+
+// --- Velocidad Cuadrática Media ---
+// v_rms = √(3kT/m)
+fn "root_mean_square_speed"(mass, temperature) {
+    sqrt(3.0 * BOLTZMANN_MOLSTAT * temperature / (mass + 1e-6))
+}
+
+// --- Camino Libre Medio (Gas Diluido) ---
+// λ = 1/(√2·n·σ)
+fn "mean_free_path"(number_density, collision_sigma_cs) {
+    1.0 / (sqrt(2.0) * number_density * collision_sigma_cs + 1e-6)
+}
+
+// --- Frecuencia de Colisiones ---
+// Z = √2·n·σ·v_avg
+fn "collision_frequency"(number_density, collision_sigma_cs, average_speed) {
+    sqrt(2.0) * number_density * collision_sigma_cs * average_speed
+}
+
+// ============================================================
+// INTERFAZ PÚBLICA - TEORÍA CINÉTICA DE GASES (fn)
+// ============================================================
+
+// --- Presión Cinética ---
+// P = (1/3)·n·m·v_rms²
+fn "kinetic_pressure"(number_density, mass, rms_speed) {
+    (1.0/3.0) * number_density * mass * rms_speed * rms_speed
+}
+
+// --- Coeficiente de Difusión (Gas) ---
+// D = (1/3)·λ·v_avg
+fn "gas_diffusion_coefficient"(mean_free_path, average_speed) {
+    (1.0/3.0) * mean_free_path * average_speed
+}
+
+// --- Viscosidad de Gas ---
+// η = (1/3)·n·m·λ·v_avg
+fn "gas_viscosity"(number_density, mass, mean_free_path, average_speed) {
+    (1.0/3.0) * number_density * mass * mean_free_path * average_speed
+}
+
+// --- Conductividad Térmica de Gas ---
+// κ = (1/3)·n·λ·v_avg·C_V
+fn "gas_thermal_conductivity"(number_density, mean_free_path, average_speed, heat_capacity) {
+    (1.0/3.0) * number_density * mean_free_path * average_speed * heat_capacity
+}
+
+// --- Ley de Graham (Efusión) ---
+// v₁/v₂ = √(m₂/m₁)
+fn "grahams_law_effusion"(mass1, mass2) {
+    sqrt(mass2 / (mass1 + 1e-6))
+}
+
+// ============================================================
+// INTERFAZ PÚBLICA - SISTEMAS DE INTERACCIÓN (fn)
+// ============================================================
+
+// --- Potencial de Interacción Molecular (Lennard-Jones) ---
+// V(r) = 4ε·[(σ/r)^12 - (σ/r)^6]
+fn "lennard_jones_potential"(distance, epsilon, sigma) {
+    4.0 * epsilon * (pow(sigma/(distance + 1e-6), 12.0) - pow(sigma/(distance + 1e-6), 6.0))
+}
+
+// --- Integral del Virial (Segundo Coeficiente) ---
+// B(T) = 2π·∫_0^∞ [1 - exp(-V(r)/(kT))]·r² dr
+fn "second_virial_coefficient"(temperature, potential_function) {
+    // Simplificado: B(T) ∝ 1/T para potencial duro
+    let sigma = 1.0;  // diámetro característico
+    let epsilon = 1.0;  // profundidad del pozo
+    
+    let reduced_temperature = temperature / (epsilon / BOLTZMANN_MOLSTAT + 1e-6);
+    (2.0 * pi / 3.0) * sigma * sigma * sigma * (1.0 - 1.0/reduced_temperature)
+}
+
+// --- Función de Distribución Radial (g(r)) ---
+// Probabilidad de encontrar molécula a distancia r
+fn "radial_distribution_function"(distance, temperature, density, potential) {
+    let beta = 1.0 / (BOLTZMANN_MOLSTAT * temperature);
+    exp(-beta * potential(distance)) * (1.0 + density * 0.1)  // Aproximación
+}
+
+// --- Ecuación de Estado Virial ---
+// P/(ρkT) = 1 + B(T)·ρ + C(T)·ρ² + ...
+fn "virial_equation_of_state"(density, temperature, virial_coefficients) {
+    let sum = 1.0;
+    for i in range(0, len(virial_coefficients)) {
+        sum = sum + virial_coefficients[i] * pow(density, i+1);
+    }
+    density * BOLTZMANN_MOLSTAT * temperature * sum
+}
+
+// ============================================================
+// INTERFAZ PÚBLICA - SDFs ESTADÍSTICAS MOLECULARES (def)
+// ============================================================
+
+// --- Distribución de Velocidades Molecular 3D ---
+def "molecular_velocity_distribution_3d"(temperature, mass, intensity_threshold) {
+    // Distribución de Maxwell-Boltzmann en espacio de velocidades
+    let vx = x;
+    let vy = y;
+    let vz = z;
+    let speed_squared = vx*vx + vy*vy + vz*vz;
+    
+    let distribution = exp(-mass * speed_squared / (2.0 * BOLTZMANN_MOLSTAT * temperature));
+    
+    // Esfera de velocidad más probable
+    let v_mp = most_probable_speed(mass, temperature);
+    let most_probable_sphere = sphere([0, 0, 0], v_mp * 0.3);
+    
+    sdf: union(custom(distribution - intensity_threshold), most_probable_sphere);
+}
+
+// --- Funciones de Partición Molecular Visualizadas ---
+def "molecular_partition_functions_visualization"(temperature, molecular_parameters, intensity_threshold) {
+    // q_trans, q_rot, q_vib como funciones de T
+    let T = sqrt(x*x) * 100.0 + 100.0;  // Temperatura (K)
+    
+    let mass = molecular_parameters[0];
+    let volume = molecular_parameters[1];
+    let rot_temp = molecular_parameters[2];
+    let vib_temp = molecular_parameters[3];
+    
+    let q_trans = translational_partition_function(mass, T, volume);
+    let q_rot = rotational_partition_function_linear(T, rot_temp, 1.0);
+    let q_vib = vibrational_partition_function_harmonic(vib_temp, T);
+    
+    // Contribuciones normalizadas
+    let trans_contrib = log(q_trans + 1e-6) * 0.1;
+    let rot_contrib = log(q_rot + 1e-6) * 0.1;
+    let vib_contrib = log(q_vib + 1e-6) * 0.1;
+    
+    sdf: custom(y - trans_contrib - rot_contrib - vib_contrib - intensity_threshold);
+}
+
+// --- Potencial de Lennard-Jones y Distribución Radial ---
+def "lennard_jones_potential_visualization"(epsilon, sigma, temperature, intensity_threshold) {
+    // Potencial LJ
+    let r = sqrt(x*x + z*z);
+    let potential = lennard_jones_potential(r, epsilon, sigma);
+    
+    // Distribución radial g(r)
+    let density = 0.1;
+    let g_r = radial_distribution_function(r, temperature, density, 
+                                           fn(r) { lennard_jones_potential(r, epsilon, sigma) });
+    
+    // Pozo de potencial
+    let potential_well = custom(y - potential * 0.1 - intensity_threshold);
+    
+    // Estructura líquida (picos de g(r))
+    let liquid_structure = sin(r * 6.0) * exp(-r/0.5) * g_r * 0.05;
+    
+    sdf: union(potential_well, custom(y - liquid_structure - intensity_threshold * 0.5));
+}
+
+// --- Colisiones Moleculares en Gas ---
+def "molecular_collisions_gas"(number_density, temperature, mass, intensity_threshold) {
+    // Trayectorias de colisión
+    let time = w * 0.1;
+    
+    // Moléculas con velocidades aleatorias
+    let molecules = [];
+    for i in range(0, 5) {
+        let vx = sin(i * 1.0 + time) * 0.2;
+        let vz = cos(i * 1.0 + time * 1.3) * 0.2;
+        let pos_x = sin(i * 0.8) * 0.4 + vx * time;
+        let pos_z = cos(i * 0.8) * 0.4 + vz * time;
+        
+        let molecule = sphere([pos_x, 0, pos_z], 0.03);
+        molecules = append(molecules, molecule);
+        
+        // Trayectoria
+        let trajectory = cylinder([pos_x - vx*0.1, 0, pos_z - vz*0.1], 
+                                  [pos_x, 0, pos_z], 0.01);
+        molecules = append(molecules, trajectory);
+    }
+    
+    // Camino libre medio visualizado
+    let mean_free_path_val = mean_free_path(number_density, 0.01);
+    let mfp_sphere = sphere([0, 0, 0], mean_free_path_val * 0.3);
+    
+    sdf: union(union_array(molecules), mfp_sphere);
+}
+
+// --- Modos Vibracionales Moleculares ---
+def "molecular_vibrational_modes"(vibrational_frequencies, temperature, intensity_threshold) {
+    // Modos normales de vibración
+    let vibration_pattern = 0.0;
+    
+    for i in range(0, min(len(vibrational_frequencies), 3)) {
+        let freq = vibrational_frequencies[i];
+        let amplitude = sqrt(BOLTZMANN_MOLSTAT * temperature / (freq*freq + 1e-6)) * 0.1;
+        
+        let mode = sin(x*3.0 + i*1.0) * sin(z*3.0) * sin(freq * w) * amplitude;
+        vibration_pattern = vibration_pattern + mode;
+    }
+    
+    // Molécula en equilibrio
+    let molecule = sphere([0, 0, 0], 0.05);
+    let bonds = cylinder([-0.1, 0, 0], [0.1, 0, 0], 0.02);
+    
+    sdf: union(union(molecule, bonds), custom(vibration_pattern - intensity_threshold));
+}
+
+// --- Transiciones Rotacionales (Espectro) ---
+def "rotational_transitions_spectrum"(rotational_constant, temperature, intensity_threshold) {
+    // Espectro rotacional (líneas equidistantes)
+    let J_values = [];
+    let intensities = [];
+    
+    for J in range(0, 10) {
+        let energy = rotational_constant * J * (J + 1.0);
+        let degeneracy = 2.0 * J + 1.0;
+        let population = degeneracy * exp(-energy / (BOLTZMANN_MOLSTAT * temperature));
+        
+        J_values = append(J_values, J);
+        intensities = append(intensities, population);
+    }
+    
+    // Líneas espectrales
+    let spectrum_lines = 0.0;
+    for i in range(0, len(J_values)) {
+        let line_x = J_values[i] * 0.1;
+        let line_height = intensities[i] * 0.2;
+        let line = cylinder([line_x, 0, 0], [line_x, line_height, 0], 0.02);
+        spectrum_lines = union(spectrum_lines, line);
+    }
+    
+    sdf: spectrum_lines;
+}
+
+// ============================================================
+// INTERFAZ PÚBLICA - FENÓMENOS AVANZADOS (def)
+// ============================================================
+
+// --- Transición de Fase Gas-Líquido (Diagrama de Fases) ---
+def "gas_liquid_phase_transition"(temperature, critical_temperature, intensity_threshold) {
+    // Región de dos fases
+    let coexistence_curve = custom(y - (1.0 - temperature/critical_temperature) * 0.3 - intensity_threshold);
+    
+    // Línea de coexistencia
+    let coexistence_line = cylinder([-0.3, (1.0 - temperature/critical_temperature)*0.3, 0],
+                                    [0.3, (1.0 - temperature/critical_temperature)*0.3, 0], 0.02);
+    
+    // Punto crítico
+    let critical_point = sphere([0, 0, 0], 0.05 * step(critical_temperature - 0.1, temperature) *
+                               step(temperature, critical_temperature + 0.1));
+    
+    // Regiones de fase única
+    let gas_region = step(temperature, critical_temperature) * step(0.1, y) * 0.1;
+    let liquid_region = step(temperature, critical_temperature) * (1.0 - step(0.1, y)) * 0.2;
+    
+    sdf: union(union(coexistence_curve, coexistence_line), critical_point);
+}
+
+// --- Agregación Molecular (Formación de Clusters) ---
+def "molecular_clustering_aggregation"(interaction_strength, temperature, intensity_threshold) {
+    // Clusters de moléculas
+    let cluster_pattern = sin(x*2.0) * sin(z*2.0) * interaction_strength * 0.3;
+    
+    // Tamaño de cluster (distribución)
+    let cluster_sizes = [];
+    for i in range(0, 5) {
+        let size = exp(-i * BOLTZMANN_MOLSTAT * temperature / interaction_strength);
+        let cluster = sphere([sin(i*1.0)*0.3, 0, cos(i*1.0)*0.3], 0.03 + size * 0.05);
+        cluster_sizes = append(cluster_sizes, cluster);
+    }
+    
+    // Energía de agregación
+    let aggregation_energy = -interaction_strength * exp(-(x*x + z*z)/0.2);
+    
+    sdf: union(union_array(cluster_sizes), custom(y - cluster_pattern - aggregation_energy * 0.1 - intensity_threshold));
+}
+
+// --- Difusión en Medio Poroso ---
+def "diffusion_in_porous_medium"(diffusion_coefficient, porosity, tortuosity, intensity_threshold) {
+    // Medio poroso
+    let porous_structure = sin(x*8.0) * sin(z*8.0) * 0.2;
+    
+    // Difusión efectiva (reducida por porosidad y tortuosidad)
+    let effective_diffusion = diffusion_coefficient * porosity / (tortuosity * tortuosity);
+    
+    // Perfil de concentración
+    let concentration_profile = exp(-x*x/(4.0 * effective_diffusion * w + 1e-6)) * porosity;
+    
+    sdf: custom(y - porous_structure - concentration_profile * 0.1 - intensity_threshold);
+}
+
+// --- Adsorción en Superficie (Isoterma) ---
+def "surface_adsorption_isotherm"(pressure, adsorption_sites, binding_energy, intensity_threshold) {
+    // Isoterma de Langmuir
+    let K = exp(-binding_energy / (BOLTZMANN_MOLSTAT * 300.0));
+    let coverage = K * pressure / (1.0 + K * pressure);
+    
+    // Superficie con sitios
+    let surface = plane([0.0, 1.0, 0.0], 0.0);
+    
+    // Moléculas adsorbidas (proporcional a coverage)
+    let adsorbed_layer = 0.0;
+    for i in range(0, adsorption_sites) {
+        if (i / adsorption_sites) < coverage {
+            let site_x = sin(i * 0.5) * 0.2;
+            let site_z = cos(i * 0.5) * 0.2;
+            let molecule = sphere([site_x, 0.05, site_z], 0.02);
+            adsorbed_layer = union(adsorbed_layer, molecule);
+        }
+    }
+    
+    sdf: union(surface, adsorbed_layer);
+}
+
+// --- Transiciones Conformacionales Moleculares ---
+def "molecular_conformational_transitions"(energy_barrier, temperature, intensity_threshold) {
+    // Múltiples conformaciones
+    let conformation1 = sphere([-0.2, 0, 0], 0.05);  // cis
+    let conformation2 = sphere([0.2, 0, 0], 0.05);   // trans
+    
+    // Barrera de energía entre conformaciones
+    let barrier = step(-0.1, x) * step(x, 0.1) * energy_barrier * 0.1;
+    
+    // Tasa de transición (Arrhenius)
+    let transition_rate = exp(-energy_barrier / (BOLTZMANN_MOLSTAT * temperature)) * 0.2;
+    
+    // Puente de transición
+    let transition_bridge = cylinder([-0.15, barrier, 0], [0.15, barrier, 0], 0.01 * transition_rate);
+    
+    sdf: union(union(conformation1, conformation2), union(transition_bridge, custom(y - barrier - intensity_threshold)));
+}
+
+// ============================================================
+// EJEMPLOS DE USO CON custom(expr)
+// ============================================================
+
+/*
+// EJEMPLO 1: Distribución de velocidades
+node "velocity_distribution_example" {
+    position: [-4, 0, 0];
+    sdf: molecular_velocity_distribution_3d(300.0, 0.001, 0.15);
+    material: "statistical_distribution";
+}
+
+// EJEMPLO 2: Potencial Lennard-Jones
+node "lennard_jones_example" {
+    position: [0, 0, 0];
+    sdf: lennard_jones_potential_visualization(1.0, 0.3, 300.0, 0.12);
+    material: "intermolecular_potential";
+}
+
+// EJEMPLO 3: Colisiones moleculares
+node "molecular_collisions_example" {
+    position: [4, 0, 0];
+    sdf: molecular_collisions_gas(1e25, 300.0, 0.001, 0.1);
+    material: "kinetic_theory";
+}
+
+// EJEMPLO 4: Modos vibracionales
+node "vibrational_modes_example" {
+    position: [-2, 3, 0];
+    sdf: molecular_vibrational_modes([0.1, 0.2, 0.3], 300.0, 0.08);
+    material: "molecular_vibrations";
+}
+
+// EJEMPLO 5: Transición gas-líquido
+node "phase_transition_example" {
+    position: [2, 3, 0];
+    sdf: gas_liquid_phase_transition(0.7, 1.0, 0.15);
+    material: "phase_diagram";
+}
+
+// EJEMPLO 6: Adsorción superficial
+node "adsorption_example" {
+    position: [0, -3, 0];
+    sdf: surface_adsorption_isotherm(0.5, 10, 0.1, 0.1);
+    material: "surface_science";
+}
+*/
+
+// ============================================================
+// NOTAS PARA USUARIOS
+// ============================================================
+
+// 1. La mecánica estadística molecular conecta propiedades microscópicas con macroscópicas
+// 2. Las funciones de partición contienen toda la información termodinámica
+// 3. La teoría cinética explica propiedades de transporte en gases
+// 4. Los potenciales intermoleculares determinan fases y transiciones
+// 5. Las distribuciones estadísticas (Maxwell-Boltzmann) gobiernan comportamientos colectivos
+// 6. Los fenómenos de superficie y adsorción son cruciales en catálisis y materiales
+
+// ============================================================
+// "La mecánica estadística molecular es el puente entre el mundo
+//  de las moléculas individuales y las propiedades de la materia a gran escala."
+// ============================================================

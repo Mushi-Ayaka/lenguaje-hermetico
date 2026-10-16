@@ -1,0 +1,96 @@
+// Test de Capa 4+5+6 — Geo, Bio Evolution, Bio Cell
+
+scene {
+    background: [0, 0, 0];
+}
+
+import "std_math_core.hm"
+import "std_math_noise.hm"
+import "std_math_probability.hm"
+import "std_math_calculus.hm"
+import "std_phys_sdf.hm"
+import "std_geo_terrain.hm"
+import "std_geo_atmosphere.hm"
+import "std_bio_evolution.hm"
+import "std_bio_cell.hm"
+
+material "geo_mat" {}
+material "bio_mat" {}
+
+// --- std_geo_terrain ---
+let terr_h = terrain_height(0.5, 0.3, 0.5, 500.0);
+let ridged = ridged_fbm(0.5, 0.3, 0.5);
+let slope = slope_x(100.0, 110.0, 10.0);
+let anticl = anticline(0.5, 0.0, 50.0, 200.0, 0.0);
+
+// --- std_geo_atmosphere ---
+let std_T = std_temp(5000.0);
+let std_P = std_pressure(5000.0);
+let rho_air = air_density(0.0);
+let sos = speed_of_sound(0.0);
+let coriolis = coriolis_param(0.7854);
+let sat_p = saturation_pressure(300.0);
+let rh = relative_humidity(1200.0, 300.0);
+let stokes_h = stokes_wave(1.0, 0.5, 2.5, 5.0, 0.0);
+
+// --- std_bio_evolution ---
+let allele_t = allele_freq_t(0.3, 0.05, 10.0);
+let R0_epi = R0_epidemic(0.3, 1000.0, 0.1);
+let log_N = logistic_N(100.0, 10000.0, 0.5, 20.0);
+let intrinsic_r = intrinsic_growth_rate(2.5, 15.0);
+let drift_v = drift_variance(0.3, 500.0);
+
+// --- std_bio_cell ---
+let nernst_K = nernst_potential(8.314, 310.0, 1.0, 5.0, 150.0);
+let fick_j = fick_flux(1e-9, 1e5);
+let transp = active_transport(10.0, 0.5, 0.1);
+let cdk = cdk_activity(5.0, 20.0, 0.0);
+let apop = apoptosis_signal(0.8, 0.5);
+
+// --- SDFs geo ---
+instance "mountain_terrain"(0.5, 2.0) {
+    position: [0, 0, 0];
+    material: "geo_mat";
+}
+
+instance "composite_volcano"(2.0, 1.5, 0.3) {
+    position: [4.0, 0, 0];
+    material: "geo_mat";
+}
+
+instance "ocean_stokes_wave"(0.5, 0.5, 2.5, 0.0) {
+    position: [-4.0, 0, 0];
+    material: "geo_mat";
+}
+
+instance "cumulus_cloud"(0.5, 0.5, 2.0, 0.5) {
+    position: [0, 3.0, 0];
+    material: "geo_mat";
+}
+
+// --- SDFs bio ---
+instance "spherical_cell"(0.5) {
+    position: [0, -3.0, 0];
+    material: "bio_mat";
+}
+
+instance "mitochondrion"(0.3, 0.1) {
+    position: [1.5, -3.0, 0];
+    material: "bio_mat";
+}
+
+instance "cell_membrane"(0.5, 0.02) {
+    position: [-1.5, -3.0, 0];
+    material: "bio_mat";
+}
+
+instance "cell_division"(0.3, 0.4) {
+    position: [0, -5.0, 0];
+    material: "bio_mat";
+}
+
+// --- SDFs evolution ---
+instance "fitness_landscape"(0.5, 0.3) {
+    position: [0, 0, 4.0];
+    material: "bio_mat";
+}

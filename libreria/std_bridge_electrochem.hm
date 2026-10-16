@@ -1,0 +1,531 @@
+// ============================================================
+// LIBRERÍA: std_bridge_electrochem.hm
+// CAPA:     Intermediario: Física-Química (3.8 - Electroquímica)
+// VERSIÓN:  1.0
+// FUENTE:   Bard & Faulkner "Electrochemical Methods", Bockris & Reddy "Modern Electrochemistry"
+// DEPS:     std_math_core.hm, std_math_algebra.hm, std_math_calculus.hm
+// DEPS:     std_bridge_atomic.hm, std_bridge_spectral.hm
+// FECHA:    6 de junio de 2026
+// ============================================================
+
+// ELECTROQUÍMICA: Reacciones redox, potenciales de electrodo, cinética electroquímica,
+// interfaces electrodo-electrolito, conductividad iónica, baterías y celdas electroquímicas
+
+// ============================================================
+// CONSTANTES ELECTROQUÍMICAS
+// ============================================================
+
+let FARADAY_CONSTANT = 96485.33212;         // F (C/mol)
+let FARADAY = FARADAY_CONSTANT / 1000.0;    // F escalado
+let GAS_CONSTANT = 8.314462618;            // R (J/(mol·K))
+let R = GAS_CONSTANT;                       // Alias
+let BOLTZMANN_CONSTANT = 1.380649e-23;      // k_B (J/K)
+let AVOGADRO_NUMBER = 6.02214076e23;        // N_A (mol⁻¹)
+let ELECTRON_CHARGE = 1.602176634e-19;      // e (C)
+
+// Constantes escaladas para uso en funciones
+let F = FARADAY;                            // F escalado
+let RT = R * 298.15;                        // RT a 25°C (escalado)
+let KB_T = 0.0257;                          // k_BT/e a 25°C ≈ 0.0257 V (escalado)
+
+// Potenciales estándar de electrodo (V vs SHE, escalados)
+let E0_HYDROGEN = 0.0;                      // 2H⁺ + 2e⁻ ⇌ H₂
+let E0_OXYGEN = 1.23;                       // O₂ + 4H⁺ + 4e⁻ ⇌ 2H₂O
+let E0_ZINC = -0.76;                        // Zn²⁺ + 2e⁻ ⇌ Zn
+let E0_COPPER = 0.34;                       // Cu²⁺ + 2e⁻ ⇌ Cu
+let E0_SILVER = 0.80;                       // Ag⁺ + e⁻ ⇌ Ag
+let E0_LITHIUM = -3.04;                     // Li⁺ + e⁻ ⇌ Li
+
+// ============================================================
+// INTERFAZ PÚBLICA - TERMODINÁMICA ELECTROQUÍMICA (fn)
+// ============================================================
+
+// --- Ecuación de Nernst ---
+// E = E⁰ - (RT/(nF))·ln(Q) donde Q = [productos]/[reactivos]
+// Params: potencial_estandar, n_electrones, actividad_reactivos, actividad_productos
+fn "nernst_equation"(E0, n, a_ox, a_red) {
+    E0 - (RT/(n*F)) * log(a_red/(a_ox + 1e-6) + 1e-6)
+}
+
+// --- Potencial de Electrodo a Diferentes Temperaturas ---
+// E(T) = E⁰(298) + (dE⁰/dT)·(T - 298)
+fn "temperature_dependent_potential"(E0_298, dE0_dT, T) {
+    E0_298 + dE0_dT * (T - 298.15)
+}
+
+// --- Energía Libre de Gibbs para Reacción Redox ---
+// ΔG = -nFE
+fn "gibbs_free_energy_redox"(n, E) {
+    -n * F * E
+}
+
+// --- Constante de Equilibrio a partir de Potencial Estándar ---
+// K_eq = exp(nFE⁰/(RT))
+fn "equilibrium_constant_from_potential"(n, E0) {
+    exp(n * F * E0 / RT)
+}
+
+// --- Fuerza Electromotriz de Celda (FEM) ---
+// E_cell = E_cátodo - E_ánodo = E_red(oxidante) - E_red(reductor)
+fn "cell_emf"(E_cathode, E_anode) {
+    E_cathode - E_anode
+}
+
+// --- Potencial de Celda Galvánica ---
+// E_cell = E⁰_cell - (RT/(nF))·ln(Q)
+fn "galvanic_cell_potential"(E0_cell, n, Q) {
+    E0_cell - (RT/(n*F)) * log(Q + 1e-6)
+}
+
+// ============================================================
+// INTERFAZ PÚBLICA - CINÉTICA ELECTROQUÍMICA (fn)
+// ============================================================
+
+// --- Ecuación de Butler-Volmer (Corriente de Transferencia de Carga) ---
+// i = i₀·[exp(α·n·F·η/(RT)) - exp(-(1-α)·n·F·η/(RT))]
+// Params: corriente_intercambio, coeficiente_transferencia, n, sobretensión
+fn "butler_volmer_current"(i0, alpha, n, overpotential) {
+    i0 * (exp(alpha * n * F * overpotential / RT) - 
+          exp(-(1.0 - alpha) * n * F * overpotential / RT))
+}
+
+// --- Sobretensión de Activación (η_act) ---
+// η_act = (RT/(αnF))·ln(i/i₀) para i >> i₀ (aproximación Tafel)
+fn "activation_overpotential"(i, i0, alpha, n) {
+    (RT/(alpha * n * F)) * log(i/(i0 + 1e-6) + 1e-6)
+}
+
+// --- Ecuación de Tafel (Región de alta sobretensión) ---
+// η = a + b·log|i| donde b = 2.303RT/(αnF)
+fn "tafel_equation"(i, i0, alpha, n) {
+    let b = 2.303 * RT/(alpha * n * F);  // Pendiente de Tafel
+    b * log(abs(i)/(i0 + 1e-6) + 1e-6)
+}
+
+// --- Corriente Límite de Difusión (Levich) ---
+// i_lim = n·F·A·D·C*/δ donde δ = capa de difusión
+fn "limiting_diffusion_current"(n, A, D, C_star, delta) {
+    n * F * A * D * C_star / delta
+}
+
+// --- Ecuación de Koutecký-Levich (Corriente con Control Mixto) ---
+// 1/i = 1/i_kin + 1/i_levich
+fn "koutecky_levich_current"(i_kinetic, i_levich) {
+    1.0 / (1.0/(i_kinetic + 1e-6) + 1.0/(i_levich + 1e-6))
+}
+
+// --- Ecuación de Randles-Ševčík (Voltametría Cíclica) ---
+// i_p = 0.4463·n·F·A·C·√(n·F·D·v/(R·T))
+fn "randles_sevcik_current"(n, A, C, D, scan_rate) {
+    0.4463 * n * F * A * C * sqrt(n * F * D * scan_rate / (R * 298.15))
+}
+
+// ============================================================
+// INTERFAZ PÚBLICA - INTERFACES Y DOBLE CAPA (fn)
+// ============================================================
+
+// --- Capacitancia de Doble Capa (Helmholtz) ---
+// C_H = ε·ε₀·A/d
+fn "helmholtz_capacitance"(epsilon, A, d) {
+    epsilon * 8.854e-12 * A / d * 1e12  // Escalado a pF
+}
+
+// --- Capacitancia de Gouy-Chapman (Doble Capa Difusa) ---
+// C_GC = ε·ε₀·κ·cosh(zeψ₀/(2k_BT)) donde κ = √(2n₀z²e²/(εε₀k_BT))
+fn "gouy_chapman_capacitance"(epsilon, ionic_strength, z, psi0, T) {
+    let kappa = sqrt(2.0 * ionic_strength * z*z * 1.602e-19*1.602e-19 / 
+                    (epsilon * 8.854e-12 * 1.380649e-23 * T));
+    epsilon * 8.854e-12 * kappa * cosh(z * 1.602e-19 * psi0 / (2.0 * 1.380649e-23 * T)) * 1e12
+}
+
+// --- Potencial de Superficie ψ₀ (Aproximación) ---
+fn "surface_potential_approx"(sigma, epsilon, kappa) {
+    sigma / (epsilon * 8.854e-12 * kappa) * 0.025  // Escalado
+}
+
+// --- Ecuación de Poisson-Boltzmann (Simplificada 1D) ---
+// d²ψ/dx² = -ρ/εε₀, ρ = Σ z_i·e·n_i·exp(-z_i·e·ψ/(k_BT))
+fn "poisson_boltzmann_potential"(x, psi0, kappa) {
+    psi0 * exp(-kappa * x)
+}
+
+// ============================================================
+// INTERFAZ PÚBLICA - CONDUCTIVIDAD Y TRANSPORTE (fn)
+// ============================================================
+
+// --- Conductividad Electrolítica (Kohlrausch) ---
+// Λ = Λ⁰ - K·√c
+fn "kohlrausch_conductivity"(Lambda0, K, concentration) {
+    Lambda0 - K * sqrt(concentration)
+}
+
+// --- Movilidad Iónica (Einstein) ---
+// u = z·e·D/(k_B·T)
+fn "ionic_mobility_einstein"(z, D, T) {
+    z * 1.602e-19 * D / (1.380649e-23 * T) * 1e8  // Escalado
+}
+
+// --- Número de Transporte (Hittorf) ---
+// t₊ = u₊/(u₊ + u₋)
+fn "transference_number"(u_plus, u_minus) {
+    u_plus / (u_plus + u_minus + 1e-6)
+}
+
+// --- Coeficiente de Difusión (Stokes-Einstein) ---
+// D = k_B·T/(6π·η·r)
+fn "stokes_einstein_diffusion"(T, viscosity, radius) {
+    1.380649e-23 * T / (6.0 * pi * viscosity * radius) * 1e9  // Escalado
+}
+
+// --- Ley de Ohm para Electrolitos ---
+// i = κ·A·ΔV/L
+fn "ohmic_current_electrolyte"(kappa, A, deltaV, L) {
+    kappa * A * deltaV / L
+}
+
+// ============================================================
+// INTERFAZ PÚBLICA - BATERÍAS Y ACUMULADORES (fn)
+// ============================================================
+
+// --- Capacidad Específica (Baterías) ---
+// C = n·F/(M·3600) en Ah/g
+fn "specific_capacity"(n, molar_mass) {
+    n * F / (molar_mass * 3600.0) * 1000.0  // mAh/g
+}
+
+// --- Energía Específica (Baterías) ---
+// E = C·V en Wh/kg
+fn "specific_energy"(capacity_mAh_g, voltage) {
+    capacity_mAh_g * voltage / 1000.0  // Wh/kg
+}
+
+// --- Potencia Específica (Baterías) ---
+// P = V·I/m en W/kg
+fn "specific_power"(voltage, current, mass) {
+    voltage * current / mass
+}
+
+// --- Eficiencia Coulombica (Ciclo) ---
+// η_C = Q_descarga/Q_carga
+fn "coulombic_efficiency"(Q_discharge, Q_charge) {
+    Q_discharge / Q_charge
+}
+
+// --- Eficiencia Energética ---
+// η_E = E_descarga/E_carga
+fn "energy_efficiency"(E_discharge, E_charge) {
+    E_discharge / E_charge
+}
+
+// --- Curva de Descarga (Simplificada) ---
+// V(t) = V_initial - k·t para descarga constante
+fn "discharge_curve"(V_initial, k, t) {
+    V_initial - k * t
+}
+
+// ============================================================
+// INTERFAZ PÚBLICA - CORROSIÓN (fn)
+// ============================================================
+
+// --- Potencial de Corrosión (E_corr) ---
+// Intersección de curvas de Tafel anódica y catódica
+fn "corrosion_potential"(E0_anodic, i0_anodic, alpha_anodic,
+                         E0_cathodic, i0_cathodic, alpha_cathodic, n) {
+    // Solución aproximada: E donde i_anodic = i_cathodic
+    (E0_anodic + E0_cathodic) / 2.0 + 
+    (RT/(n*F)) * log(i0_cathodic/(i0_anodic + 1e-6) + 1e-6) / (alpha_anodic + alpha_cathodic)
+}
+
+// --- Velocidad de Corrosión (i_corr) ---
+fn "corrosion_current"(E0_anodic, i0_anodic, alpha_anodic,
+                       E0_cathodic, i0_cathodic, alpha_cathodic, n, E_corr) {
+    butler_volmer_current(i0_anodic, alpha_anodic, n, E_corr - E0_anodic)
+}
+
+// --- Ley de Faraday para Tasa de Corrosión ---
+// m/t = (i_corr·M)/(n·F)
+fn "faraday_corrosion_rate"(i_corr, molar_mass, n) {
+    (i_corr * molar_mass) / (n * F)  // masa/tiempo
+}
+
+// --- Eficiencia de Protección Catódica ---
+fn "cathodic_protection_efficiency"(i_without_protection, i_with_protection) {
+    1.0 - i_with_protection/(i_without_protection + 1e-6)
+}
+
+// ============================================================
+// INTERFAZ PÚBLICA - ELECTRODOS ESPECIALES (fn)
+// ============================================================
+
+// --- Ecuación de Henderson para Potencial de Unión Líquida ---
+// E_j = (t₊ - t₋)·(RT/F)·ln(a₂/a₁)
+fn "liquid_junction_potential"(t_plus, t_minus, a1, a2) {
+    (t_plus - t_minus) * (RT/F) * log(a2/(a1 + 1e-6) + 1e-6)
+}
+
+// --- Selectividad de Electrodo de Ión Selectivo ---
+// E = E⁰ + (RT/(zF))·ln(a_i + Σ K_ij·a_j^(z_i/z_j))
+fn "ion_selective_electrode_potential"(E0, z, a_primary, interference_coeffs, a_interferences) {
+    let interference_sum = 0.0;
+    // Suma simplificada de interferencias
+    for idx in range(0, len(interference_coeffs)) {
+        interference_sum = interference_sum + interference_coeffs[idx] * a_interferences[idx];
+    }
+    E0 + (RT/(z*F)) * log(a_primary + interference_sum + 1e-6)
+}
+
+// --- Respuesta de Electrodo de pH ---
+// E = E⁰ - (RT/F)·ln(a_H⁺) = E⁰ + (RT·ln10/F)·pH
+fn "pH_electrode_response"(E0, pH) {
+    E0 + (RT * log(10.0)/F) * pH
+}
+
+// ============================================================
+// INTERFAZ PÚBLICA - SDFs ELECTROQUÍMICAS (def con custom)
+// ============================================================
+
+// --- Superficie de Potencial de Nernst (Isopotencial) ---
+def "nernst_potential_surface"(E0, n, a_ox, a_red, potential_value) {
+    let r = sqrt(x*x + y*y + z*z);
+    let concentration_profile = exp(-r*r);  // Perfil de concentración radial
+    
+    let a_ox_local = a_ox * concentration_profile;
+    let a_red_local = a_red * (1.0 - concentration_profile);
+    
+    let E_local = nernst_equation(E0, n, a_ox_local, a_red_local);
+    
+    sdf: custom(E_local - potential_value);
+}
+
+// --- Campo de Corriente Electroquímica (Butler-Volmer 3D) ---
+def "butler_volmer_current_field"(i0, alpha, n, overpotential_field, current_threshold) {
+    let r = sqrt(x*x + y*y + z*z);
+    let overpotential = overpotential_field * exp(-r*r/4.0);
+    
+    let current = butler_volmer_current(i0, alpha, n, overpotential);
+    
+    sdf: custom(current - current_threshold);
+}
+
+// --- Interfase Electrodo-Electrolito (Doble Capa) ---
+def "electrode_electrolyte_interface"(psi0, kappa, interface_thickness) {
+    // Potencial según Poisson-Boltzmann
+    let distance_from_surface = abs(y);
+    let potential = poisson_boltzmann_potential(distance_from_surface, psi0, kappa);
+    
+    // Densidad de carga en interfase
+    sdf: custom(potential - 0.5 * psi0);
+}
+
+// --- Celda Electroquímica (Ánodo-Cátodo-Electrolito) ---
+def "electrochemical_cell"(E0_anode, E0_cathode, n, separator_thickness, electrode_radius) {
+    // Ánodo (izquierda)
+    let anode = sphere([-separator_thickness*0.5 - electrode_radius, 0, 0], electrode_radius);
+    
+    // Cátodo (derecha)
+    let cathode = sphere([separator_thickness*0.5 + electrode_radius, 0, 0], electrode_radius);
+    
+    // Electrolito (centro)
+    let electrolyte = box([-separator_thickness*0.5, -electrode_radius*2, -electrode_radius*2], 
+                          [separator_thickness*0.5, electrode_radius*2, electrode_radius*2]);
+    
+    // Potencial de celda como gradiente de color/geometría
+    let cell_potential = E0_cathode - E0_anode;
+    let potential_gradient = x * cell_potential / (separator_thickness + 2*electrode_radius);
+    
+    sdf: union(anode, cathode, electrolyte);
+}
+
+// --- Batería de Iones de Litio (Capas) ---
+def "lithium_ion_battery"(num_layers, layer_thickness, current_collector_thickness) {
+    let total_thickness = num_layers * (layer_thickness * 3 + current_collector_thickness * 2);
+    let layer_height = layer_thickness;
+    
+    fn "battery_layer"(layer_idx) {
+        let y_base = (layer_idx - num_layers*0.5) * (layer_thickness * 3 + current_collector_thickness * 2);
+        
+        // Colector de corriente (cobre)
+        let cc1 = box([-1, y_base, -1], [1, y_base + current_collector_thickness, 1]);
+        
+        // Ánodo (grafito)
+        let anode = box([-0.9, y_base + current_collector_thickness, -0.9], 
+                        [0.9, y_base + current_collector_thickness + layer_thickness, 0.9]);
+        
+        // Separador
+        let separator = box([-0.8, y_base + current_collector_thickness + layer_thickness, -0.8], 
+                            [0.8, y_base + current_collector_thickness + layer_thickness*2, 0.8]);
+        
+        // Cátodo (LiCoO₂ u otro)
+        let cathode = box([-0.9, y_base + current_collector_thickness + layer_thickness*2, -0.9], 
+                          [0.9, y_base + current_collector_thickness + layer_thickness*3, 0.9]);
+        
+        // Colector de corriente (aluminio)
+        let cc2 = box([-1, y_base + current_collector_thickness + layer_thickness*3, -1], 
+                      [1, y_base + current_collector_thickness + layer_thickness*3 + current_collector_thickness, 1]);
+        
+        union(cc1, anode, separator, cathode, cc2)
+    }
+    
+    let cell = battery_layer(0);
+    
+    // Para múltiples capas (simplificado a una capa)
+    sdf: cell;
+}
+
+// --- Corrosión Localizada (Pit) ---
+def "localized_corrosion_pit"(pit_depth, pit_radius, corrosion_rate) {
+    let r = sqrt(x*x + z*z);
+    let pit_shape = pit_depth * exp(-r*r/(pit_radius*pit_radius));
+    
+    // Tasa de corrosión variable con profundidad
+    let corrosion_intensity = corrosion_rate * (1.0 - exp(-pit_shape/pit_depth));
+    
+    sdf: custom(y - pit_shape + corrosion_intensity * w);
+}
+
+// --- Voltamograma Cíclico 3D ---
+def "cyclic_voltammogram_3d"(E0, n, A, C, D, scan_rate, potential_range, current_threshold) {
+    // Eje x = potencial, eje y = corriente
+    let E = x * 0.1;  // Escalado
+    let forward_scan = step(0, w) * (E + scan_rate * w) + (1 - step(0, w)) * (E - scan_rate * w);
+    
+    let current = randles_sevcik_current(n, A, C, D, scan_rate) * 
+                  exp(-(forward_scan - E0)*(forward_scan - E0) / 0.01);
+    
+    sdf: custom(y - current - current_threshold);
+}
+
+// ============================================================
+// INTERFAZ PÚBLICA - SISTEMAS ELECTROQUÍMICOS ESPECÍFICOS (def)
+// ============================================================
+
+// --- Celda de Combustible de Hidrógeno (PEM) ---
+def "hydrogen_fuel_cell"(membrane_thickness, catalyst_thickness, flow_field_pattern) {
+    // Membrana de intercambio protónico
+    let membrane = box([-membrane_thickness*0.5, -1, -1], 
+                       [membrane_thickness*0.5, 1, 1]);
+    
+    // Capas catalíticas
+    let anode_catalyst = box([-membrane_thickness*0.5 - catalyst_thickness, -0.9, -0.9], 
+                             [-membrane_thickness*0.5, 0.9, 0.9]);
+    
+    let cathode_catalyst = box([membrane_thickness*0.5, -0.9, -0.9], 
+                                [membrane_thickness*0.5 + catalyst_thickness, 0.9, 0.9]);
+    
+    // Canales de flujo (patrón serpentín)
+    fn "flow_channel"(offset_x) {
+        let channel = custom(sin(x*10.0 + offset_x) * sin(z*10.0) - 0.7);
+        channel
+    }
+    
+    let anode_flow = flow_channel(0);
+    let cathode_flow = flow_channel(pi*0.5);
+    
+    sdf: union(membrane, anode_catalyst, cathode_catalyst, anode_flow, cathode_flow);
+}
+
+// --- Batería de Plomo-Ácido ---
+def "lead_acid_battery"(plate_thickness, separator_thickness, electrolyte_level) {
+    // Placas positivas (PbO₂) y negativas (Pb)
+    let positive_plate = box([-plate_thickness*2, -1, -1], 
+                             [-plate_thickness, 1, 1]);
+    
+    let negative_plate = box([plate_thickness, -1, -1], 
+                             [plate_thickness*2, 1, 1]);
+    
+    // Separador
+    let separator = box([-plate_thickness, -0.9, -0.9], 
+                        [plate_thickness, 0.9, 0.9]);
+    
+    // Electrolito (H₂SO₄)
+    let electrolyte = box([-plate_thickness*2.5, -1, -1], 
+                          [plate_thickness*2.5, electrolyte_level - 1, 1]);
+    
+    sdf: union(positive_plate, negative_plate, separator, electrolyte);
+}
+
+// --- Celda Electrolítica para Producción de Cloro ---
+def "chlor_alkali_cell"(anode_material, cathode_material, membrane_type, cell_voltage) {
+    // Ánodo (Ti/RuO₂) para evolución de cloro
+    let anode = cylinder([-2, -1, 0], [-2, 1, 0], 0.3);
+    
+    // Cátodo (Ni) para evolución de hidrógeno
+    let cathode = cylinder([2, -1, 0], [2, 1, 0], 0.3);
+    
+    // Membrana (Nafion)
+    let membrane = box([-0.1, -1, -1], [0.1, 1, 1]);
+    
+    // Burbujas de gas (Cl₂ en ánodo, H₂ en cátodo)
+    fn "gas_bubbles"(center_x, gas_type) {
+        let bubble_size = 0.1 + 0.05 * sin(w + gas_type * pi);
+        sphere([center_x, 0.5, 0], bubble_size)
+    }
+    
+    let chlorine_bubbles = gas_bubbles(-1.5, 1);
+    let hydrogen_bubbles = gas_bubbles(1.5, 2);
+    
+    sdf: union(anode, cathode, membrane, chlorine_bubbles, hydrogen_bubbles);
+}
+
+// ============================================================
+// EJEMPLOS DE USO CON custom(expr)
+// ============================================================
+
+/*
+// EJEMPLO 1: Superficie de potencial de Nernst para Zn²⁺/Zn
+node "nernst_surface_zinc" {
+    position: [-4, 0, 0];
+    sdf: nernst_potential_surface(-0.76, 2, 1.0, 0.1, -0.7);
+    material: "electrochemical_potential";
+}
+
+// EJEMPLO 2: Campo de corriente Butler-Volmer
+node "butler_volmer_field" {
+    position: [0, 0, 0];
+    sdf: butler_volmer_current_field(1.0, 0.5, 1, 0.1, 0.5);
+    material: "current_density";
+}
+
+// EJEMPLO 3: Batería de iones de litio (una celda)
+node "li_ion_battery_cell" {
+    position: [4, 0, 0];
+    sdf: lithium_ion_battery(1, 0.1, 0.02);
+    material: "battery";
+}
+
+// EJEMPLO 4: Celda de combustible de hidrógeno
+node "hydrogen_fuel_cell_model" {
+    position: [-2, 3, 0];
+    sdf: hydrogen_fuel_cell(0.05, 0.02, 0);
+    material: "fuel_cell";
+}
+
+// EJEMPLO 5: Corrosión localizada (picadura)
+node "corrosion_pit_animation" {
+    position: [2, 3, 0];
+    sdf: localized_corrosion_pit(0.3, 0.2, 0.01);
+    material: "corrosion";
+}
+
+// EJEMPLO 6: Voltamograma cíclico 3D
+node "cyclic_voltammogram" {
+    position: [0, -3, 0];
+    sdf: cyclic_voltammogram_3d(0.5, 1, 1.0, 0.1, 1e-5, 0.1, 1.0, 0.2);
+    material: "electrochemical_scan";
+}
+*/
+
+// ============================================================
+// NOTAS PARA USUARIOS
+// ============================================================
+
+// 1. Todas las constantes están escaladas para uso visual
+// 2. Los potenciales están en voltios escalados
+// 3. Las corrientes están en unidades relativas
+// 4. Las concentraciones están en unidades arbitrarias
+// 5. Las geometrías electroquímicas son representaciones simplificadas
+
+// ============================================================
+// "En cada gota de electrolito late el pulso de electrones,
+//  en cada interfase se escribe la historia de la transferencia de carga."
+// ============================================================

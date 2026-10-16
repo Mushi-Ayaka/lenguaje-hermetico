@@ -1,0 +1,56 @@
+// ============================================================
+// LIBRERÍA: std_geo_landscape.hm
+// CAPA:     7.4 — Ecología de Paisajes y Biomas
+// VERSIÓN:  0.2
+// FUENTE:   Fractalidad de paisajes, Modelos de percolación de bosques
+// DEPS:     std_math_core.hm, std_math_noise.hm
+// FECHA:    6 de junio de 2026
+// ============================================================
+
+import "std_math_core.hm";
+import "std_math_noise.hm";
+
+// ============================================================
+// PERCOLACIÓN Y FRAGMENTACIÓN DE HÁBITAT
+// ============================================================
+
+// Probabilidad de ocupación en umbral de percolación (aprox)
+// p_c = 0.592746 para red cuadrada 2D
+fn "percolation_threshold"() {
+    0.592746
+}
+
+// Tamaño medio del clúster (divergencia cerca de p_c): S ~ |p - p_c|^-gamma
+fn "mean_cluster_size"(p_occ, p_c, gamma_exp) {
+    pow(abs(p_occ - p_c) + EPSILON, -gamma_exp)
+}
+
+// ============================================================
+// DISTRIBUCIÓN ESPACIAL DE BIOMAS
+// ============================================================
+
+// Índice de aridez (Precipitación / Evapotranspiración potencial)
+fn "aridity_index"(precipitation, pet) {
+    precipitation / (pet + EPSILON)
+}
+
+// ============================================================
+// SDFs DE PAISAJES (Macroestructuras)
+// ============================================================
+
+// Bosque fragmentado (distribución tipo Voronoi thresholded)
+def "fragmented_forest"(sc_val, density_threshold, tree_height) {
+    sdf: custom(
+        max(
+            y - tree_height,
+            density_threshold - voronoi2d(x * sc_val, z * sc_val)
+        )
+    );
+}
+
+// Sistema de ríos fractales (Valles tipo FBM invertido)
+def "fractal_river_network"(sc_val, depth, width) {
+    sdf: custom(
+        y + depth * exp(-sq((1.0 - abs(fbm2d_4(x * sc_val, z * sc_val))) / (width + EPSILON)))
+    );
+}

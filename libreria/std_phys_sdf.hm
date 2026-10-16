@@ -1,0 +1,227 @@
+// ============================================================
+// LIBRERÍA: std_phys_sdf.hm
+// CAPA:     2.1–2.8 — Física Fundamental (SDFs Científicas)
+// VERSIÓN:  1.0
+// FUENTE:   Física clásica y cuántica, Navier-Stokes, Maxwell
+// DEPS:     std_math_core.hm, std_math_algebra.hm, std_math_calculus.hm
+// FECHA:    6 de junio de 2026
+// ============================================================
+
+import "std_math_core.hm";
+import "std_math_algebra.hm";
+import "std_math_calculus.hm";
+
+// ============================================================
+// CONSTANTES FÍSICAS (escaladas para tiempo real)
+// ============================================================
+
+let GRAVITY_EARTH     = 9.80665;       // m/s²
+let SPEED_OF_LIGHT    = 1.0;           // Normalizado (c = 1 en unidades naturales)
+let PLANCK            = 1.0;           // ℏ normalizado
+let BOLTZMANN         = 1.0;           // kB normalizado
+let ELECTRON_CHARGE   = 1.0;           // e normalizado
+let VACUUM_PERMITTIVITY = 1.0;         // ε₀ normalizado
+let STEFAN_BOLTZMANN  = 5.670374419e-8;  // W/(m²K⁴) — se escala al usarlo
+
+// ============================================================
+// FUNCIONES FÍSICAS PURAS — Dinámica de Fluidos
+// ============================================================
+
+// Campo de velocidad de fluido incompresible (Navier-Stokes simplificado)
+fn "fluid_velocity_x"(px, py, pz, viscosity, t)  { sin(px * 1.0 - t) * cos(py * 0.5) * exp(-viscosity * t) }
+fn "fluid_velocity_y"(px, py, pz, viscosity, t)  { -cos(px * 1.0 - t) * sin(py * 0.5) * exp(-viscosity * t) }
+fn "fluid_velocity_z"(px, py, pz, viscosity, t)  { 0.0 }
+
+// Ecuación de Bernoulli: p + ½ρv² + ρgh = constante
+fn "fluid_pressure"(v_sq, rho, g, h, p0)  { p0 - 0.5 * rho * v_sq - rho * g * h }
+
+// Ondas de gravedad superficial: ω² = gk
+fn "gravity_wave"(amp, k, g, t)  { y - amp * sin(k * x - sqrt(abs(g * k)) * t) * exp(-k * abs(z)) }
+
+// Vórtice: campo rotacional
+fn "fluid_vortex"(r, vortex_strength, t)  { sqrt(x*x + z*z) - r + vortex_strength * sin(atan(z, x) - t) * 0.1 }
+
+// Ola rompiente (combinación)
+fn "breaking_wave"(amp, k, depth, t)  {
+    y - amp * sin(k * x - sqrt(abs(GRAVITY_EARTH * k * tanh_approx(k * depth))) * t) -
+        amp * 0.3 * sin(2.0*k*x - 2.0*sqrt(abs(GRAVITY_EARTH * k * tanh_approx(k * depth))) * t)
+}
+
+// ============================================================
+// FUNCIONES FÍSICAS PURAS — Termodinámica
+// ============================================================
+
+// Difusión de calor: solución estacionaria del Laplaciano
+fn "temperature_field"(T_hot, T_cold, diff_length)  {
+    lerp(T_hot, T_cold, sat(sqrt(x*x + y*y + z*z) / diff_length))
+}
+
+// Conducción 1D (ley de Fourier) al estado estacionario
+fn "heat_conduction"(T0, T1, L)  { lerp(T0, T1, sat(x / (L + EPSILON))) }
+
+// Emisividad térmica: ε * σ * T⁴ (Stefan-Boltzmann)
+fn "thermal_emissivity"(emissivity, T)  { emissivity * STEFAN_BOLTZMANN * pow(T, 4.0) }
+
+// Energía de Gibbs: G = H - TS
+fn "gibbs_energy"(H, T, S)  { H - T * S }
+
+// ============================================================
+// FUNCIONES FÍSICAS PURAS — Óptica
+// ============================================================
+
+// Ley de Snell: n₁*sin(θ₁) = n₂*sin(θ₂) → sin(θ₂) = n1/n2 * sin(θ₁)
+fn "snell_sin_refr"(n1, n2, sin_theta1)  { clamp(n1 / (n2 + EPSILON) * sin_theta1, -1.0, 1.0) }
+
+// Fresnel (aproximación de Schlick)
+fn "fresnel_schlick"(cos_theta, F0)  { F0 + (1.0 - F0) * pow(1.0 - cos_theta, 5.0) }
+fn "fresnel_F0"(n1, n2)  { sq((n1 - n2) / (n1 + n2 + EPSILON)) }
+
+// Dispersión de Cauchy: n(λ) = A + B/λ²
+fn "cauchy_dispersion"(lambda, A, B)  { A + B / (lambda * lambda + EPSILON) }
+
+// Superficie de lente esférica (SDF)
+fn "spherical_lens_sdf"(R, px, py, pz)  { sqrt(px*px + py*py + pz*pz) - R }
+
+// Lente parabólica: z = (x² + y²) / (2f)
+fn "parabolic_lens_sdf"(focal_len, px, py, pz)  { pz - (px*px + py*py) / (2.0 * focal_len + EPSILON) }
+
+// ============================================================
+// FUNCIONES FÍSICAS PURAS — Electromagnetismo
+// ============================================================
+
+// Campo eléctrico de carga puntual: E = kq/r²
+fn "electric_field_magnitude"(k_e, q, r)  { k_e * q / (r * r + EPSILON) }
+
+// Campo magnético dipolar: B ∝ (3(m·r̂)r̂ - m) / r³
+fn "magnetic_dipole_r"(mx, my, mz, px, py, pz)  {
+    (3.0 * (mx*px + my*py + mz*pz) * (px*px + py*py + pz*pz) -
+     (mx*px + my*py + mz*pz) * 1.0) / pow(v3_len(px, py, pz) + EPSILON, 3.0)
+}
+
+// Potencial electrostático: V = kq/r
+fn "electric_potential"(k_e, q, r)  { k_e * q / (r + EPSILON) }
+
+// Ley de Ampère (campo circular alrededor de conductor)
+fn "ampere_field"(I, r)  { I / (PI2 * r + EPSILON) }
+
+// ============================================================
+// FUNCIONES FÍSICAS PURAS — Mecánica de Ondas
+// ============================================================
+
+// Onda estacionaria 3D
+fn "standing_wave3d"(A, kx, ky, kz, omega, t_val)  {
+    A * sin(kx * x) * sin(ky * y) * sin(kz * z) * cos(omega * t_val)
+}
+
+// Membrana vibrante (modos propios)
+fn "vibrating_membrane"(A, m_mode, n_mode, omega_mn, t_val)  {
+    A * sin(PI * m_mode * x) * sin(PI * n_mode * y) * cos(omega_mn * t_val)
+}
+
+// Onda con corriente (doppler implícito)
+fn "wave_with_current"(amp, k, omega, current_speed, t_val)  {
+    amp * sin(k * x - (omega + k * current_speed) * t_val)
+}
+
+// ============================================================
+// FUNCIONES FÍSICAS PURAS — Mecánica Cuántica (formas cerradas)
+// ============================================================
+
+// Función de onda del oscilador armónico cuántico (modo 0: gaussiana)
+fn "qho_psi0"(x_val, sigma)  { exp(-0.5 * sq(x_val / (sigma + EPSILON))) / sqrt(sigma * sqrt(PI) + EPSILON) }
+
+// Función de onda del átomo de hidrógeno (orbital 1s, aproximada)
+fn "hydrogen_1s"(r_val, a0)  { exp(-r_val / (a0 + EPSILON)) / sqrt(PI * cb(a0 + EPSILON)) }
+
+// Túnel cuántico: probabilidad de transmisión (aproximación WKB)
+fn "tunnel_transmission"(barrier_height, E_kin, barrier_width, mass)  {
+    exp(-2.0 * barrier_width * sqrt(2.0 * mass * abs(barrier_height - E_kin) + EPSILON))
+}
+
+// ============================================================
+// FUNCIONES FÍSICAS PURAS — Relatividad
+// ============================================================
+
+// Factor de Lorentz: γ = 1/√(1 - β²)  donde β = v/c
+fn "lorentz_factor"(beta)  { 1.0 / sqrt(max(EPSILON, 1.0 - beta * beta)) }
+
+// Contracción de Lorentz: L = L0/γ
+fn "length_contraction"(L0, beta)  { L0 / lorentz_factor(beta) }
+
+// Dilatación temporal: Δτ = Δt/γ
+fn "time_dilation"(delta_t, beta)  { delta_t / lorentz_factor(beta) }
+
+// Intervalo espacio-temporal: s² = -(ct)² + x² + y² + z²
+fn "spacetime_interval"(t_val, x_val, y_val, z_val)  {
+    -sq(SPEED_OF_LIGHT * t_val) + sq(x_val) + sq(y_val) + sq(z_val)
+}
+
+// ============================================================
+// FUNCIONES FÍSICAS PURAS — Mecánica Estadística
+// ============================================================
+
+// Distribución de Maxwell-Boltzmann: P(v) ∝ v² exp(-mv²/2kT)
+fn "maxwell_boltzmann_speed"(v_val, mass, T_temp)  {
+    v_val * v_val * exp(-mass * v_val * v_val / (2.0 * BOLTZMANN * T_temp + EPSILON))
+}
+
+// Distribución de Fermi-Dirac: f(E) = 1/(exp((E-μ)/kT) + 1)
+fn "fermi_dirac"(E, mu, T_temp)  { 1.0 / (exp((E - mu) / (BOLTZMANN * T_temp + EPSILON)) + 1.0) }
+
+// Distribución de Bose-Einstein: n(E) = 1/(exp((E-μ)/kT) - 1)
+fn "bose_einstein"(E, mu, T_temp)  { 1.0 / (exp((E - mu) / (BOLTZMANN * T_temp + EPSILON)) - 1.0 + EPSILON) }
+
+// ============================================================
+// SDFs FÍSICAMENTE BASADAS (def con custom)
+// ============================================================
+
+// Superficie de onda gravitatoria
+def "gravity_wave_surface"(wave_amp, wave_k, grav, t_anim) {
+    sdf: custom(gravity_wave(wave_amp, wave_k, grav, t_anim));
+}
+
+// Ola rompiente (ola con armonico 2)
+def "breaking_wave_surface"(wave_amp, wave_k, water_depth, t_anim) {
+    sdf: custom(breaking_wave(wave_amp, wave_k, water_depth, t_anim));
+}
+
+// Lente esférica (menisco)
+def "spherical_lens"(curvature_R) {
+    sdf: custom(spherical_lens_sdf(curvature_R, x, y, z));
+}
+
+// Lente parabólica (sin aberración cromática)
+def "parabolic_lens"(focal_len) {
+    sdf: custom(parabolic_lens_sdf(focal_len, x, y, z));
+}
+
+// Dipolo eléctrico — superficie equipotencial
+def "electric_equipotential"(q1, q2, V_iso) {
+    sdf: custom(electric_potential(1.0, q1, sqrt(sq(x-0.5) + y*y + z*z)) +
+                electric_potential(1.0, q2, sqrt(sq(x+0.5) + y*y + z*z)) - V_iso);
+}
+
+// Vórtice fluídico
+def "fluid_vortex_shape"(radius, strength, t_anim) {
+    sdf: custom(fluid_vortex(radius, strength, t_anim));
+}
+
+// Membrana vibrante (modo 1,1)
+def "vibrating_membrane_shape"(amp, omega, t_anim) {
+    sdf: custom(z - vibrating_membrane(amp, 1.0, 1.0, omega, t_anim));
+}
+
+// Campo magnético dipolar — isosuperficie
+def "magnetic_field_isosurface"(mx, my, mz, B_iso) {
+    sdf: custom(abs(magnetic_dipole_r(mx, my, mz, x, y, z)) - B_iso);
+}
+
+// Onda estacionaria 3D
+def "standing_wave_volume"(amp, kx, ky, kz, omega, t_anim) {
+    sdf: custom(standing_wave3d(amp, kx, ky, kz, omega, t_anim) - 0.1);
+}
+
+// Superficie térmica (temperatura como campo escalar)
+def "isothermal_surface"(T_hot, T_cold, diff_length, T_iso) {
+    sdf: custom(temperature_field(T_hot, T_cold, diff_length) - T_iso);
+}

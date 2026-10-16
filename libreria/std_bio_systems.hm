@@ -1,0 +1,52 @@
+// ============================================================
+// LIBRERÍA: std_bio_systems.hm
+// CAPA:     6.8 — Biología de Sistemas
+// VERSIÓN:  0.2
+// FUENTE:   Análisis de Control Metabólico (MCA), Redes de Regulación
+// DEPS:     std_math_core.hm
+// FECHA:    6 de junio de 2026
+// ============================================================
+
+import "std_math_core.hm";
+
+// ============================================================
+// ANÁLISIS DE CONTROL METABÓLICO (MCA)
+// ============================================================
+
+// Coeficiente de Control de Flujo (aproximación discreta): C = (dJ/J) / (dv/v)
+fn "flux_control_coefficient"(J_base, dJ, v_base, dv) {
+    (dJ / (J_base + EPSILON)) / (dv / (v_base + EPSILON) + EPSILON)
+}
+
+// Coeficiente de Elasticidad: ε = (dv/v) / (dS/S)
+fn "elasticity_coefficient"(v_base, dv, S_base, dS) {
+    (dv / (v_base + EPSILON)) / (dS / (S_base + EPSILON) + EPSILON)
+}
+
+// ============================================================
+// MOTIVOS DE REDES DE REGULACIÓN GENÉTICA
+// ============================================================
+
+// Auto-regulación negativa (represor simple): dX/dt = beta / (1 + (X/K)^n) - alpha*X
+fn "negative_autoregulation"(X_conc, beta_prod, alpha_deg, K_rep, n_hill) {
+    beta_prod / (1.0 + pow(X_conc / (K_rep + EPSILON), n_hill)) - alpha_deg * X_conc
+}
+
+// Feed-forward loop coherente tipo 1 (AND logic): dZ/dt = beta * (X/Kx)^n / (1+(X/Kx)^n) * (Y/Ky)^n / (1+(Y/Ky)^n) - alpha*Z
+fn "ffl_coherent_and"(X_conc, Y_conc, Z_conc, beta_prod, alpha_deg, Kx, Ky, n_hill) {
+    beta_prod * (pow(X_conc / (Kx + EPSILON), n_hill) / (1.0 + pow(X_conc / (Kx + EPSILON), n_hill))) * (pow(Y_conc / (Ky + EPSILON), n_hill) / (1.0 + pow(Y_conc / (Ky + EPSILON), n_hill))) - alpha_deg * Z_conc
+}
+
+// ============================================================
+// SDFs DE REDES COMPLEJAS
+// ============================================================
+
+// Topología de red sin escala (aproximación visual mediante atractores discretos)
+def "scale_free_network_node"(r_hub, r_periph, n_spokes) {
+    sdf: custom(
+        min(
+            sqrt(x*x + y*y + z*z) - r_hub,
+            sqrt(x*x + sq(y - 1.5) + z*z) - r_periph * sat(cos(n_spokes * atan(z, x)))
+        )
+    );
+}

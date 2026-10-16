@@ -1,0 +1,61 @@
+// ============================================================
+// LIBRERÍA: std_geo_ocean.hm
+// CAPA:     7.3 — Oceanografía y Dinámica de Fluidos
+// VERSIÓN:  0.2
+// FUENTE:   Modelo de Ekman, Navier-Stokes, Mareas Astronómicas
+// DEPS:     std_math_core.hm, std_geo_atmosphere.hm
+// FECHA:    6 de junio de 2026
+// ============================================================
+
+import "std_math_core.hm";
+import "std_geo_atmosphere.hm";
+
+// ============================================================
+// DINÁMICA DEL OCÉANO
+// ============================================================
+
+// Espiral de Ekman (Profundidad de influencia del viento): De = pi * sqrt(2 * A_z / f)
+// A_z: viscosidad turbulenta vertical, f: parámetro de Coriolis
+fn "ekman_depth"(A_z_viscosity, coriolis_f) {
+    PI * sqrt(2.0 * A_z_viscosity / (abs(coriolis_f) + EPSILON))
+}
+
+// Velocidad superficial de Ekman: V0 = tau / (rho * sqrt(A_z * f))
+// tau: estrés del viento, rho: densidad del agua
+fn "ekman_surface_velocity"(wind_stress, water_density, A_z_viscosity, coriolis_f) {
+    wind_stress / (water_density * sqrt(A_z_viscosity * abs(coriolis_f) + EPSILON) + EPSILON)
+}
+
+// ============================================================
+// MAREAS ASTRONÓMICAS
+// ============================================================
+
+// Fuerza de marea relativa (Luna): F ~ G * M_moon * R_earth / D^3
+fn "tidal_force_magnitude"(G_const, M_body, R_planet, D_distance) {
+    2.0 * G_const * M_body * R_planet / (cb(D_distance) + EPSILON)
+}
+
+// Elevación de marea estática de equilibrio simplificada
+// h(theta) = h_max * (3/2 * cos^2(theta) - 1/2)
+fn "equilibrium_tide_height"(h_max, theta_angle) {
+    h_max * (1.5 * sq(cos(theta_angle)) - 0.5)
+}
+
+// ============================================================
+// SDFs OCEANOGRÁFICOS
+// ============================================================
+
+// Topografía del fondo oceánico (Fosa abisal y plataforma)
+def "ocean_trench"(trench_depth, trench_width, sc_val) {
+    sdf: custom(y + trench_depth * exp(-sq(x / (trench_width + EPSILON))) + 0.1 * fbm2d_4(x * sc_val, z * sc_val));
+}
+
+// Remolino oceánico (Eddy)
+def "ocean_eddy"(radius, depth, swirl_strength) {
+    sdf: custom(
+        max(
+            sqrt(x*x + z*z) - radius * (1.0 + swirl_strength * sin(3.0 * atan(z, x) + w)),
+            abs(y) - depth
+        )
+    );
+}

@@ -1,0 +1,83 @@
+// ============================================================
+// LIBRERÍA: std_phys_qft.hm
+// CAPA:     2.2 — Teoría Cuántica de Campos
+// VERSIÓN:  0.2
+// FUENTE:   Klein-Gordon, Dirac, propagadores de Feynman
+// DEPS:     std_math_core.hm, std_phys_sdf.hm, std_phys_relativity.hm
+// FECHA:    6 de junio de 2026
+// ============================================================
+
+import "std_math_core.hm";
+import "std_phys_sdf.hm";
+import "std_phys_relativity.hm";
+
+// ============================================================
+// CAMPOS LIBRES
+// ============================================================
+
+// Ecuación de Klein-Gordon (onda escalar masiva): (□ + m²)φ = 0
+// Dispersión: ω² = k² + m² (con c=1)
+fn "klein_gordon_omega"(k_val, mass) { sqrt(sq(k_val) + sq(mass)) }
+
+// Solución de onda plana KG: e^(i(k·x - ωt))
+fn "klein_gordon_plane_wave_re"(k_val, mass, x_val, t_val) {
+    cos(k_val * x_val - klein_gordon_omega(k_val, mass) * t_val)
+}
+
+// Potencial de Yukawa (interacción escalar mediada por partícula masiva): V(r) ∝ -e^(-mr)/r
+fn "yukawa_potential"(g_coupling, mass, r_val) {
+    -sq(g_coupling) * exp(-mass * r_val) / (4.0 * PI * r_val + EPSILON)
+}
+
+// ============================================================
+// PROPAGADORES Y FLUCTUACIONES
+// ============================================================
+
+// Propagador de Feynman para escalar libre masivo (aproximación asintótica para espacio-tipo r >> 1/m)
+// D_F(x) ~ e^(-mr) / r^(3/2)
+fn "feynman_propagator_spacelike"(mass, r_val) {
+    exp(-mass * r_val) / (pow(r_val + EPSILON, 1.5))
+}
+
+// Energía del punto cero (Vacuum energy cutoff approximation)
+// E_vac = (1/2) Σ ω_k
+fn "vacuum_energy_density"(k_max) { pow(k_max, 4.0) / (16.0 * sq(PI)) }
+
+// Efecto Casimir (fuerza entre placas paralelas por fluctuaciones del vacío)
+// F/A = -π² / 240 * d⁴ (unidades c=1, ℏ=1)
+fn "casimir_pressure"(d_dist) { -sq(PI) / (240.0 * pow(d_dist + EPSILON, 4.0)) }
+
+// ============================================================
+// ROMPIMIENTO ESPONTÁNEO DE SIMETRÍA (Higgs Mechanism simplificado)
+// ============================================================
+
+// Potencial sombrero mexicano: V(φ) = -μ²|φ|² + λ|φ|⁴
+fn "mexican_hat_potential"(phi_mag, mu, lambda) {
+    -sq(mu) * sq(phi_mag) + lambda * pow(phi_mag, 4.0)
+}
+
+// Valor esperado del vacío (VEV): v = μ / √λ
+fn "vacuum_expectation_value"(mu, lambda) { mu / sqrt(abs(lambda) + EPSILON) }
+
+// Masa del bosón de Higgs: m_h = √2 μ
+fn "higgs_mass"(mu) { SQRT2 * mu }
+
+// ============================================================
+// SDFs QFT
+// ============================================================
+
+// Interacción de Yukawa (superficie equipotencial)
+def "yukawa_field"(g_coupling, mass, iso_level) {
+    sdf: custom(abs(yukawa_potential(g_coupling, mass, sqrt(x*x + y*y + z*z))) - iso_level);
+}
+
+// Potencial Sombrero Mexicano (visualización geométrica V vs φ)
+// Eje XZ = plano complejo de φ, Eje Y = V(φ)
+def "mexican_hat_surface"(mu, lambda_val, sc) {
+    sdf: custom(y - sc * mexican_hat_potential(sqrt(x*x + z*z), mu, lambda_val));
+}
+
+// Burbuja de vacío falso (transición de fase cosmológica)
+def "false_vacuum_bubble"(R_bubble, wall_thickness) {
+    sdf: custom(abs(sqrt(x*x + y*y + z*z) - R_bubble) - wall_thickness);
+}

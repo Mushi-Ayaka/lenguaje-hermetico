@@ -1,0 +1,131 @@
+// ============================================================
+// ARCHIVO DE PRUEBA FINAL: test_physics_final.herm
+// OBJETIVO: Validar física con custom(expr) sin usar 'let' en funciones
+// FECHA: 6 de junio de 2026
+// ============================================================
+
+// Escena básica
+scene {
+    background: [0.05, 0.05, 0.1];
+}
+
+// Material simple
+material "default" {}
+
+// ============================================================
+// FUNCIONES FÍSICAS COMPLETAMENTE EXPANDIDAS (sin 'let')
+// ============================================================
+
+// 1. Onda de gravedad
+fn "gravity_wave_final"(amp, k, g, t) {
+    y - amp * sin(k * x - sqrt(g * k) * t) * exp(-k * abs(z))
+}
+
+// 2. Superficie esférica
+fn "sphere_surface_final"(R, h) {
+    y - (R - sqrt(R*R - x*x - z*z) - h)
+}
+
+// 3. Campo de temperatura
+fn "temperature_final"(T0, D, t) {
+    T0 * exp(-(x*x + z*z) / (4.0 * D * t + 0.1)) / sqrt(4.0 * pi * D * t + 0.1) - 0.3
+}
+
+// 4. Onda estacionaria
+fn "standing_wave_final"(amp, k, omega, t) {
+    y - amp * sin(k * x) * cos(omega * t)
+}
+
+// 5. Lente parabólica
+fn "parabolic_lens_final"(f, h) {
+    y - (x*x + z*z) / (4.0 * f) - h
+}
+
+// 6. Conducción de calor 1D
+fn "heat_conduction_final"(T0, thermal_diff, t) {
+    T0 * exp(-x*x / (4.0 * thermal_diff * t + 0.1)) / sqrt(4.0 * pi * thermal_diff * t + 0.1) - 0.4
+}
+
+// ============================================================
+// PRUEBAS CON CUSTOM(expr)
+// ============================================================
+
+node "test_wave_physics" {
+    position: [-3, 2, 0];
+    sdf: custom(gravity_wave_final(0.15, 4.0, 9.8, w));
+    material: "default";
+}
+
+node "test_sphere_physics" {
+    position: [0, 2, 0];
+    sdf: custom(sphere_surface_final(2.0, 0.5));
+    material: "default";
+}
+
+node "test_temperature_physics" {
+    position: [3, 2, 0];
+    sdf: custom(temperature_final(1.0, 0.2, w * 0.5 + 1.0));
+    material: "default";
+}
+
+node "test_standing_wave" {
+    position: [-3, 0, 0];
+    sdf: custom(standing_wave_final(0.2, 3.0, 2.0, w));
+    material: "default";
+}
+
+node "test_parabolic_lens" {
+    position: [0, 0, 0];
+    sdf: custom(parabolic_lens_final(1.5, 0.3));
+    material: "default";
+}
+
+node "test_heat_conduction" {
+    position: [3, 0, 0];
+    sdf: custom(heat_conduction_final(1.0, 0.15, w + 1.0));
+    material: "default";
+}
+
+// ============================================================
+// FENÓMENOS MÁS COMPLEJOS (directamente en custom)
+// ============================================================
+
+node "test_combined_wave" {
+    position: [-3, -2, 0];
+    sdf: custom(y - 0.1 * sin(3.0 * x - w) * exp(-abs(z)) - 0.1 * sin(2.0 * z + w * 0.7));
+    material: "default";
+}
+
+node "test_vortex_simple" {
+    position: [0, -2, 0];
+    sdf: custom(1.0 / (x*x + z*z + 0.1) - 2.0 + 0.1 * sin(atan2(z, x) * 3.0 - w));
+    material: "default";
+}
+
+node "test_electric_field" {
+    position: [3, -2, 0];
+    sdf: custom(z / ((x*x + y*y + z*z + 0.1) * sqrt(x*x + y*y + z*z + 0.1)) - 0.5);
+    material: "default";
+}
+
+// ============================================================
+// COMBINACIÓN CON PRIMITIVAS NATIVAS
+// ============================================================
+
+node "test_hybrid_physics" {
+    position: [0, -4, 0];
+    sdf: union(
+        sphere(0.3),
+        custom(y - 0.1 * sin(x * 5.0 + w))
+    );
+    material: "default";
+}
+
+node "test_complex_interaction" {
+    position: [3, -4, 0];
+    sdf: subtract(
+        custom(sphere_surface_final(1.0, 0.0)),
+        box([0.6, 0.6, 0.6])
+    );
+    material: "default";
+}

@@ -1,0 +1,220 @@
+// ============================================================
+// LIBRERÍA: std_bio_genetics.hm
+// CAPA:     Biología (6.2 - Genética y Epigenética)
+// VERSIÓN:  1.0
+// FUENTE:   "Genetics: A Conceptual Approach" (Pierce), "Epigenetics" (Allis et al.)
+// DEPS:     std_math_core.hm, std_math_algebra.hm, std_math_calculus.hm
+// DEPS:     std_math_probability.hm, std_bio_cell.hm, std_bridge_biochem.hm
+// FECHA:    6 de junio de 2026
+// ============================================================
+
+// Importar dependencias
+import "std_math_core.hm";
+import "std_math_algebra.hm";
+import "std_math_probability.hm";
+
+// GENÉTICA Y EPIGENÉTICA: Estudio de la herencia, variación genética, 
+// patrones de transmisión mendeliana y modificaciones epigenéticas que regulan
+// la expresión génica sin alterar la secuencia de ADN.
+
+// ============================================================
+// CONSTANTES GENÉTICAS FUNDAMENTALES
+// ============================================================
+
+let AVOGADRO_GENETICS = 6.02214076e23;          // N_A (mol⁻¹) - constante de Avogadro
+let BASE_PAIR_MASS = 650.0;                     // Da (masa promedio por par de bases)
+let DNA_GC_CONTENT_TYPICAL = 0.42;              // Contenido GC típico en humanos
+let GENOME_SIZE_HUMAN = 3.2e9;                  // Pares de bases en genoma humano
+let METHYLATION_RATE_TYPICAL = 0.01;            // Tasa de metilación por ciclo celular
+
+// Probabilidades mendelianas básicas
+let MENDELIAN_RECESSIVE_PROB = 0.25;            // Probabilidad fenotipo recesivo en cruzamiento heterocigoto
+let MENDELIAN_DOMINANT_PROB = 0.75;             // Probabilidad fenotipo dominante en cruzamiento heterocigoto
+
+// ============================================================
+// INTERFAZ PÚBLICA - GENÉTICA DE POBLACIONES (fn)
+// ============================================================
+
+// --- Equilibrio de Hardy-Weinberg ---
+// p² + 2pq + q² = 1, donde p = frecuencia alelo A, q = frecuencia alelo a
+// Retorna frecuencia de heterocigotos (2pq) como métrica principal
+fn "hardy_weinberg_equilibrium"(allele_frequency_p) {
+    2.0 * allele_frequency_p * (1.0 - allele_frequency_p)
+}
+
+// --- Frecuencia Alelo a partir de Frecuencia Genotípica ---
+// p = f(AA) + 0.5 * f(Aa)
+fn "allele_frequency_from_genotypes"(homozygous_dominant_freq, heterozygous_freq, homozygous_recessive_freq) {
+    homozygous_dominant_freq + 0.5 * heterozygous_freq
+}
+
+// --- Desviación del Equilibrio (F-statistics) ---
+// F = 1 - (H_obs / H_exp), donde H_obs = frecuencia heterocigotos observada
+// H_exp = 2pq = heterocigotos esperados bajo Hardy-Weinberg
+fn "hardy_weinberg_deviation"(observed_heterozygotes, allele_frequency_p, total_individuals) {
+    1.0 - (observed_heterozygotes / (2.0 * allele_frequency_p * (1.0 - allele_frequency_p) * total_individuals + 1e-6))
+}
+
+// ============================================================
+// INTERFAZ PÚBLICA - HERENCIA MENDELIANA (fn)
+// ============================================================
+
+// --- Probabilidad de Fenotipo en Cruzamiento Monohíbrido ---
+// Para cruzamiento Aa × Aa: P(dominante) = 0.75, P(recesivo) = 0.25
+fn "monohybrid_cross_probability"(parent1_genotype, parent2_genotype, phenotype_dominant) {
+    // Genotipos: 0 = aa, 1 = Aa, 2 = AA
+    let p1 = parent1_genotype;
+    let p2 = parent2_genotype;
+    
+    // Matriz de probabilidades simplificada
+    let prob_dominant = step(0.5, p1) * step(0.5, p2) * 1.0 + 
+                       (1.0 - step(0.5, p1)) * step(0.5, p2) * 0.5 + 
+                       step(0.5, p1) * (1.0 - step(0.5, p2)) * 0.5 + 
+                       (1.0 - step(0.5, p1)) * (1.0 - step(0.5, p2)) * 0.25;
+    
+    phenotype_dominant * prob_dominant + (1.0 - phenotype_dominant) * (1.0 - prob_dominant)
+}
+
+// --- Herencia Autosómica Recesiva (Probabilidad Portador) ---
+// Para padres no afectados con hijo afectado: P(ambos portadores) = 2/3
+fn "autosomal_recessive_carrier_prob"(affected_children, total_children) {
+    affected_children / (total_children + 1e-6) * 0.6667
+}
+
+// --- Ley de Segregación Independiente (Dihíbrido) ---
+// P(AABB) = P(AA) × P(BB) = (1/4) × (1/4) = 1/16
+fn "dihybrid_independent_assortment"(trait1_prob, trait2_prob) {
+    trait1_prob * trait2_prob
+}
+
+// ============================================================
+// INTERFAZ PÚBLICA - EPIGENÉTICA (METILACIÓN DE ADN) (fn)
+// ============================================================
+
+// --- Modelo de Metilación Semiconservativa ---
+// Después de replicación: m' = m + (1 - m) * α - m * β
+// α = tasa de metilación, β = tasa de desmetilación
+fn "dna_methylation_dynamics"(current_methylation, methylation_rate, demethylation_rate) {
+    current_methylation + (1.0 - current_methylation) * methylation_rate - current_methylation * demethylation_rate
+}
+
+// --- Herencia Epigenética (Modelo Simple) ---
+// Metilación hija = (metilación madre + ruido) * fidelidad
+fn "epigenetic_inheritance"(parent_methylation, inheritance_fidelity, epigenetic_noise) {
+    parent_methylation * inheritance_fidelity + epigenetic_noise * (1.0 - inheritance_fidelity)
+}
+
+// --- Patrón de Metilación CpG (Islas CpG) ---
+// Densidad de metilación = 1 / (1 + exp(-k * (gc_content - threshold)))
+fn "cpg_island_methylation"(gc_content, threshold, steepness) {
+    1.0 / (1.0 + exp(-steepness * (gc_content - threshold)))
+}
+
+// ============================================================
+// INTERFAZ PÚBLICA - REPLICACIÓN DE ADN (fn)
+// ============================================================
+
+// --- Replicación Semiconservativa (Modelo de Meselson-Stahl) ---
+// Después de n generaciones: fracción de ADN parental = (1/2)^n
+fn "semiconservative_replication"(generations) {
+    pow(0.5, generations)
+}
+
+// --- Fidelidad de Replicación (Tasa de Error) ---
+// Probabilidad de copia correcta = exp(-error_rate * length)
+fn "dna_replication_fidelity"(sequence_length, error_rate) {
+    exp(-error_rate * sequence_length)
+}
+
+// --- Velocidad de Replicación (Horquilla de Replicación) ---
+// Nucleótidos por segundo = tasa_base * factores_de_regulación
+fn "replication_fork_speed"(base_rate, polymerase_efficiency, template_complexity) {
+    base_rate * polymerase_efficiency / (template_complexity + 1e-6)
+}
+
+// ============================================================
+// INTERFAZ PÚBLICA - EXPRESIÓN GÉNICA (fn)
+// ============================================================
+
+// --- Regulación Transcripcional (Modelo Hill) ---
+// Expresión = V_max * [activador]^n / (K_d^n + [activador]^n)
+fn "transcriptional_regulation"(activator_concentration, max_expression, dissociation_constant, hill_coefficient) {
+    max_expression * pow(activator_concentration, hill_coefficient) / 
+    (pow(dissociation_constant, hill_coefficient) + pow(activator_concentration, hill_coefficient) + 1e-6)
+}
+
+// --- Silenciamiento por Metilación ---
+// Expresión = expresión_basal * (1 - metilación * sensibilidad)
+fn "methylation_silencing"(basal_expression, methylation_level, silencing_sensitivity) {
+    basal_expression * (1.0 - methylation_level * silencing_sensitivity)
+}
+
+// --- Epistasia (Interacción Génica) ---
+// Fenotipo = efecto_gen1 + efecto_gen2 + interacción * efecto_gen1 * efecto_gen2
+fn "epistatic_interaction"(gene1_effect, gene2_effect, interaction_strength) {
+    gene1_effect + gene2_effect + interaction_strength * gene1_effect * gene2_effect
+}
+
+// ============================================================
+// INTERFAZ PÚBLICA - SDFs DE ESTRUCTURA GENÉTICA (def)
+// ============================================================
+
+// --- Doble Hélice de ADN (Estructura Básica) ---
+def "dna_double_helix"(helix_radius, pitch_length, base_pair_spacing, intensity_threshold) {
+    sdf: union(
+        custom(sqrt(x*x + y*y) - helix_radius + 0.1 * sin(z * 2.0 * pi / pitch_length + atan2(y, x))),  // Cadena principal
+        custom(sqrt(x*x + y*y) - helix_radius + 0.1 * sin(z * 2.0 * pi / pitch_length + atan2(y, x) + pi)))  // Cadena complementaria
+}
+
+// --- Cromosoma en Metafase ---
+def "metaphase_chromosome"(chromosome_length, centromere_position, chromatid_thickness, intensity_threshold) {
+    sdf: union(
+        cylinder([0, -chromosome_length * 0.5, 0], [0, chromosome_length * 0.5, 0], chromatid_thickness),  // Cromátida 1
+        cylinder([chromatid_thickness * 2.0, -chromosome_length * 0.5, 0], [chromatid_thickness * 2.0, chromosome_length * 0.5, 0], chromatid_thickness),  // Cromátida 2
+        sphere([chromatid_thickness, chromosome_length * (centromere_position - 0.5), 0], chromatid_thickness * 1.5))  // Centrómero
+}
+
+// --- Patrón de Metilación CpG ---
+def "cpg_methylation_pattern"(pattern_scale, methylation_density, intensity_threshold) {
+    sdf: custom(
+        sin(x * 10.0 / pattern_scale) * sin(y * 10.0 / pattern_scale) * 0.1 - 
+        0.05 + methylation_density * (sin(x * 5.0 / pattern_scale + w * 0.5) * 0.5 + 0.5))
+}
+
+// ============================================================
+// EJEMPLOS DE USO CON custom(expr)
+// ============================================================
+
+/*
+// EJEMPLO 1: Equilibrio Hardy-Weinberg
+let hw_freqs = hardy_weinberg_equilibrium(0.7);  // [0.49, 0.42, 0.09]
+
+// EJEMPLO 2: Dinámica de metilación
+let methylation_next = dna_methylation_dynamics(0.8, 0.05, 0.02);  // 0.8 → 0.81
+
+// EJEMPLO 3: Doble hélice de ADN
+instance "dna_example" {
+    position: [0, 0, 0];
+    sdf: dna_double_helix(0.1, 3.4, 0.34, 0.1);
+}
+
+// EJEMPLO 4: Patrón de metilación
+instance "methylation_example" {
+    position: [2, 0, 0];
+    sdf: cpg_methylation_pattern(1.0, 0.6, 0.1);
+}
+*/
+
+// ============================================================
+// NOTAS PARA USUARIOS
+// ============================================================
+
+// 1. La genética estudia la herencia y variación de caracteres
+// 2. La epigenética estudia modificaciones heredables que no alteran la secuencia de ADN
+// 3. Los modelos son simplificaciones pedagógicas de fenómenos complejos
+// 4. Las constantes son valores típicos para visualización
+// 5. La precisión científica requiere ajustes específicos por organismo
+
+// ============================================================
+// "El genoma es la partitura, la epigenética es la interpretación."
+// ============================================================

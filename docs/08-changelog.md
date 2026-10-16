@@ -1,5 +1,24 @@
 # Changelog
 
+## 2026-10-16 — v0.15 — Fase 0 (asegurar): pipeline ONT commiteado + 55 librerías migradas
+
+### Recuperado (commit de emergencia, trabajo sin versionar desde julio)
+- **Pipeline `.ont`/`.obs` completo** que nunca se había commiteado: `herm_ont.cpp` (1,211 LOC), `herm_obs.cpp`, `herm_compile.cpp`, `herm_ont.h`, `herm_obs.h`, `contrato/ont.h`.
+- **Fixes acumulados sin commitear** en `herm_parser.cpp`, `herm_resolver.cpp`, `herm_lexer.*`, `herm_render.cpp`, `herm_rih.cpp`, `herm_ast.h`, `main.cpp`, `contrato/rih.h`, `operador_tb/renderer.cpp`.
+- **`herm/build.bat`**: añade `herm_ont.cpp` y `herm_obs.cpp` al SRC del CLI.
+
+### Añadido
+- **`libreria/`**: migradas las **55 librerías estándar** (`std_math_*`, `std_phys_*`, `std_bridge_*`, `std_chem_*`, `std_bio_*`, `std_geo_*`, `std_astro_*`) desde `proyecto de IA artistica/Lenguaje Hermetico/.gitignored/libreria/` (copia local sin git, creada 2026-07-13).
+- **`libreria/tests/`**: 44 `.herm` de prueba + `verify_optics.hm` migrados del mismo origen.
+- **`docs/librerias/`**: 56 documentos (índice + uno por librería).
+- **`docs/investigacion/`**: 16 archivos de investigación/auditoría (`kiro_librerias_investigacion`).
+- **`libreria/README.md`**: estado del test de las 55 librerías (resultado: **35/55 compilan, 20 fallan** por `fn` multi-statement (17) y keywords como parámetros (3); RAM bomb de 1.5 GB en `test_layer1_math`).
+- **`DECISION_LOG.md`** y **`PLAN.md`** en la raíz (plan de reforma de 6 fases; regla: el agente no decide arquitectura sin consultar al usuario).
+
+### Nota
+- El changelog no registraba nada desde v0.14 (2026-06-04): todo el trabajo de julio–octubre (pipeline ONT, `.obs`, imports) queda registrado ahora, tarde pero registrado.
+- Tag `pre-reforma` apunta a este commit.
+
 ## 2026-06-04 — v0.14 — Migración de PBR a Plano Tensorial 1x8
 
 ### Añadido

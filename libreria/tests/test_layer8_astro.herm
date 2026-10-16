@@ -1,0 +1,39 @@
+// Test de Capa 8 — Astro (Mechanics, Stellar, Cosmology)
+
+scene { background: [0, 0, 0]; }
+
+import "std_math_core.hm"
+import "std_phys_kinematics.hm"
+import "std_phys_thermo.hm"
+import "std_phys_relativity.hm"
+import "std_astro_mechanics.hm"
+import "std_astro_stellar.hm"
+import "std_astro_cosmology.hm"
+
+material "astro_mat" {}
+
+// --- std_astro_mechanics ---
+let kep_p = kepler_period(1.5e11, 1.989e30, 5.97e24, 6.674e-11);
+let esc_v = escape_velocity(5.97e24, 6371e3, 6.674e-11);
+let roche = roche_limit_rigid(6371e3, 5500.0, 3300.0);
+let vis_viva = vis_viva_velocity(6.674e-11, 1.989e30, 1.5e11, 1.5e11);
+
+// --- std_astro_stellar ---
+let dp_dr = hydrostatic_dp_dr(6.674e-11, 1e30, 1e5, 1e8);
+let l_edd = eddington_luminosity(6.674e-11, 1.989e30, 1.67e-27, 3e8, 6.65e-29);
+let pp_rate = pp_chain_energy_rate(1.0, 1.5e5, 0.7, 1.5e7);
+let cno_rate = cno_cycle_energy_rate(1.0, 1.5e5, 0.7, 0.01, 1.5e7);
+
+// --- std_astro_cosmology ---
+let hubble_v = hubble_velocity(70.0, 100.0);
+let redshift = cosmological_redshift(600e-9, 400e-9);
+let f_H2 = friedmann_H_squared(6.674e-11, 1e-27, 1e-35, 3e8);
+let cmb_t = cmb_temperature(2.725, 0.5);
+
+// --- SDFs ---
+instance "planetary_rings"(1.5, 2.5, 0.05) { position: [0,0,0]; material: "astro_mat"; }
+instance "asteroid_shape"(1.0, 0.8, 0.6, 0.1, 2.0) { position: [4.0,0,0]; material: "astro_mat"; }
+instance "star_corona"(1.0, 0.5) { position: [-4.0,0,0]; material: "astro_mat"; }
+instance "pulsar_jets"(0.5, 0.2, 3.0) { position: [0,4.0,0]; material: "astro_mat"; }
+instance "cosmic_web_filaments"(0.5, 0.1) { position: [0,-4.0,0]; material: "astro_mat"; }
+instance "inflation_bubble"(0.1, 1.5, 2.0) { position: [0,0,4.0]; material: "astro_mat"; }

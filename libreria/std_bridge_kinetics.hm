@@ -1,0 +1,565 @@
+// ============================================================
+// LIBRERÍA: std_bridge_kinetics.hm
+// CAPA:     Intermediario Física-Química (3.7 - Cinética Química y Termodinámica Química)
+// VERSIÓN:  1.0
+// FUENTE:   "Chemical Kinetics and Dynamics" by Steinfeld, Francisco & Hase
+// DEPS:     std_math_core.hm, std_math_algebra.hm, std_math_calculus.hm
+// DEPS:     std_phys_statmech.hm, std_bridge_physchem.hm, std_bridge_statmech_mol.hm
+// FECHA:    6 de junio de 2026
+// ============================================================
+
+// CINÉTICA QUÍMICA Y TERMODINÁMICA QUÍMICA: Estudio de velocidades de reacción,
+// mecanismos, teorías de velocidad de reacción, acoplamiento cinética-termodinámica
+
+// ============================================================
+// CONSTANTES FUNDAMENTALES
+// ============================================================
+
+let BOLTZMANN_KINETICS = 1.380649e-23;        // k_B (J/K)
+let BOLTZMANN_EV_KINETICS = 8.617333262e-5;   // k_B (eV/K)
+let GAS_CONSTANT_KINETICS = 8.314462618;      // R = N_A·k_B (J/(mol·K))
+let AVOGADRO_KINETICS = 6.02214076e23;        // N_A (mol⁻¹)
+let PLANCK_KINETICS = 6.62607015e-34;         // h (J·s)
+
+// ============================================================
+// INTERFAZ PÚBLICA - TEORÍAS DE VELOCIDAD DE REACCIÓN (fn)
+// ============================================================
+
+// --- Teoría de Colisiones (Simple) ---
+// k = P·Z·exp(-E_a/(RT))
+fn "collision_theory_rate"(collision_frequency, steric_factor, activation_energy, temperature) {
+    collision_frequency * steric_factor * exp(-activation_energy / (GAS_CONSTANT_KINETICS * temperature))
+}
+
+// --- Frecuencia de Colisiones (Teoría de Colisiones) ---
+// Z_AB = σ_AB·√(8kT/(πμ))·N_A·[A][B]
+fn "collision_frequency_theory"(sigma_cs, reduced_mass, concentrationA, concentrationB, temperature) {
+    sigma_cs * sqrt(8.0 * BOLTZMANN_KINETICS * temperature / (pi * reduced_mass + 1e-6)) * AVOGADRO_KINETICS * concentrationA * concentrationB
+}
+
+// --- Teoría del Estado de Transición (TST) ---
+// k_TST = (k_BT/h)·K‡·exp(-ΔG‡/(RT))
+fn "transition_state_theory_rate"(temperature, equilibrium_constant_ts, activation_free_energy) {
+    (BOLTZMANN_KINETICS * temperature / PLANCK_KINETICS) * 
+    equilibrium_constant_ts * exp(-activation_free_energy / (GAS_CONSTANT_KINETICS * temperature))
+}
+
+// --- Constante de Equilibrio del Estado de Transición ---
+// K‡ = exp(-ΔG‡/(RT)) = (q‡/q_A q_B)·exp(-ΔE₀/(RT))
+fn "transition_state_equilibrium_constant"(partition_function_ts, partition_functions_reactants, zero_point_energy) {
+    let q_ratio = partition_function_ts;
+    for i in range(0, len(partition_functions_reactants)) {
+        q_ratio = q_ratio / (partition_functions_reactants[i] + 1e-6);
+    }
+    q_ratio * exp(-zero_point_energy / (BOLTZMANN_KINETICS * 300.0))
+}
+
+// --- Teoría RRKM (Rice-Ramsperger-Kassel-Marcus) ---
+// k(E) = Σ_P(E - E₀)/[h·ρ(E)]
+fn "rrmk_rate_constant"(energy, threshold_energy, density_of_states, sum_of_states) {
+    sum_of_states(energy - threshold_energy) / (PLANCK_KINETICS * density_of_states(energy) + 1e-6)
+}
+
+// --- Teoría de Marcus (Transferencia de Electrones) ---
+// k_ET = (2π/h)·|V|²·(1/√(4πλk_BT))·exp(-(ΔG°+λ)²/(4λk_BT))
+fn "marcus_electron_transfer_rate"(coupling_matrix_element, reorganization_energy, free_energy_change, temperature) {
+    let prefactor = 2.0 * pi * coupling_matrix_element * coupling_matrix_element / PLANCK_KINETICS;
+    let exponent = -(free_energy_change + reorganization_energy) * 
+                   (free_energy_change + reorganization_energy) / 
+                   (4.0 * reorganization_energy * BOLTZMANN_KINETICS * temperature + 1e-6);
+    let normalization = 1.0 / sqrt(4.0 * pi * reorganization_energy * BOLTZMANN_KINETICS * temperature);
+    
+    prefactor * normalization * exp(exponent)
+}
+
+// ============================================================
+// INTERFAZ PÚBLICA - CINÉTICA DE REACCIONES COMPLEJAS (fn)
+// ============================================================
+
+// --- Mecanismo Consecutivo (A → B → C) ---
+fn "consecutive_reaction_kinetics"(initial_A, k1, k2, time) {
+    let A = initial_A * exp(-k1 * time);
+    let B = (k1 * initial_A / (k2 - k1 + 1e-6)) * (exp(-k1 * time) - exp(-k2 * time));
+    let C = initial_A - A - B;
+    [A, B, C]
+}
+
+// --- Mecanismo Paralelo (Competitivo) ---
+fn "parallel_reaction_kinetics"(initial_A, k1, k2, time) {
+    let A = initial_A * exp(-(k1 + k2) * time);
+    let B = (k1 * initial_A / (k1 + k2)) * (1.0 - exp(-(k1 + k2) * time));
+    let C = (k2 * initial_A / (k1 + k2)) * (1.0 - exp(-(k1 + k2) * time));
+    [A, B, C]
+}
+
+// --- Mecanismo Reversible (A ⇌ B) ---
+fn "reversible_reaction_kinetics"(initial_A, initial_B, k_forward, k_reverse, time) {
+    let k_sum = k_forward + k_reverse;
+    let equilibrium_A = (k_reverse * (initial_A + initial_B)) / k_sum;
+    let deviation = initial_A - equilibrium_A;
+    
+    let A = equilibrium_A + deviation * exp(-k_sum * time);
+    let B = (initial_A + initial_B) - A;
+    [A, B]
+}
+
+// --- Mecanismo en Cadena (Radicales) ---
+fn "chain_reaction_kinetics"(initiation_rate, propagation_rate, termination_rate, time) {
+    let chain_length = propagation_rate / sqrt(initiation_rate * termination_rate + 1e-6);
+    let radical_concentration = sqrt(initiation_rate / termination_rate) * 
+                                (1.0 - exp(-propagation_rate * time));
+    [chain_length, radical_concentration]
+}
+
+// --- Cinética Autocatalítica ---
+// A + B → 2B
+fn "autocatalytic_kinetics"(initial_A, initial_B, rate_constant, time) {
+    let total = initial_A + initial_B;
+    let ratio = initial_B / initial_A;
+    let B = total / (1.0 + (1.0/ratio) * exp(-rate_constant * total * time));
+    let A = total - B;
+    [A, B]
+}
+
+// ============================================================
+// INTERFAZ PÚBLICA - CINÉTICA ENZIMÁTICA AVANZADA (fn)
+// ============================================================
+
+// --- Ecuación de Michaelis-Menten con Inhibición ---
+fn "michaelis_menten_with_inhibition"(substrate, inhibitor, vmax, km, ki, inhibition_type) {
+    if inhibition_type == "competitive" {
+        vmax * substrate / (km * (1.0 + inhibitor/ki) + substrate)
+    } else if inhibition_type == "noncompetitive" {
+        (vmax / (1.0 + inhibitor/ki)) * substrate / (km + substrate)
+    } else if inhibition_type == "uncompetitive" {
+        vmax * substrate / (km + substrate * (1.0 + inhibitor/ki))
+    } else {
+        vmax * substrate / (km + substrate)  // Sin inhibición
+    }
+}
+
+// --- Cinética de Cooperatividad (Hill) ---
+// v = V_max·[S]^n/(K^n + [S]^n)
+fn "hill_equation_cooperativity"(substrate, vmax, hill_coefficient, dissociation_constant) {
+    vmax * pow(substrate, hill_coefficient) / 
+    (pow(dissociation_constant, hill_coefficient) + pow(substrate, hill_coefficient))
+}
+
+// --- Coeficiente de Hill (Medida de Cooperatividad) ---
+fn "hill_coefficient_from_data"(substrate_concentrations, velocities) {
+    // n_H = ∂log(v/(V_max-v))/∂log[S]
+    let log_ratio = 0.0;
+    let log_concentration = 0.0;
+    
+    // Estimación simplificada
+    if len(substrate_concentrations) > 1 && len(velocities) > 1 {
+        let v_max = max_array(velocities);
+        let idx1 = len(substrate_concentrations) / 3;
+        let idx2 = 2 * len(substrate_concentrations) / 3;
+        
+        let ratio1 = velocities[idx1] / (v_max - velocities[idx1] + 1e-6);
+        let ratio2 = velocities[idx2] / (v_max - velocities[idx2] + 1e-6);
+        
+        log_ratio = log(ratio2 / (ratio1 + 1e-6));
+        log_concentration = log(substrate_concentrations[idx2] / (substrate_concentrations[idx1] + 1e-6));
+    }
+    
+    log_ratio / (log_concentration + 1e-6)
+}
+
+// --- Cinética de Múltiples Sustratos (Ordenado vs Aleatorio) ---
+fn "multi_substrate_kinetics"(substrateA, substrateB, vmax, kmA, kmB, kiA, mechanism_type) {
+    if mechanism_type == "ordered" {
+        vmax * substrateA * substrateB / 
+        (kmA * kmB + kmB * substrateA + substrateA * substrateB)
+    } else if mechanism_type == "random" {
+        vmax * substrateA * substrateB / 
+        ((kmA + substrateA) * (kmB + substrateB))
+    } else if mechanism_type == "pingpong" {
+        vmax * substrateA * substrateB / 
+        (kmB * substrateA + kmA * substrateB + substrateA * substrateB)
+    } else {
+        0.0
+    }
+}
+
+// ============================================================
+// INTERFAZ PÚBLICA - TERMODINÁMICA DE NO EQUILIBRIO (fn)
+// ============================================================
+
+// --- Relación de Onsager (Reciprocidad) ---
+// J_i = Σ_j L_ij·X_j, con L_ij = L_ji
+fn "onsager_relations"(forces, phenomenological_coefficients) {
+    let fluxes = [];
+    for i in range(0, len(forces)) {
+        let flux_i = 0.0;
+        for j in range(0, len(forces)) {
+            flux_i = flux_i + phenomenological_coefficients[i][j] * forces[j];
+        }
+        fluxes = append(fluxes, flux_i);
+    }
+    fluxes
+}
+
+// --- Producción de Entropía (Irreversible) ---
+// σ = Σ_i J_i·X_i ≥ 0
+fn "entropy_production_rate"(fluxes, forces) {
+    let sum = 0.0;
+    for i in range(0, min(len(fluxes), len(forces))) {
+        sum = sum + fluxes[i] * forces[i];
+    }
+    max(0.0, sum)  // Siempre positiva o cero
+}
+
+// --- Teorema de Fluctuación-Disipación ---
+// ⟨δJ_i(t)·δJ_j(0)⟩ = 2k_BT·L_ij·δ(t)
+fn "fluctuation_dissipation_relation"(temperature, phenomenological_coefficient, delta_time) {
+    2.0 * BOLTZMANN_KINETICS * temperature * phenomenological_coefficient * exp(-delta_time*delta_time/0.1)
+}
+
+// --- Teoría de Respuesta Lineal ---
+// ⟨δA(t)⟩ = ∫_0^t Φ_AB(t-t')·δF_B(t') dt'
+fn "linear_response_function"(susceptibility, external_perturbation, time) {
+    // Integral de convolución simplificada
+    susceptibility * external_perturbation * (1.0 - exp(-time/0.1))
+}
+
+// ============================================================
+// INTERFAZ PÚBLICA - OSCILACIONES Y PATRONES (fn)
+// ============================================================
+
+// --- Ecuaciones de Lotka-Volterra (Depredador-Presa) ---
+fn "lotka_volterra_equations"(prey_population, predator_population, alpha, beta, gamma, delta, time_step) {
+    // dx/dt = αx - βxy
+    // dy/dt = δxy - γy
+    let prey_change = alpha * prey_population - beta * prey_population * predator_population;
+    let predator_change = delta * prey_population * predator_population - gamma * predator_population;
+    
+    [prey_population + prey_change * time_step, 
+     predator_population + predator_change * time_step]
+}
+
+// --- Modelo de Brusselator (Reacción-Difusión) ---
+fn "brusselator_reaction_diffusion"(concentrationA, concentrationB, rate_constants, diffusion_coefficients, position) {
+    // A → X, B + X → Y + D, 2X + Y → 3X, X → E
+    let k1 = rate_constants[0];
+    let k2 = rate_constants[1];
+    let k3 = rate_constants[2];
+    let k4 = rate_constants[3];
+    
+    let Dx = diffusion_coefficients[0];
+    let Dy = diffusion_coefficients[1];
+    
+    let production_x = k1 * concentrationA - k2 * concentrationB * concentrationA + 
+                      k3 * concentrationA * concentrationA * concentrationB - k4 * concentrationA;
+    let production_y = k2 * concentrationB * concentrationA - k3 * concentrationA * concentrationA * concentrationB;
+    
+    let diffusion_x = Dx * (sin(position*5.0) * 0.1);  // Simplificado
+    let diffusion_y = Dy * (cos(position*5.0) * 0.1);
+    
+    [production_x + diffusion_x, production_y + diffusion_y]
+}
+
+// --- Condición de Turing (Inestabilidad) ---
+fn "turing_instability_condition"(diffusion_ratio, reaction_jacobian) {
+    // Para sistema 2×2: D_y/D_x > (J_22/J_11) cuando J_11>0, J_22<0
+    let J11 = reaction_jacobian[0][0];
+    let J22 = reaction_jacobian[1][1];
+    diffusion_ratio > (abs(J22) / (J11 + 1e-6))
+}
+
+// ============================================================
+// INTERFAZ PÚBLICA - SDFs DE CINÉTICA QUÍMICA (def)
+// ============================================================
+
+// --- Superficie de Energía Potencial de Reacción ---
+def "reaction_potential_energy_surface"(reaction_coordinate, energy_profile, intensity_threshold) {
+    // PES con mínimo de reactivos, estado de transición, mínimo de productos
+    let rc = sqrt(x*x);  // Coordenada de reacción
+    
+    let energy = 0.0;
+    if rc < 0.3 {
+        energy = rc * rc * 3.0;  // Reactivos
+    } else if rc < 0.6 {
+        energy = 0.27 - (rc - 0.45)*(rc - 0.45) * 15.0;  // Estado de transición
+    } else {
+        energy = (rc - 0.75)*(rc - 0.75) * 2.0;  // Productos
+    }
+    
+    // Trayectoria de reacción mínima
+    let reaction_path = cylinder([-0.4, 0.05, 0], [0.4, 0.05, 0], 0.02);
+    
+    sdf: union(custom(y - energy - intensity_threshold), reaction_path);
+}
+
+// --- Teoría de Colisiones Moleculares ---
+def "molecular_collision_theory_visualization"(collision_sigma_cs, relative_velocity, intensity_threshold) {
+    // Moléculas aproximándose
+    let molecule1 = sphere([-0.3, 0, 0], 0.05);
+    let molecule2 = sphere([0.3, 0, 0], 0.05);
+    
+    // Trayectorias
+    let trajectory1 = cylinder([-0.4, 0, 0], [-0.3, 0, 0], 0.01);
+    let trajectory2 = cylinder([0.4, 0, 0], [0.3, 0, 0], 0.01);
+    
+    // Sección eficaz de colisión
+    let collision_area = circle([0, 0, 0], sqrt(collision_sigma_cs/pi) * 0.3);
+    
+    // Energía relativa
+    let relative_energy = 0.5 * relative_velocity * relative_velocity * 0.1;
+    
+    sdf: union(union(union(molecule1, molecule2), union(trajectory1, trajectory2)), 
+               union(collision_area, custom(y - relative_energy - intensity_threshold)));
+}
+
+// --- Estado de Transición (Complejo Activado) ---
+def "transition_state_complex_visualization"(reactants, products, ts_geometry, intensity_threshold) {
+    // Reactivos
+    let reactant_complex = sphere([-0.4, 0, 0], 0.06);
+    
+    // Estado de transición
+    let transition_state = sphere([0, 0.1, 0], 0.07);
+    
+    // Productos
+    let product_complex = sphere([0.4, 0, 0], 0.06);
+    
+    // Coordenada de reacción
+    let reaction_coordinate = cylinder([-0.4, 0, 0], [0.4, 0, 0], 0.015);
+    
+    // Barrera de energía
+    let energy_barrier = cylinder([0, 0, 0], [0, 0.1, 0], 0.02);
+    
+    sdf: union(union(union(reactant_complex, transition_state), union(product_complex, reaction_coordinate)), energy_barrier);
+}
+
+// --- Cinética Enzimática Michaelis-Menten ---
+def "michaelis_menten_kinetics_visualization"(substrate_range, vmax, km, intensity_threshold) {
+    // Curva de saturación
+    let [S] = sqrt(x*x) * 5.0;  // Concentración de sustrato
+    let velocity = michaelis_menten_kinetics([S], vmax, km);
+    
+    // Sitio activo enzimático
+    let enzyme_active_site = sphere([0, 0, 0], 0.08);
+    
+    // Sustrato uniéndose
+    let substrate_binding = exp(-(x*x + z*z)/0.03) * ([S]/(km + [S]));
+    
+    // Complejo enzima-sustrato
+    let enzyme_substrate_complex = sphere([0, 0.05, 0], 0.06) * ([S]/(km + [S]));
+    
+    sdf: union(enzyme_active_site, union(custom(y - velocity * 0.1 - intensity_threshold), 
+                                         union(custom(substrate_binding - intensity_threshold * 0.5), 
+                                               enzyme_substrate_complex)));
+}
+
+// --- Oscilaciones Químicas (Sistema Belousov-Zhabotinsky) ---
+def "chemical_oscillations_bz_pattern"(time, rate_constants, intensity_threshold) {
+    // Patrones oscilatorios espacio-temporales
+    let spatial_pattern = sin(x*4.0 + time) * sin(z*4.0 + time*1.5) * 0.4;
+    
+    // Ondas espirales
+    let r = sqrt(x*x + z*z);
+    let theta = atan2(z, x);
+    let spiral_wave = sin(r * 6.0 - theta - time * 3.0) * 0.3;
+    
+    // Frentes de reacción viajeros
+    let traveling_wave = step(sin(x*3.0 - time*2.0), 0.0) * 0.2;
+    
+    sdf: custom(y - spatial_pattern - spiral_wave - traveling_wave - intensity_threshold);
+}
+
+// --- Difusión con Reacción (Sistema de Reacción-Difusión) ---
+def "reaction_diffusion_system"(diffusion_coefficient, reaction_rate, time, intensity_threshold) {
+    // Ecuación: ∂c/∂t = D·∇²c + R(c)
+    let position = sqrt(x*x + z*z);
+    
+    // Término de difusión (Laplaciano aproximado)
+    let diffusion_term = diffusion_coefficient * (sin(x*5.0) + sin(z*5.0)) * 0.1;
+    
+    // Término de reacción (no lineal)
+    let reaction_term = reaction_rate * position * (1.0 - position) * sin(time * 2.0);
+    
+    // Patrón resultante
+    let pattern = diffusion_term + reaction_term;
+    
+    sdf: custom(y - pattern - intensity_threshold);
+}
+
+// ============================================================
+// INTERFAZ PÚBLICA - FENÓMENOS AVANZADOS (def)
+// ============================================================
+
+// --- Catálisis Heterogénea (Superficie) ---
+def "heterogeneous_catalysis_surface"(surface_sites, adsorption_rate, reaction_rate, intensity_threshold) {
+    // Superficie catalítica
+    let catalyst_surface = plane([0.0, 1.0, 0.0], 0.0);
+    
+    // Sitios activos
+    let active_sites = [];
+    for i in range(0, surface_sites) {
+        let site_x = sin(i * 0.8) * 0.25;
+        let site_z = cos(i * 0.8) * 0.25;
+        let site = sphere([site_x, 0.02, site_z], 0.03);
+        active_sites = append(active_sites, site);
+    }
+    
+    // Moléculas adsorbidas
+    let adsorbed_molecules = [];
+    for i in range(0, surface_sites/2) {
+        let mol_x = sin(i * 1.2) * 0.2;
+        let mol_z = cos(i * 1.2) * 0.2;
+        let molecule = sphere([mol_x, 0.06, mol_z], 0.02 * adsorption_rate);
+        adsorbed_molecules = append(adsorbed_molecules, molecule);
+    }
+    
+    // Productos desorbidos
+    let desorbed_products = sphere([0, 0.15, 0], 0.04 * reaction_rate);
+    
+    sdf: union(catalyst_surface, union(union_array(active_sites), 
+                                       union(union_array(adsorbed_molecules), desorbed_products)));
+}
+
+// --- Cinética de Polimerización ---
+def "polymerization_kinetics_visualization"(monomer_concentration, initiation_rate, propagation_rate, intensity_threshold) {
+    // Cadenas poliméricas creciendo
+    let chain_lengths = [];
+    
+    for i in range(0, 5) {
+        let chain_x = i * 0.15 - 0.3;
+        let length = propagation_rate * monomer_concentration * (i + 1.0) * 0.1;
+        
+        let chain = cylinder([chain_x, 0, 0], [chain_x, length, 0], 0.02);
+        chain_lengths = append(chain_lengths, chain);
+        
+        // Monómeros incorporándose
+        let monomer = sphere([chain_x, length + 0.03, 0], 0.015 * monomer_concentration);
+        chain_lengths = append(chain_lengths, monomer);
+    }
+    
+    // Iniciador radical
+    let initiator = sphere([-0.4, 0.05, 0], 0.03 * initiation_rate);
+    
+    sdf: union(initiator, union_array(chain_lengths));
+}
+
+// --- Autoensamblaje Molecular (Micelas) ---
+def "molecular_self_assembly_micelles"(surfactant_concentration, critical_micelle_concentration, intensity_threshold) {
+    // Micelas esféricas
+    let micelles = [];
+    
+    // Por encima de CMC
+    if surfactant_concentration > critical_micelle_concentration {
+        let micelle_count = (surfactant_concentration - critical_micelle_concentration) * 5.0;
+        
+        for i in range(0, micelle_count) {
+            let micelle_x = sin(i * 1.0) * 0.3;
+            let micelle_z = cos(i * 1.0) * 0.3;
+            let micelle = sphere([micelle_x, 0, micelle_z], 0.07);
+            micelles = append(micelles, micelle);
+        }
+    }
+    
+    // Monómeros dispersos (por debajo de CMC)
+    let monomers = sphere([0, 0.1, 0], 0.02 * min(surfactant_concentration, critical_micelle_concentration));
+    
+    sdf: union(monomers, union_array(micelles));
+}
+
+// --- Reloj Químico (Oscilaciones Temporales) ---
+def "chemical_clock_temporal_oscillations"(time, oscillation_period, amplitude, intensity_threshold) {
+    // Oscilaciones en el tiempo
+    let oscillation = amplitude * sin(2.0 * pi * time / oscillation_period);
+    
+    // Reloj como esfera pulsante
+    let clock_sphere = sphere([0, 0, 0], 0.1 + oscillation * 0.05);
+    
+    // Indicador de fase
+    let phase_indicator = cylinder([0, 0, 0], 
+                                   [0.15 * cos(2.0 * pi * time / oscillation_period), 
+                                    0.15 * sin(2.0 * pi * time / oscillation_period), 0], 
+                                   0.02);
+    
+    sdf: union(clock_sphere, phase_indicator);
+}
+
+// --- Gradiente de Concentración en Reactor ---
+def "concentration_gradient_reactor"(inlet_concentration, reaction_rate, diffusion_coefficient, intensity_threshold) {
+    // Reactor de flujo
+    let reactor_length = 1.0;
+    let position_ratio = x / reactor_length;
+    
+    // Perfil de concentración (decaimiento exponencial)
+    let concentration = inlet_concentration * exp(-reaction_rate * position_ratio);
+    
+    // Gradiente de difusión
+    let diffusion_gradient = diffusion_coefficient * (1.0 - position_ratio) * 0.1;
+    
+    // Flujo
+    let flow_pattern = sin(z*3.0) * exp(-position_ratio*position_ratio/0.2) * 0.05;
+    
+    sdf: custom(y - concentration - diffusion_gradient - flow_pattern - intensity_threshold);
+}
+
+// ============================================================
+// EJEMPLOS DE USO CON custom(expr)
+// ============================================================
+
+/*
+// EJEMPLO 1: Superficie de energía potencial
+node "reaction_pes_example" {
+    position: [-4, 0, 0];
+    sdf: reaction_potential_energy_surface(0.0, [0.0, 0.3, 0.1, 0.0], 0.2);
+    material: "reaction_dynamics";
+}
+
+// EJEMPLO 2: Teoría de colisiones
+node "collision_theory_example" {
+    position: [0, 0, 0];
+    sdf: molecular_collision_theory_visualization(0.1, 0.5, 0.15);
+    material: "collision_dynamics";
+}
+
+// EJEMPLO 3: Cinética enzimática
+node "enzyme_kinetics_example" {
+    position: [4, 0, 0];
+    sdf: michaelis_menten_kinetics_visualization([0, 10], 1.0, 2.0, 0.12);
+    material: "enzyme_dynamics";
+}
+
+// EJEMPLO 4: Oscilaciones químicas
+node "chemical_oscillations_example" {
+    position: [-2, 3, 0];
+    sdf: chemical_oscillations_bz_pattern(0.0, [0.1, 0.2, 0.3, 0.4], 0.1);
+    material: "oscillatory_system";
+}
+
+// EJEMPLO 5: Catálisis heterogénea
+node "heterogeneous_catalysis_example" {
+    position: [2, 3, 0];
+    sdf: heterogeneous_catalysis_surface(8, 0.7, 0.5, 0.08);
+    material: "catalytic_surface";
+}
+
+// EJEMPLO 6: Autoensamblaje molecular
+node "self_assembly_example" {
+    position: [0, -3, 0];
+    sdf: molecular_self_assembly_micelles(0.3, 0.1, 0.1);
+    material: "self_assembly";
+}
+*/
+
+// ============================================================
+// NOTAS PARA USUARIOS
+// ============================================================
+
+// 1. La cinética química estudia cómo y qué tan rápido ocurren las reacciones
+// 2. Las teorías de velocidad (colisiones, estado de transición) explican constantes de velocidad
+// 3. Los mecanismos de reacción describen los pasos elementales
+// 4. La termodinámica de no equilibrio describe sistemas alejados del equilibrio
+// 5. Las oscilaciones químicas y patrones emergen de no linealidades
+// 6. La catálisis (homogénea, heterogénea, enzimática) acelera reacciones
+
+// ============================================================
+// "La cinética química revela el camino que sigue la naturaleza
+//  desde los reactivos hasta los productos, paso a paso, en el tiempo."
+// ============================================================

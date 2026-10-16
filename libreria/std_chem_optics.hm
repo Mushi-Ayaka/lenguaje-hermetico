@@ -1,0 +1,508 @@
+// ============================================================
+// LIBRERÍA: std_chem_optics.hm
+// CAPA:     Química (Capa 4 - Óptica Química: Fresnel, BRDF, refracción)
+// VERSIÓN:  1.0
+// FUENTE:   Schlick "Ideal Reflectance", Cook-Torrance "Microfacet Theory"
+// DEPS:     std_math_core.hm, std_math_algebra.hm, std_math_calculus.hm
+// DEPS:     std_bridge_spectral.hm, std_bridge_atomic.hm
+// FECHA:    6 de junio de 2026
+// ============================================================
+
+// ÓPTICA QUÍMICA: Reflectancia de Fresnel, modelos de BRDF, dispersión,
+// absorción espectral, efectos de interfase y transiciones ópticas
+
+// ============================================================
+// CONSTANTES ÓPTICAS QUÍMICAS
+// ============================================================
+
+// Índices de refracción complejos (n + ik) para metales comunes
+let IOR_AG_SILVER = [0.05, 3.5];    // Plata: n=0.05, k=3.5 @ 600nm
+let IOR_AU_GOLD = [0.20, 3.0];      // Oro: n=0.20, k=3.0 @ 600nm
+let IOR_CU_COPPER = [0.62, 2.62];   // Cobre: n=0.62, k=2.62 @ 600nm
+let IOR_AL_ALUMINUM = [1.44, 5.23]; // Aluminio: n=1.44, k=5.23 @ 600nm
+
+// Constantes de Fresnel para interfaces comunes
+let F0_DIELECTRIC = 0.04;           // F₀ para dieléctricos (~0.04)
+let F0_METAL_BASE = 0.95;           // F₀ base para metales
+
+// Constantes de dispersión (ecuación de Cauchy)
+let CAUCHY_COEFF_A = 1.5;           // n(λ) = A + B/λ² + C/λ⁴
+let CAUCHY_COEFF_B = 0.004;
+let CAUCHY_COEFF_C = 0.0001;
+
+// Constantes de absorción (coeficiente de extinción)
+let EXTINCTION_COEFF_BASE = 0.01;   // k base para materiales
+
+// ============================================================
+// INTERFAZ PÚBLICA - REFLECTANCIA DE FRESNEL (fn)
+// ============================================================
+
+// --- Fresnel Exacto (S-polarizado) ---
+// R_s = |(n₁·cosθ₁ - n₂·cosθ₂)/(n₁·cosθ₁ + n₂·cosθ₂)|²
+fn "fresnel_exact_s"(n1, n2, theta1) {
+    let theta2 = asin(min(max(n1 * sin(theta1) / n2, -1.0), 1.0));
+    let numerator = n1 * cos(theta1) - n2 * cos(theta2);
+    let denominator = n1 * cos(theta1) + n2 * cos(theta2);
+    (numerator * numerator) / (denominator * denominator + 1e-6)
+}
+
+// --- Fresnel Exacto (P-polarizado) ---
+// R_p = |(n₂·cosθ₁ - n₁·cosθ₂)/(n₂·cosθ₁ + n₁·cosθ₂)|²
+fn "fresnel_exact_p"(n1, n2, theta1) {
+    let theta2 = asin(min(max(n1 * sin(theta1) / n2, -1.0), 1.0));
+    let numerator = n2 * cos(theta1) - n1 * cos(theta2);
+    let denominator = n2 * cos(theta1) + n1 * cos(theta2);
+    (numerator * numerator) / (denominator * denominator + 1e-6)
+}
+
+// --- Fresnel No Polarizado (Promedio) ---
+fn "fresnel_unpolarized"(n1, n2, theta1) {
+    0.5 * (fresnel_exact_s(n1, n2, theta1) + fresnel_exact_p(n1, n2, theta1))
+}
+
+// --- Aproximación de Schlick (Más rápida) ---
+// F(θ) = F₀ + (1 - F₀)·(1 - cosθ)⁵
+fn "schlick_fresnel"(F0, cos_theta) {
+    F0 + (1.0 - F0) * pow(1.0 - cos_theta, 5.0)
+}
+
+// --- Fresnel Complejo (Metales con coeficiente de extinción k) ---
+fn "fresnel_complex"(n, k, cos_theta) {
+    let n2 = n * n;
+    let k2 = k * k;
+    let cos2 = cos_theta * cos_theta;
+    let n2_k2 = n2 + k2;
+    
+    let R_s = ((n2 + k2) * cos2 - 2.0 * n * cos_theta + 1.0) / 
+              ((n2 + k2) * cos2 + 2.0 * n * cos_theta + 1.0);
+    
+    let R_p = ((n2 + k2) - 2.0 * n * cos_theta + cos2) / 
+              ((n2 + k2) + 2.0 * n * cos_theta + cos2);
+    
+    0.5 * (R_s + R_p)
+}
+
+// --- Fresnel Conductor (Aproximación para metales) ---
+fn "conductor_fresnel"(F0, cos_theta, roughness) {
+    // Schlick modificado para metales con rugosidad
+    let base = schlick_fresnel(F0, cos_theta);
+    base * (1.0 - roughness * 0.5) + roughness * 0.5 * F0
+}
+
+// ============================================================
+// INTERFAZ PÚBLICA - BRDFs Y MODELOS DE REFLECTANCIA (fn)
+// ============================================================
+
+// --- BRDF de Lambert (Difuso perfecto) ---
+// f_lambert = ρ/π donde ρ es reflectancia difusa
+fn "lambert_brdf"(rho_diffuse) {
+    rho_diffuse / pi
+}
+
+// --- BRDF de Phong (Especular empírico) ---
+// f_phong = (n+2)/(2π)·(R·V)ⁿ donde R es reflejo, V es vista
+fn "phong_brdf"(specular_strength, shininess, R_dot_V) {
+    ((shininess + 2.0) / (2.0 * pi)) * specular_strength * pow(max(R_dot_V, 0.0), shininess)
+}
+
+// --- BRDF de Blinn-Phong (Más eficiente) ---
+// f_blinn = (n+8)/(8π)·(N·H)ⁿ donde H es half-vector
+fn "blinn_phong_brdf"(specular_strength, shininess, N_dot_H) {
+    ((shininess + 8.0) / (8.0 * pi)) * specular_strength * pow(max(N_dot_H, 0.0), shininess)
+}
+
+// --- BRDF de Cook-Torrance (Microfacetas) ---
+// f_cook_torrance = (D·G·F)/(4·(N·L)·(N·V))
+fn "cook_torrance_brdf"(D, G, F, N_dot_L, N_dot_V) {
+    (D * G * F) / (4.0 * max(N_dot_L, 1e-6) * max(N_dot_V, 1e-6) + 1e-6)
+}
+
+// --- Distribución de Microfacetas (GGX/Trowbridge-Reitz) ---
+// D_GGX = α²/(π·((N·H)²·(α²-1)+1)²)
+fn "ggx_distribution"(alpha, N_dot_H) {
+    let alpha2 = alpha * alpha;
+    let N_dot_H2 = N_dot_H * N_dot_H;
+    alpha2 / (pi * (N_dot_H2 * (alpha2 - 1.0) + 1.0) * (N_dot_H2 * (alpha2 - 1.0) + 1.0))
+}
+
+// --- Distribución de Microfacetas (Beckmann) ---
+// D_beckmann = exp(-tan²θ/α²)/(π·α²·cos⁴θ)
+fn "beckmann_distribution"(alpha, N_dot_H) {
+    let cos_theta = N_dot_H;
+    let cos2 = cos_theta * cos_theta;
+    let cos4 = cos2 * cos2;
+    let tan2 = (1.0 - cos2) / (cos2 + 1e-6);
+    exp(-tan2 / (alpha * alpha)) / (pi * alpha * alpha * cos4)
+}
+
+// --- Función de Geometría (Smith con GGX) ---
+// G = G₁(N·V)·G₁(N·L) donde G₁(x) = 2x/(x+√(α²+(1-α²)x²))
+fn "smith_ggx_geometry"(alpha, N_dot_X) {
+    let N_dot_X2 = N_dot_X * N_dot_X;
+    let denom = N_dot_X + sqrt(alpha * alpha + (1.0 - alpha * alpha) * N_dot_X2);
+    2.0 * N_dot_X / (denom + 1e-6)
+}
+
+// --- Función de Geometría (Schlick con GGX) ---
+// G₁(x) = x/(x·(1-k)+k) donde k = α/2
+fn "schlick_ggx_geometry"(alpha, N_dot_X) {
+    let k = alpha * 0.5;
+    N_dot_X / (N_dot_X * (1.0 - k) + k + 1e-6)
+}
+
+// ============================================================
+// INTERFAZ PÚBLICA - ABSORCIÓN Y DISPERSIÓN (fn)
+// ============================================================
+
+// --- Ley de Beer-Lambert (Absorción volumétrica) ---
+// I = I₀·exp(-μ·d) donde μ = coeficiente de absorción, d = distancia
+fn "beer_lambert_absorption"(I0, mu, distance) {
+    I0 * exp(-mu * distance)
+}
+
+// --- Coeficiente de Absorción Espectral (Bandas) ---
+fn "spectral_absorption_coefficient"(wavelength, band_center, band_width, strength) {
+    strength * exp(-(wavelength - band_center)*(wavelength - band_center) / (band_width * band_width))
+}
+
+// --- Dispersión de Rayleigh (λ⁻⁴) ---
+// σ_Rayleigh ∝ 1/λ⁴
+fn "rayleigh_scattering_coefficient"(wavelength, base_coeff) {
+    base_coeff * pow(550.0 / wavelength, 4.0)  // Normalizado a 550nm
+}
+
+// --- Dispersión de Mie (Partículas grandes) ---
+// σ_Mie ∝ λ^(-0.84 a -0.17) dependiendo del tamaño
+fn "mie_scattering_coefficient"(wavelength, base_coeff, size_parameter) {
+    base_coeff * pow(550.0 / wavelength, size_parameter)
+}
+
+// --- Dispersión Combinada (Atmósfera) ---
+fn "atmospheric_scattering"(wavelength, rayleigh_strength, mie_strength) {
+    rayleigh_scattering_coefficient(wavelength, rayleigh_strength) + 
+    mie_scattering_coefficient(wavelength, mie_strength, 0.84)
+}
+
+// --- Índice de Refracción por Dispersión (Cauchy) ---
+fn "cauchy_dispersion_law"(wavelength_nm, A, B, C) {
+    let lambda_um = wavelength_nm / 1000.0;
+    A + B / (lambda_um * lambda_um) + C / (lambda_um * lambda_um * lambda_um * lambda_um)
+}
+
+// --- Índice de Refracción por Dispersión (Sellmeier) ---
+fn "sellmeier_dispersion_law"(wavelength_nm, B_coeffs, C_coeffs) {
+    let lambda_um = wavelength_nm / 1000.0;
+    let lambda2 = lambda_um * lambda_um;
+    let n2 = 1.0;
+    
+    // n² = 1 + Σ Bᵢ·λ²/(λ² - Cᵢ)
+    for i in range(0, len(B_coeffs)) {
+        n2 = n2 + B_coeffs[i] * lambda2 / (lambda2 - C_coeffs[i]);
+    }
+    
+    sqrt(n2)
+}
+
+// ============================================================
+// INTERFAZ PÚBLICA - MATERIALES ESPECÍFICOS (fn)
+// ============================================================
+
+// --- Reflectancia de Metal (Conductor Fresnel + Rugosidad) ---
+fn "metal_reflectance"(F0, cos_theta, roughness, wavelength) {
+    // Metales tienen fuerte dependencia de longitud de onda
+    let fresnel = conductor_fresnel(F0, cos_theta, roughness);
+    let dispersion = 1.0 + 0.1 * sin(wavelength * 0.01);  // Oscilación simple
+    fresnel * dispersion
+}
+
+// --- Reflectancia de Dielectrico (Fresnel + Subsurface) ---
+fn "dielectric_reflectance"(ior, cos_theta, subsurface_scattering) {
+    let fresnel = schlick_fresnel(F0_DIELECTRIC, cos_theta);
+    fresnel + subsurface_scattering * (1.0 - fresnel) * 0.5
+}
+
+// --- Reflectancia de Plástico (Difuso + Especular) ---
+fn "plastic_reflectance"(diffuse_color, specular_strength, roughness, cos_theta) {
+    let diffuse = diffuse_color * (1.0 - specular_strength);
+    let specular = specular_strength * schlick_fresnel(F0_DIELECTRIC, cos_theta);
+    diffuse + specular
+}
+
+// --- Reflectancia de Vidrio (Transmisión + Reflexión) ---
+fn "glass_reflectance"(ior, thickness, absorption_coeff, cos_theta) {
+    let reflection = schlick_fresnel(F0_DIELECTRIC, cos_theta);
+    let transmission = (1.0 - reflection) * exp(-absorption_coeff * thickness);
+    reflection + transmission * 0.5  // Combinación
+}
+
+// --- Reflectancia de Agua (Con absorción espectral) ---
+fn "water_reflectance"(depth, turbidity, cos_theta, wavelength) {
+    let fresnel = schlick_fresnel(0.02, cos_theta);  // F₀ bajo para agua
+    let absorption = spectral_absorption_coefficient(wavelength, 450.0, 50.0, 0.1) + 
+                     spectral_absorption_coefficient(wavelength, 650.0, 50.0, 0.05);
+    let attenuation = exp(-(absorption + turbidity * 0.1) * depth);
+    fresnel + (1.0 - fresnel) * attenuation * 0.3
+}
+
+// --- Reflectancia de Piel (Subsurface Scattering) ---
+fn "skin_reflectance"(diffuse_color, subsurface_color, thickness, cos_theta) {
+    let direct_reflection = schlick_fresnel(0.028, cos_theta);  // F₀ piel
+    let subsurface = subsurface_color * exp(-thickness * 2.0) * (1.0 - direct_reflection);
+    diffuse_color * (1.0 - direct_reflection) * 0.7 + subsurface + direct_reflection
+}
+
+// ============================================================
+// INTERFAZ PÚBLICA - EFECTOS ESPECIALES (fn)
+// ============================================================
+
+// --- Efecto de Iridiscencia (Interferencia de película delgada) ---
+// Δ = 2·n·d·cosθ + λ/2 (para reflexión)
+fn "thin_film_interference"(thickness, ior, cos_theta, wavelength) {
+    let optical_path = 2.0 * ior * thickness * cos_theta;
+    let phase = (optical_path / wavelength + 0.5) * 2.0 * pi;
+    0.5 + 0.5 * cos(phase)  // Intensidad oscilante
+}
+
+// --- Efecto de Anisotropía (Brushed Metal) ---
+fn "anisotropic_reflectance"(roughness, anisotropy, tangent_dot_H, bitangent_dot_H) {
+    let ax = roughness * (1.0 + anisotropy);
+    let ay = roughness * (1.0 - anisotropy);
+    let D = ggx_distribution(ax, tangent_dot_H) * ggx_distribution(ay, bitangent_dot_H);
+    D * 0.5
+}
+
+// --- Efecto de Clear Coat (Capa transparente sobre base) ---
+fn "clear_coat_reflectance"(base_reflectance, clear_coat_ior, clear_coat_thickness, cos_theta) {
+    let coat_reflection = schlick_fresnel(0.04, cos_theta);  // F₀ clear coat
+    let base_visible = 1.0 - coat_reflection;
+    coat_reflection + base_visible * base_reflectance
+}
+
+// --- Efecto de Sheen (Tejidos, felpa) ---
+fn "sheen_reflectance"(sheen_color, sheen_roughness, cos_theta) {
+    let grazing_reflection = schlick_fresnel(0.04, cos_theta);
+    sheen_color * grazing_reflection * (1.0 - sheen_roughness) + sheen_roughness * 0.1
+}
+
+// --- Efecto de Translucencia (Materiales difusivos) ---
+fn "translucency_transmission"(thickness, scatter_coeff, absorption_coeff) {
+    // Aproximación difusiva
+    let scatter_distance = 1.0 / (scatter_coeff + 1e-6);
+    exp(-thickness / scatter_distance) * exp(-absorption_coeff * thickness)
+}
+
+// ============================================================
+// INTERFAZ PÚBLICA - SDFs ÓPTICAS (def con custom)
+// ============================================================
+
+// --- Superficie con BRDF de Cook-Torrance ---
+def "cook_torrance_surface"(roughness, metallic, base_color, intensity_threshold) {
+    let N_dot_V = max(dot([nx, ny, nz], [vx, vy, vz]), 0.0);
+    let N_dot_L = max(dot([nx, ny, nz], [lx, ly, lz]), 0.0);
+    let H = normalize([vx + lx, vy + ly, vz + lz]);
+    let N_dot_H = max(dot([nx, ny, nz], H), 0.0);
+    
+    let alpha = roughness * roughness;
+    let D = ggx_distribution(alpha, N_dot_H);
+    let G = smith_ggx_geometry(alpha, N_dot_V) * smith_ggx_geometry(alpha, N_dot_L);
+    let F0 = mix([F0_DIELECTRIC, F0_DIELECTRIC, F0_DIELECTRIC], base_color, metallic);
+    let F = schlick_fresnel(F0, max(dot(H, [vx, vy, vz]), 0.0));
+    
+    let brdf = cook_torrance_brdf(D, G, F, N_dot_L, N_dot_V);
+    
+    sdf: custom(y - brdf - intensity_threshold);
+}
+
+// --- Material con Dispersión de Cauchy ---
+def "cauchy_dispersion_material"(A, B, C, thickness, wavelength_range, dispersion_strength) {
+    let r = sqrt(x*x + z*z);
+    let wavelength = mix(400.0, 700.0, r);  // Eje radial = longitud de onda
+    
+    let n = cauchy_dispersion_law(wavelength, A, B, C);
+    let interference = thin_film_interference(thickness, n, 1.0, wavelength);
+    
+    sdf: custom(y - interference * dispersion_strength);
+}
+
+// --- Película Delgada Interferométrica ---
+def "thin_film_interference_surface"(thickness, ior, wavelength_base, intensity_threshold) {
+    let r = sqrt(x*x + z*z);
+    let angle = atan2(z, x);
+    let cos_theta = cos(angle * 0.5);
+    
+    // Variación de longitud de onda con posición
+    let wavelength = wavelength_base * (1.0 + 0.1 * sin(r * 10.0));
+    let interference = thin_film_interference(thickness, ior, cos_theta, wavelength);
+    
+    sdf: custom(y - interference - intensity_threshold);
+}
+
+// --- Material con Absorción Espectral ---
+def "spectral_absorption_material"(band_centers, band_widths, band_strengths, depth, intensity_threshold) {
+    let r = sqrt(x*x + z*z);
+    let wavelength = 400.0 + 300.0 * r;  // 400-700nm
+    
+    let total_absorption = 0.0;
+    for i in range(0, len(band_centers)) {
+        total_absorption = total_absorption + 
+                          spectral_absorption_coefficient(wavelength, band_centers[i], band_widths[i], band_strengths[i]);
+    }
+    
+    let transmission = beer_lambert_absorption(1.0, total_absorption, depth);
+    
+    sdf: custom(y - (1.0 - transmission) - intensity_threshold);
+}
+
+// --- Material Anisotrópico (Brushed Metal) ---
+def "anisotropic_material_surface"(roughness, anisotropy, direction_x, direction_z, intensity_threshold) {
+    let tangent = normalize([direction_x, 0.0, direction_z]);
+    let bitangent = cross([0.0, 1.0, 0.0], tangent);
+    
+    let H = normalize([vx + lx, vy + ly, vz + lz]);
+    let T_dot_H = dot(tangent, H);
+    let B_dot_H = dot(bitangent, H);
+    
+    let reflectance = anisotropic_reflectance(roughness, anisotropy, T_dot_H, B_dot_H);
+    
+    sdf: custom(y - reflectance - intensity_threshold);
+}
+
+// --- Material con Subsurface Scattering ---
+def "subsurface_scattering_material"(scatter_coeff, absorption_coeff, thickness, intensity_threshold) {
+    let r = sqrt(x*x + z*z);
+    let transmission = translucency_transmission(thickness, scatter_coeff, absorption_coeff);
+    
+    // Perfil difusivo aproximado
+    let profile = exp(-r*r / (thickness * thickness * 4.0));
+    
+    sdf: custom(y - transmission * profile - intensity_threshold);
+}
+
+// ============================================================
+// INTERFAZ PÚBLICA - SISTEMAS ÓPTICOS AVANZADOS (def)
+// ============================================================
+
+// --- Lente con Aberración Cromática (Dispersión real) ---
+def "chromatic_lens_dispersion"(base_radius, thickness, material_A, material_B, material_C, aperture) {
+    let r_sq = x*x + z*z;
+    
+    // Diferentes índices para diferentes longitudes de onda (aproximados)
+    let n_red = cauchy_dispersion_law(700.0, material_A, material_B, material_C);
+    let n_green = cauchy_dispersion_law(550.0, material_A, material_B, material_C);
+    let n_blue = cauchy_dispersion_law(450.0, material_A, material_B, material_C);
+    
+    // Superficies diferentes para cada color
+    let sag_red = spherical_surface_sagitta(base_radius * 2.0 / (n_red - 1.0), sqrt(r_sq));
+    let sag_green = spherical_surface_sagitta(base_radius * 2.0 / (n_green - 1.0), sqrt(r_sq));
+    let sag_blue = spherical_surface_sagitta(base_radius * 2.0 / (n_blue - 1.0), sqrt(r_sq));
+    
+    // Promedio ponderado (simulación de dispersión)
+    sdf: custom(y - (sag_red * 0.3 + sag_green * 0.4 + sag_blue * 0.3) - thickness * 0.5);
+}
+
+// --- Interferómetro de Fabry-Pérot (Cavidad óptica) ---
+def "fabry_perot_cavity"(cavity_length, mirror_reflectivity, wavelength, finesse, intensity_threshold) {
+    // Transmisión de cavidad Fabry-Pérot
+    // T = T_max / (1 + F·sin²(δ/2)) donde δ = 4π·n·L·cosθ/λ
+    let angle = atan2(z, x);
+    let cos_theta = cos(angle * 0.1);
+    let phase = 4.0 * pi * cavity_length * cos_theta / wavelength;
+    
+    let F = (4.0 * mirror_reflectivity) / ((1.0 - mirror_reflectivity) * (1.0 - mirror_reflectivity));
+    let T_max = 1.0 / (1.0 + F);
+    let transmission = T_max / (1.0 + F * sin(phase * 0.5) * sin(phase * 0.5));
+    
+    sdf: custom(y - transmission - intensity_threshold);
+}
+
+// --- Difractor (Red de difracción) ---
+def "diffraction_grating"(grating_period, groove_depth, wavelength, order, intensity_threshold) {
+    // Ecuación de red: d·(sinθ_m - sinθ_i) = m·λ
+    let x_pos = mod(x, grating_period) - grating_period * 0.5;
+    let groove = smoothstep(-groove_depth, groove_depth, abs(x_pos) - grating_period * 0.25);
+    
+    // Patrón de difracción superpuesto
+    let diff_pattern = 0.5 + 0.5 * cos(2.0 * pi * x / grating_period * order * wavelength * 100.0);
+    
+    sdf: custom(y - groove * diff_pattern - intensity_threshold);
+}
+
+// --- Cristal Fotónico (Estructura periódica) ---
+def "photonic_crystal"(lattice_constant, hole_radius, dielectric_contrast, intensity_threshold) {
+    // Estructura periódica 2D (agujeros en rejilla cuadrada)
+    let u = mod(x, lattice_constant) - lattice_constant * 0.5;
+    let v = mod(z, lattice_constant) - lattice_constant * 0.5;
+    
+    let hole1 = sqrt(u*u + v*v) - hole_radius;
+    let hole2 = sqrt((u - lattice_constant)*(u - lattice_constant) + v*v) - hole_radius;
+    let hole3 = sqrt(u*u + (v - lattice_constant)*(v - lattice_constant)) - hole_radius;
+    
+    // Modulación dieléctrica
+    let dielectric_modulation = 0.5 + 0.5 * cos(2.0 * pi * x / lattice_constant) * 
+                                           cos(2.0 * pi * z / lattice_constant);
+    
+    sdf: custom(y - min(min(hole1, hole2), hole3) * dielectric_modulation * dielectric_contrast - intensity_threshold);
+}
+
+// ============================================================
+// EJEMPLOS DE USO CON custom(expr)
+// ============================================================
+
+/*
+// EJEMPLO 1: Superficie con BRDF de Cook-Torrance
+node "cook_torrance_example" {
+    position: [-4, 0, 0];
+    sdf: cook_torrance_surface(0.2, 0.0, [0.8, 0.1, 0.1], 0.3);
+    material: "pbr_material";
+}
+
+// EJEMPLO 2: Material con dispersión de Cauchy
+node "cauchy_dispersion_example" {
+    position: [0, 0, 0];
+    sdf: cauchy_dispersion_material(1.5, 0.004, 0.0001, 0.1, 300.0, 1.0);
+    material: "dispersive";
+}
+
+// EJEMPLO 3: Película delgada interferométrica
+node "thin_film_example" {
+    position: [4, 0, 0];
+    sdf: thin_film_interference_surface(0.1, 1.5, 550.0, 0.3);
+    material: "interference";
+}
+
+// EJEMPLO 4: Material con absorción espectral (clorofila)
+node "spectral_absorption_example" {
+    position: [-2, 3, 0];
+    sdf: spectral_absorption_material([450.0, 650.0], [50.0, 50.0], [0.2, 0.1], 0.2, 0.2);
+    material: "absorbing";
+}
+
+// EJEMPLO 5: Material anisotrópico (metal cepillado)
+node "anisotropic_example" {
+    position: [2, 3, 0];
+    sdf: anisotropic_material_surface(0.3, 0.7, 1.0, 0.0, 0.4);
+    material: "anisotropic";
+}
+
+// EJEMPLO 6: Cavidad Fabry-Pérot
+node "fabry_perot_example" {
+    position: [0, -3, 0];
+    sdf: fabry_perot_cavity(1.0, 0.9, 0.55, 30.0, 0.3);
+    material: "optical_cavity";
+}
+*/
+
+// ============================================================
+// NOTAS PARA USUARIOS
+// ============================================================
+
+// 1. Las BRDFs están implementadas para uso en custom() y funciones de material
+// 2. Las constantes ópticas son valores típicos escalados
+// 3. Los efectos de dispersión y absorción son aproximaciones visuales
+// 4. Las SDFs ópticas generan geometrías que representan propiedades ópticas
+// 5. Para materiales reales, ajustar parámetros basados en datos medidos
+
+// ============================================================
+// "La luz no miente: cada material tiene su firma espectral,
+//  cada interfase su ecuación de Fresnel, cada superficie su BRDF."
+// ============================================================

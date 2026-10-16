@@ -1,0 +1,198 @@
+// ============================================================
+// LIBRERÍA: std_math_algebra.hm
+// CAPA:     1.2 — Álgebra Abstracta y Geometría Diferencial
+// VERSIÓN:  0.2
+// FUENTE:   Álgebra lineal, vectores, matrices, formas bilineales
+// DEPS:     std_math_core.hm
+// FECHA:    5 de junio de 2026
+// ============================================================
+
+import "std_math_core.hm";
+
+// ============================================================
+// VECTORES 2D — Operaciones algebraicas puras
+// ============================================================
+
+fn "v2_dot"(ax, ay, bx, by)         { ax*bx + ay*by }
+fn "v2_cross"(ax, ay, bx, by)       { ax*by - ay*bx }
+fn "v2_len"(ax, ay)                  { sqrt(ax*ax + ay*ay) }
+fn "v2_len_sq"(ax, ay)               { ax*ax + ay*ay }
+fn "v2_nx"(ax, ay)                   { ax / (sqrt(ax*ax + ay*ay) + EPSILON) }
+fn "v2_ny"(ax, ay)                   { ay / (sqrt(ax*ax + ay*ay) + EPSILON) }
+fn "v2_angle"(ax, ay)                { atan(ay, ax) }
+
+// Proyección de a sobre b
+fn "v2_proj_len"(ax, ay, bx, by)    { v2_dot(ax, ay, bx, by) / (v2_len(bx, by) + EPSILON) }
+
+// Reflexión de v sobre normal n
+fn "v2_reflect_x"(vx, vy, nx, ny)   { vx - 2.0 * v2_dot(vx, vy, nx, ny) * nx }
+fn "v2_reflect_y"(vx, vy, nx, ny)   { vy - 2.0 * v2_dot(vx, vy, nx, ny) * ny }
+
+// Rotación 2D
+fn "rot2x"(px, py, ang)  { px * cos(ang) - py * sin(ang) }
+fn "rot2y"(px, py, ang)  { px * sin(ang) + py * cos(ang) }
+
+// ============================================================
+// VECTORES 3D — Operaciones algebraicas puras
+// ============================================================
+
+fn "v3_dot"(ax, ay, az, bx, by, bz)    { ax*bx + ay*by + az*bz }
+fn "v3_len"(ax, ay, az)                 { sqrt(ax*ax + ay*ay + az*az) }
+fn "v3_len_sq"(ax, ay, az)              { ax*ax + ay*ay + az*az }
+
+// Normalización componente a componente
+fn "v3_nx"(ax, ay, az) { ax / (sqrt(ax*ax + ay*ay + az*az) + EPSILON) }
+fn "v3_ny"(ax, ay, az) { ay / (sqrt(ax*ax + ay*ay + az*az) + EPSILON) }
+fn "v3_nz"(ax, ay, az) { az / (sqrt(ax*ax + ay*ay + az*az) + EPSILON) }
+
+// Producto vectorial (cross product)
+fn "v3_cross_x"(ax, ay, az, bx, by, bz) { ay*bz - az*by }
+fn "v3_cross_y"(ax, ay, az, bx, by, bz) { az*bx - ax*bz }
+fn "v3_cross_z"(ax, ay, az, bx, by, bz) { ax*by - ay*bx }
+
+// Reflexión 3D de v sobre normal n (Ley especular)
+fn "v3_reflect_x"(vx, vy, vz, nx, ny, nz) { vx - 2.0 * v3_dot(vx,vy,vz,nx,ny,nz) * nx }
+fn "v3_reflect_y"(vx, vy, vz, nx, ny, nz) { vy - 2.0 * v3_dot(vx,vy,vz,nx,ny,nz) * ny }
+fn "v3_reflect_z"(vx, vy, vz, nx, ny, nz) { vz - 2.0 * v3_dot(vx,vy,vz,nx,ny,nz) * nz }
+
+// Proyección escalar y vectorial
+fn "v3_proj_scalar"(vx, vy, vz, nx, ny, nz) {
+    v3_dot(vx, vy, vz, nx, ny, nz) / (v3_len(nx, ny, nz) + EPSILON)
+}
+
+// Interpolación vectorial lineal (componente a componente)
+fn "v3_lerp_x"(ax, bx, t)  { ax + (bx - ax) * t }
+fn "v3_lerp_y"(ay, by, t)  { ay + (by - ay) * t }
+fn "v3_lerp_z"(az, bz, t)  { az + (bz - az) * t }
+
+// ============================================================
+// VECTORES 4D (cuaterniones y espacio-tiempo)
+// ============================================================
+
+fn "v4_dot"(ax, ay, az, aw, bx, by, bz, bw) { ax*bx + ay*by + az*bz + aw*bw }
+fn "v4_len"(ax, ay, az, aw)                  { sqrt(ax*ax + ay*ay + az*az + aw*aw) }
+fn "v4_len_sq"(ax, ay, az, aw)               { ax*ax + ay*ay + az*az + aw*aw }
+
+// Normalización 4D
+fn "v4_nx"(ax, ay, az, aw) { ax / (sqrt(ax*ax + ay*ay + az*az + aw*aw) + EPSILON) }
+fn "v4_ny"(ax, ay, az, aw) { ay / (sqrt(ax*ax + ay*ay + az*az + aw*aw) + EPSILON) }
+fn "v4_nz"(ax, ay, az, aw) { az / (sqrt(ax*ax + ay*ay + az*az + aw*aw) + EPSILON) }
+fn "v4_nw"(ax, ay, az, aw) { aw / (sqrt(ax*ax + ay*ay + az*az + aw*aw) + EPSILON) }
+
+// ============================================================
+// ROTACIONES 3D (ángulos de Euler, Rodrigues)
+// ============================================================
+
+// Rotación alrededor del eje X
+fn "rotX_x"(px, py, pz, ang) { px }
+fn "rotX_y"(px, py, pz, ang) { py * cos(ang) - pz * sin(ang) }
+fn "rotX_z"(px, py, pz, ang) { py * sin(ang) + pz * cos(ang) }
+
+// Rotación alrededor del eje Y
+fn "rotY_x"(px, py, pz, ang) { px * cos(ang) + pz * sin(ang) }
+fn "rotY_y"(px, py, pz, ang) { py }
+fn "rotY_z"(px, py, pz, ang) { -px * sin(ang) + pz * cos(ang) }
+
+// Rotación alrededor del eje Z
+fn "rotZ_x"(px, py, pz, ang) { px * cos(ang) - py * sin(ang) }
+fn "rotZ_y"(px, py, pz, ang) { px * sin(ang) + py * cos(ang) }
+fn "rotZ_z"(px, py, pz, ang) { pz }
+
+// Fórmula de Rodrigues: rotación de v alrededor de eje k por ángulo ang
+// v' = v*cos(ang) + (k×v)*sin(ang) + k*(k·v)*(1-cos(ang))
+fn "rodrigues_x"(vx, vy, vz, kx, ky, kz, ang) {
+    vx * cos(ang) + v3_cross_x(kx, ky, kz, vx, vy, vz) * sin(ang) + kx * v3_dot(kx, ky, kz, vx, vy, vz) * (1.0 - cos(ang))
+}
+fn "rodrigues_y"(vx, vy, vz, kx, ky, kz, ang) {
+    vy * cos(ang) + v3_cross_y(kx, ky, kz, vx, vy, vz) * sin(ang) + ky * v3_dot(kx, ky, kz, vx, vy, vz) * (1.0 - cos(ang))
+}
+fn "rodrigues_z"(vx, vy, vz, kx, ky, kz, ang) {
+    vz * cos(ang) + v3_cross_z(kx, ky, kz, vx, vy, vz) * sin(ang) + kz * v3_dot(kx, ky, kz, vx, vy, vz) * (1.0 - cos(ang))
+}
+
+// ============================================================
+// ÁLGEBRA POLINOMIAL
+// ============================================================
+
+// Evaluación de polinomios (Horner)
+fn "poly2"(x_val, a0, a1, a2)           { a0 + x_val * (a1 + x_val * a2) }
+fn "poly3"(x_val, a0, a1, a2, a3)       { a0 + x_val * (a1 + x_val * (a2 + x_val * a3)) }
+fn "poly4"(x_val, a0, a1, a2, a3, a4)   { a0 + x_val * (a1 + x_val * (a2 + x_val * (a3 + x_val * a4))) }
+
+// Discriminante cuadrático: b² - 4ac
+fn "discriminant"(a, b, c)  { b*b - 4.0*a*c }
+
+// Raíces cuadráticas (componentes separados)
+fn "quadratic_root1"(a, b, c) { (-b + sqrt(max(0.0, discriminant(a, b, c)))) / (2.0 * a + EPSILON) }
+fn "quadratic_root2"(a, b, c) { (-b - sqrt(max(0.0, discriminant(a, b, c)))) / (2.0 * a + EPSILON) }
+
+// ============================================================
+// GEOMETRÍA DIFERENCIAL — Curvas y Superficies
+// ============================================================
+
+// Curvatura de una curva plana y(x): κ = y'' / (1 + y'²)^(3/2)
+fn "curvature2d"(yp, ypp) { ypp / pow(1.0 + yp * yp, 1.5) }
+
+// Normal de Frenet del plano: (-dy/dx, 1) normalizado
+fn "frenet_nx"(dydx)  { -dydx / (sqrt(1.0 + dydx * dydx) + EPSILON) }
+fn "frenet_ny"(dydx)  { 1.0 / (sqrt(1.0 + dydx * dydx) + EPSILON) }
+
+// Gradiente numérico central (diferencias finitas 2D)
+fn "grad_x"(fx_plus, fx_minus, h) { (fx_plus - fx_minus) / (2.0 * h + EPSILON) }
+fn "grad_y"(fy_plus, fy_minus, h) { (fy_plus - fy_minus) / (2.0 * h + EPSILON) }
+
+// Laplaciano numérico (segunda derivada central)
+fn "laplacian"(f0, fx_plus, fx_minus, fy_plus, fy_minus, h) {
+    (fx_plus + fx_minus + fy_plus + fy_minus - 4.0 * f0) / (h * h + EPSILON)
+}
+
+// ============================================================
+// FORMAS BILINEALES Y CUADRÁTICAS
+// ============================================================
+
+// Forma cuadrática general: x^T A x para matriz 3x3 diagonal
+fn "quad_form_diag"(vx, vy, vz, a11, a22, a33) { a11*vx*vx + a22*vy*vy + a33*vz*vz }
+
+// Elipsoide: distancia firmada implícita
+fn "ellipsoid_sdf"(px, py, pz, a, b, c) {
+    pow(px/a, 2.0) + pow(py/b, 2.0) + pow(pz/c, 2.0) - 1.0
+}
+
+// ============================================================
+// ANÁLISIS TENSORIAL — Operaciones de Rango 2
+// ============================================================
+
+// Traza de matriz 3x3 (diagnonal) 
+fn "trace3"(a11, a22, a33)       { a11 + a22 + a33 }
+
+// Determinante 3x3
+fn "det3"(a, b, c, d, f_val, g_val, h_val, i_val, j_val) {
+    a*(f_val*j_val - g_val*i_val) - b*(d*j_val - g_val*h_val) + c*(d*i_val - f_val*h_val)
+}
+
+// Frobenius norm de matriz 3x3 diagonal
+fn "frobenius_diag"(a11, a22, a33) { sqrt(a11*a11 + a22*a22 + a33*a33) }
+
+// ============================================================
+// SDFs GEOMÉTRICAS EXTENDIDAS (usando custom)
+// ============================================================
+
+// Elipsoide (exact bound SDF de Inigo Quilez, aproximada)
+def "ellipsoid"(semi_a, semi_b, semi_c) {
+    sdf: custom(sqrt(sq(x / semi_a) + sq(y / semi_b) + sq(z / semi_c)) - 1.0);
+}
+
+// Superelipsoide: |x/a|^n + |y/b|^n + |z/c|^n = 1
+def "superellipsoid"(semi_a, semi_b, semi_c, exp_n) {
+    sdf: custom(pow(abs(x / semi_a), exp_n) + pow(abs(y / semi_b), exp_n) + pow(abs(z / semi_c), exp_n) - 1.0);
+}
+
+// Hiperboloid (1 hoja): x²/a² + z²/c² - y²/b² = 1
+def "hyperboloid1"(semi_a, semi_b, semi_c) {
+    sdf: custom(sq(x / semi_a) + sq(z / semi_c) - sq(y / semi_b) - 1.0);
+}
+
+// Paraboloide: z = (x² + y²) / (2r²)
+def "paraboloid"(r_param, height) {
+    sdf: custom(y - height * (sq(x) + sq(z)) / (sq(r_param) + EPSILON));
+}

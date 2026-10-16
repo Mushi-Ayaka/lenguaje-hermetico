@@ -1,0 +1,448 @@
+// ============================================================
+// LIBRERÍA: std_bridge_atomic.hm
+// CAPA:     Intermediario: Física-Química (3.1/3.2 - Física Atómica y Molecular)
+// VERSIÓN:  1.0
+// FUENTE:   Bohr "Atomic Structure", Schrödinger "Wave Mechanics"
+// DEPS:     std_math_core.hm, std_math_algebra.hm, std_math_calculus.hm
+// DEPS:     std_phys_sdf.hm, std_phys_relativity.hm
+// FECHA:    6 de junio de 2026
+// ============================================================
+
+// FÍSICA ATÓMICA Y MOLECULAR: Estructura atómica, orbitales, enlaces químicos,
+// transiciones electrónicas, espectros atómicos
+
+// ============================================================
+// CONSTANTES ATÓMICAS FUNDAMENTALES
+// ============================================================
+
+let PLANCK_CONSTANT = 6.62607015e-34;      // h (J·s)
+let H_BAR = PLANCK_CONSTANT / (2.0 * pi);  // ħ = h/(2π)
+let ELECTRON_MASS = 9.10938356e-31;        // m_e (kg)
+let PROTON_MASS = 1.6726219e-27;           // m_p (kg)
+let NEUTRON_MASS = 1.67492749804e-27;      // m_n (kg)
+let ELECTRON_CHARGE = 1.602176634e-19;     // e (C)
+let BOLTZMANN_CONSTANT = 1.380649e-23;     // k_B (J/K)
+let AVOGADRO_NUMBER = 6.02214076e23;       // N_A (mol⁻¹)
+
+// Constantes escaladas para uso en funciones
+let H = PLANCK_CONSTANT * 1e34;            // h escalado
+let M_E = ELECTRON_MASS * 1e31;            // m_e escalado
+let Q_E = ELECTRON_CHARGE * 1e19;          // e escalado
+let K_B = BOLTZMANN_CONSTANT * 1e23;       // k_B escalado
+
+// Constante de Rydberg para hidrógeno
+let RYDBERG_CONSTANT = 10973731.568160;    // R∞ (m⁻¹)
+let RYDBERG_ENERGY = 13.605693122994;      // R∞·hc (eV)
+
+// Radio de Bohr (radio de la órbita más interna en modelo de Bohr)
+let BOHR_RADIUS = 5.29177210903e-11;       // a₀ (m)
+let A0 = BOHR_RADIUS * 1e11;               // a₀ escalado
+
+// Constante de estructura fina
+let FINE_STRUCTURE_CONSTANT = 7.2973525693e-3;  // α ≈ 1/137
+
+// ============================================================
+// INTERFAZ PÚBLICA - MODELO ATÓMICO DE BOHR (fn)
+// ============================================================
+
+// --- Radio de la Órbita n-ésima en Modelo de Bohr ---
+// r_n = n²·a₀/Z
+// Params: número_cuántico_principal, número_atómico
+fn "bohr_orbit_radius"(n, Z) {
+    n * n * A0 / Z
+}
+
+// --- Velocidad del Electrón en Órbita de Bohr ---
+// v_n = α·c·Z/n
+fn "bohr_electron_velocity"(n, Z) {
+    FINE_STRUCTURE_CONSTANT * 299792458.0 * Z / n / 1e8
+}
+
+// --- Energía del Nivel n-ésimo en Átomo Hidrogenoide ---
+// E_n = -R∞·hc·Z²/n² = -13.6·Z²/n² eV
+fn "bohr_energy_level"(n, Z) {
+    -RYDBERG_ENERGY * Z * Z / (n * n)
+}
+
+// --- Frecuencia de Transición entre Niveles ---
+// ν = R∞·c·Z²·(1/n₁² - 1/n₂²)
+fn "bohr_transition_frequency"(n1, n2, Z) {
+    RYDBERG_CONSTANT * 299792458.0 * Z * Z * (1.0/(n1*n1) - 1.0/(n2*n2)) / 1e15
+}
+
+// --- Longitud de Onda de Transición ---
+// λ = 1/(R∞·Z²·(1/n₁² - 1/n₂²))
+fn "bohr_transition_wavelength"(n1, n2, Z) {
+    1.0 / (RYDBERG_CONSTANT * Z * Z * (1.0/(n1*n1) - 1.0/(n2*n2))) * 1e9
+}
+
+// --- Serie Espectral del Hidrógeno ---
+// Serie de Lyman (n1=1), Balmer (n1=2), Paschen (n1=3), etc.
+fn "hydrogen_spectral_series"(series_n, n2, Z) {
+    bohr_transition_wavelength(series_n, n2, Z)
+}
+
+// ============================================================
+// INTERFAZ PÚBLICA - ORBITALES ATÓMICOS (fn para SDFs)
+// ============================================================
+
+// --- Función de Onda del Orbital 1s (Hidrogenoide) ---
+// ψ_1s(r) = (1/√π)·(Z/a₀)^(3/2)·exp(-Zr/a₀)
+fn "orbital_1s_wavefunction"(Z, r) {
+    let norm = pow(Z/A0, 1.5) / sqrt(pi);
+    norm * exp(-Z * r / A0)
+}
+
+// --- Densidad de Probabilidad 1s ---
+// |ψ_1s|² = (1/π)·(Z/a₀)³·exp(-2Zr/a₀)
+fn "orbital_1s_probability_density"(Z, r) {
+    let norm_sq = pow(Z/A0, 3.0) / pi;
+    norm_sq * exp(-2.0 * Z * r / A0)
+}
+
+// --- Función de Onda del Orbital 2s ---
+// ψ_2s(r) = (1/√(32π))·(Z/a₀)^(3/2)·(2 - Zr/a₀)·exp(-Zr/(2a₀))
+fn "orbital_2s_wavefunction"(Z, r) {
+    let norm = pow(Z/(2.0*A0), 1.5) / sqrt(32.0*pi);
+    norm * (2.0 - Z*r/A0) * exp(-Z*r/(2.0*A0))
+}
+
+// --- Función de Onda del Orbital 2p_z (forma angular) ---
+// ψ_2p_z(r,θ) = (1/√(32π))·(Z/a₀)^(3/2)·(Zr/a₀)·exp(-Zr/(2a₀))·cosθ
+fn "orbital_2pz_wavefunction"(Z, x, y, z) {
+    let r = sqrt(x*x + y*y + z*z);
+    let cos_theta = z / (r + 1e-6);
+    let norm = pow(Z/(2.0*A0), 1.5) / sqrt(32.0*pi);
+    norm * (Z*r/A0) * exp(-Z*r/(2.0*A0)) * cos_theta
+}
+
+// --- Función de Onda del Orbital 3d_z² ---
+// ψ_3d_z²(r,θ) ∝ (3cos²θ - 1)·r²·exp(-Zr/(3a₀))
+fn "orbital_3dz2_wavefunction"(Z, x, y, z) {
+    let r = sqrt(x*x + y*y + z*z);
+    let cos_theta = z / (r + 1e-6);
+    let angular_part = 3.0 * cos_theta * cos_theta - 1.0;
+    angular_part * r*r * exp(-Z*r/(3.0*A0))
+}
+
+// --- Densidad Electrónica Total (Suma de Orbitales) ---
+// ρ(r) = Σ_i |ψ_i(r)|²
+fn "total_electron_density"(Z, r) {
+    // Aproximación para átomo hidrogenoide: suma de 1s, 2s, 2p
+    orbital_1s_probability_density(Z, r) + 
+    0.2 * orbital_1s_probability_density(Z, r/2.0) * (1.0 - exp(-r/A0))
+}
+
+// ============================================================
+// INTERFAZ PÚBLICA - SDFs DE ORBITALES ATÓMICOS (def)
+// ============================================================
+
+// --- Orbital 1s (Esfera de Probabilidad) ---
+def "orbital_1s_surface"(Z, probability_threshold) {
+    let r = sqrt(x*x + y*y + z*z);
+    sdf: custom(orbital_1s_probability_density(Z, r) - probability_threshold);
+}
+
+// --- Orbital 2s (Esfera con Nodo Radial) ---
+def "orbital_2s_surface"(Z, probability_threshold) {
+    let r = sqrt(x*x + y*y + z*z);
+    let psi_val = orbital_2s_wavefunction(Z, r);
+    sdf: custom(psi_val * psi_val - probability_threshold);
+}
+
+// --- Orbital 2p_z (Forma de Hora/Dumbbell) ---
+def "orbital_2pz_surface"(Z, probability_threshold) {
+    let psi_val = orbital_2pz_wavefunction(Z, x, y, z);
+    sdf: custom(psi_val * psi_val - probability_threshold);
+}
+
+// --- Orbital 3d_z² (Forma de Rosquilla) ---
+def "orbital_3dz2_surface"(Z, probability_threshold) {
+    let psi_val = orbital_3dz2_wavefunction(Z, x, y, z);
+    sdf: custom(psi_val * psi_val - probability_threshold);
+}
+
+// --- Nube Electrónica Completa (Suma de Orbitales) ---
+def "complete_electron_cloud"(Z, total_density_threshold) {
+    let r = sqrt(x*x + y*y + z*z);
+    sdf: custom(total_electron_density(Z, r) - total_density_threshold);
+}
+
+// --- Capas Electrónicas (K, L, M) ---
+def "electron_shells"(Z, shell_radius_factor) {
+    let r = sqrt(x*x + y*y + z*z);
+    
+    // Radios aproximados de capas: n²·a₀/Z
+    let shell1 = abs(r - 1.0*A0/Z);
+    let shell2 = abs(r - 4.0*A0/Z);
+    let shell3 = abs(r - 9.0*A0/Z);
+    
+    sdf: min(shell1, min(shell2, shell3)) - 0.05;
+}
+
+// ============================================================
+// INTERFAZ PÚBLICA - ENLACES QUÍMICOS (fn)
+// ============================================================
+
+// --- Orbital Molecular σ (Enlace Sigma) ---
+// Combinación lineal de orbitales atómicos (LCAO)
+// ψ_σ = N·(ψ_A + ψ_B)
+fn "sigma_bond_orbital"(Z, xA, yA, zA, xB, yB, zB, x, y, z) {
+    let rA = sqrt((x-xA)*(x-xA) + (y-yA)*(y-yA) + (z-zA)*(z-zA));
+    let rB = sqrt((x-xB)*(x-xB) + (y-yB)*(y-yB) + (z-zB)*(z-zB));
+    
+    let psi_A = orbital_1s_wavefunction(Z, rA);
+    let psi_B = orbital_1s_wavefunction(Z, rB);
+    
+    (psi_A + psi_B) / sqrt(2.0)
+}
+
+// --- Orbital Molecular π (Enlace Pi) ---
+// Para orbitales p paralelos
+fn "pi_bond_orbital"(Z, xA, yA, zA, xB, yB, zB, x, y, z) {
+    // Orbitales p orientados perpendicularmente al eje de enlace
+    let orientation = 1.0;  // Simplificación
+    
+    let rA = sqrt((x-xA)*(x-xA) + (y-yA)*(y-yA) + (z-zA)*(z-zA));
+    let rB = sqrt((x-xB)*(x-xB) + (y-yB)*(y-yB) + (z-zB)*(z-zB));
+    
+    // Aproximación usando orbitales 2p
+    let psi_A = orientation * orbital_2pz_wavefunction(Z, x-xA, y-yA, z-zA);
+    let psi_B = orientation * orbital_2pz_wavefunction(Z, x-xB, y-yB, z-zB);
+    
+    (psi_A + psi_B) / sqrt(2.0)
+}
+
+// --- Energía de Enlace (Aproximación de Morse) ---
+// V(r) = D_e·[1 - exp(-a(r - r_e))]²
+fn "morse_potential"(De, a, re, r) {
+    De * (1.0 - exp(-a * (r - re))) * (1.0 - exp(-a * (r - re)))
+}
+
+// --- Potencial de Lennard-Jones (Interacciones van der Waals) ---
+// V(r) = 4ε·[(σ/r)^12 - (σ/r)^6]
+fn "lennard_jones_potential"(epsilon, sigma, r) {
+    4.0 * epsilon * (pow(sigma/r, 12.0) - pow(sigma/r, 6.0))
+}
+
+// --- Fuerza de Enlace Covalente (Derivada de Morse) ---
+// F(r) = -dV/dr = 2aD_e·(1 - exp(-a(r - r_e)))·exp(-a(r - r_e))
+fn "covalent_bond_force"(De, a, re, r) {
+    2.0 * a * De * (1.0 - exp(-a * (r - re))) * exp(-a * (r - re))
+}
+
+// ============================================================
+// INTERFAZ PÚBLICA - SDFs DE MOLÉCULAS (def)
+// ============================================================
+
+// --- Molécula Diatómica (H₂, O₂, N₂) ---
+def "diatomic_molecule"(Z, bond_length, atom_radius) {
+    // Dos átomos separados por bond_length
+    let atom1 = sphere([-bond_length*0.5, 0, 0], atom_radius);
+    let atom2 = sphere([bond_length*0.5, 0, 0], atom_radius);
+    
+    // Orbital de enlace sigma entre ellos
+    let bond_orbital = custom(abs(x) - bond_length*0.5) * 0.1;
+    
+    sdf: union(atom1, atom2, bond_orbital);
+}
+
+// --- Molécula de Agua (H₂O) ---
+def "water_molecule"(O_radius, H_radius, bond_length, bond_angle_deg) {
+    let bond_angle_rad = bond_angle_deg * pi / 180.0;
+    
+    // Oxígeno en centro
+    let oxygen = sphere([0, 0, 0], O_radius);
+    
+    // Hidrógenos en ángulo
+    let h1_x = bond_length * sin(bond_angle_rad * 0.5);
+    let h1_z = bond_length * cos(bond_angle_rad * 0.5);
+    let hydrogen1 = sphere([h1_x, 0, h1_z], H_radius);
+    
+    let h2_x = -bond_length * sin(bond_angle_rad * 0.5);
+    let h2_z = bond_length * cos(bond_angle_rad * 0.5);
+    let hydrogen2 = sphere([h2_x, 0, h2_z], H_radius);
+    
+    // Enlaces O-H
+    let bond1 = custom(sqrt(x*x + z*z) - bond_length) * 0.05;
+    let bond2 = custom(sqrt((x-h2_x)*(x-h2_x) + (z-h2_z)*(z-h2_z)) - bond_length) * 0.05;
+    
+    sdf: union(oxygen, hydrogen1, hydrogen2, bond1, bond2);
+}
+
+// --- Molécula de Metano (CH₄, Tetraédrica) ---
+def "methane_molecule"(C_radius, H_radius, bond_length) {
+    // Carbono en centro
+    let carbon = sphere([0, 0, 0], C_radius);
+    
+    // Hidrógenos en vértices de tetraedro
+    let vertices = [
+        [1, 1, 1], [-1, -1, 1], [-1, 1, -1], [1, -1, -1]
+    ];
+    
+    // Normalizar y escalar
+    fn "tetrahedral_hydrogen"(idx) {
+        let v = vertices[idx];
+        let norm = sqrt(v[0]*v[0] + v[1]*v[1] + v[2]*v[2]);
+        sphere([v[0]/norm*bond_length, v[1]/norm*bond_length, v[2]/norm*bond_length], H_radius)
+    }
+    
+    let h1 = tetrahedral_hydrogen(0);
+    let h2 = tetrahedral_hydrogen(1);
+    let h3 = tetrahedral_hydrogen(2);
+    let h4 = tetrahedral_hydrogen(3);
+    
+    sdf: union(carbon, h1, h2, h3, h4);
+}
+
+// --- Orbital Molecular σ (Visualización) ---
+def "sigma_bond_visualization"(Z, xA, yA, zA, xB, yB, zB, density_threshold) {
+    let psi_val = sigma_bond_orbital(Z, xA, yA, zA, xB, yB, zB, x, y, z);
+    sdf: custom(psi_val * psi_val - density_threshold);
+}
+
+// --- Potencial de Morse (Superficie Equipotencial) ---
+def "morse_potential_surface"(De, a, re, potential_value) {
+    let r = sqrt(x*x + y*y + z*z);
+    sdf: custom(morse_potential(De, a, re, r) - potential_value);
+}
+
+// ============================================================
+// INTERFAZ PÚBLICA - ESPECTROS ATÓMICOS (fn)
+// ============================================================
+
+// --- Intensidad de Línea Espectral (Reglas de Selección) ---
+// Intensidad ∝ |<ψ_f|r|ψ_i>|² (elemento de matriz dipolar)
+fn "spectral_line_intensity"(n1, l1, n2, l2) {
+    // Regla de selección: Δl = ±1
+    let delta_l = abs(l2 - l1);
+    step(1.5, delta_l) * 0.0 + (1.0 - step(1.5, delta_l)) * exp(-abs(n2 - n1))
+}
+
+// --- Ancho de Línea Doppler (Ensanchamiento Térmico) ---
+// Δν_D = ν₀·√(2kTln2/(mc²))
+fn "doppler_linewidth"(nu0, T, m) {
+    nu0 * sqrt(2.0 * K_B * T * log(2.0) / (m * 299792458.0 * 299792458.0))
+}
+
+// --- Perfil de Línea Lorentziano (Ensanchamiento Natural) ---
+// I(ν) = (Γ/(2π)) / ((ν - ν₀)² + (Γ/2)²)
+fn "lorentzian_line_profile"(nu, nu0, gamma) {
+    (gamma / (2.0 * pi)) / ((nu - nu0)*(nu - nu0) + (gamma*gamma)/4.0)
+}
+
+// --- Perfil de Línea Gaussiano (Ensanchamiento Doppler) ---
+fn "gaussian_line_profile"(nu, nu0, sigma) {
+    exp(-0.5 * ((nu - nu0)/sigma)*((nu - nu0)/sigma)) / (sigma * sqrt(2.0 * pi))
+}
+
+// --- Perfil Voigt (Convolución Lorentziano × Gaussiano) ---
+fn "voigt_profile_approx"(nu, nu0, gamma, sigma) {
+    // Aproximación simple
+    0.5 * lorentzian_line_profile(nu, nu0, gamma) + 
+    0.5 * gaussian_line_profile(nu, nu0, sigma)
+}
+
+// ============================================================
+// INTERFAZ PÚBLICA - SDFs ESPECTRALES (def)
+// ============================================================
+
+// --- Líneas Espectrales (Serie de Balmer) ---
+def "balmer_spectral_lines"(Z, intensity_threshold) {
+    // n1=2 (Serie de Balmer), n2=3,4,5,...
+    let lambda_alpha = bohr_transition_wavelength(2, 3, Z);  // Hα: 656.3 nm
+    let lambda_beta = bohr_transition_wavelength(2, 4, Z);   // Hβ: 486.1 nm
+    let lambda_gamma = bohr_transition_wavelength(2, 5, Z);  // Hγ: 434.0 nm
+    
+    // Visualización como líneas espectrales en eje x
+    sdf: union(
+        custom(abs(x - lambda_alpha*0.001) - 0.01),
+        custom(abs(x - lambda_beta*0.001) - 0.01),
+        custom(abs(x - lambda_gamma*0.001) - 0.01)
+    );
+}
+
+// --- Perfil de Línea Espectral 3D ---
+def "spectral_line_profile_3d"(nu0, gamma, sigma, intensity_threshold) {
+    // x = frecuencia, y = intensidad
+    let nu = x * 1000.0;  // Escalado
+    let intensity = voigt_profile_approx(nu, nu0, gamma, sigma);
+    sdf: custom(y - intensity);
+}
+
+// --- Espectro de Emisión Atómica ---
+def "atomic_emission_spectrum"(Z, T, intensity_threshold) {
+    // Múltiples líneas correspondientes a transiciones
+    let r = sqrt(x*x + z*z);
+    let theta = atan2(z, x);
+    
+    // Simular líneas espectrales como anillos concéntricos
+    let line1 = cos(r * 20.0 + theta * 5.0);
+    let line2 = cos(r * 30.0 + theta * 7.0 + w);
+    let line3 = cos(r * 40.0 + theta * 9.0 + w * 2.0);
+    
+    sdf: custom(y - (line1 + line2 + line3) * 0.1 - intensity_threshold);
+}
+
+// ============================================================
+// EJEMPLOS DE USO CON custom(expr)
+// ============================================================
+
+/*
+// EJEMPLO 1: Orbital 1s del hidrógeno
+node "hydrogen_1s_orbital" {
+    position: [-3, 0, 0];
+    sdf: orbital_1s_surface(1.0, 0.1);
+    material: "electron_cloud";
+}
+
+// EJEMPLO 2: Molécula de agua
+node "water_molecule_model" {
+    position: [0, 0, 0];
+    sdf: water_molecule(0.3, 0.15, 1.0, 104.5);
+    material: "molecular";
+}
+
+// EJEMPLO 3: Potencial de Morse para enlace químico
+node "morse_potential_visualization" {
+    position: [3, 0, 0];
+    sdf: morse_potential_surface(1.0, 2.0, 1.0, 0.3);
+    material: "potential";
+}
+
+// EJEMPLO 4: Serie espectral de Balmer
+node "balmer_spectrum" {
+    position: [0, 3, 0];
+    sdf: balmer_spectral_lines(1.0, 0.05);
+    material: "spectral";
+}
+
+// EJEMPLO 5: Nube electrónica completa
+node "complete_atom_cloud" {
+    position: [0, -3, 0];
+    sdf: complete_electron_cloud(1.0, 0.05);
+    material: "electron_density";
+}
+
+// EJEMPLO 6: Enlace sigma entre dos átomos
+node "sigma_bond_demo" {
+    position: [4, 0, 0];
+    sdf: sigma_bond_visualization(1.0, -1.0, 0, 0, 1.0, 0, 0, 0.1);
+    material: "molecular_bond";
+}
+*/
+
+// ============================================================
+// NOTAS PARA USUARIOS
+// ============================================================
+
+// 1. Las constantes atómicas están escaladas para uso visual
+// 2. Los orbitales atómicos son funciones de onda aproximadas
+// 3. Las moléculas son modelos geométricos simplificados
+// 4. Los espectros son representaciones visuales, no simulaciones precisas
+// 5. Los enlaces químicos usan potenciales aproximados (Morse, Lennard-Jones)
+
+// ============================================================
+// "En el átomo, como en el cosmos, la simplicidad esconde
+//  una complejidad infinita y una belleza matemática perfecta."
+// ============================================================

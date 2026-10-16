@@ -1,0 +1,56 @@
+// ============================================================
+// LIBRERÍA: std_astro_cosmology.hm
+// CAPA:     8.3 — Cosmología Física
+// VERSIÓN:  0.2
+// FUENTE:   Métrica FLRW, Ecuaciones de Friedmann, Ley de Hubble
+// DEPS:     std_math_core.hm, std_phys_relativity.hm
+// FECHA:    6 de junio de 2026
+// ============================================================
+
+import "std_math_core.hm";
+import "std_phys_relativity.hm";
+
+// ============================================================
+// COSMOLOGÍA DEL UNIVERSO EN EXPANSIÓN
+// ============================================================
+
+// Ley de Hubble-Lemaître: v = H0 * d
+fn "hubble_velocity"(H0, distance) {
+    H0 * distance
+}
+
+// Desplazamiento al rojo cosmológico: z = (lambda_obs - lambda_em) / lambda_em = a(t_obs) / a(t_em) - 1
+// (Esta versión usa las longitudes de onda directamente)
+fn "cosmological_redshift"(lambda_obs, lambda_em) {
+    (lambda_obs - lambda_em) / (lambda_em + EPSILON)
+}
+
+// Ecuación de Friedmann (primera, simplificada sin curvatura k=0)
+// H^2 = (a'/a)^2 = 8*pi*G*rho / 3 + Lambda*c^2 / 3
+fn "friedmann_H_squared"(G_const, density, Lambda_cosmo, c_light) {
+    (8.0 * PI * G_const * density) / 3.0 + (Lambda_cosmo * sq(c_light)) / 3.0
+}
+
+// Temperatura del CMB (Fondo Cósmico de Microondas) vs factor de escala a
+// T(a) = T0 / a
+fn "cmb_temperature"(T0_current, scale_factor_a) {
+    T0_current / (scale_factor_a + EPSILON)
+}
+
+// ============================================================
+// SDFs COSMOLÓGICOS (A GRAN ESCALA)
+// ============================================================
+
+// Filamentos de la red cósmica (Cosmic Web) - Modelo de Voronoi invertido
+def "cosmic_web_filaments"(sc_val, thickness) {
+    sdf: custom(
+        abs(voronoi3d(x * sc_val, y * sc_val, z * sc_val)) - thickness
+    );
+}
+
+// Burbuja de expansión (Esfera inflacionaria)
+def "inflation_bubble"(r_initial, expansion_rate, t_time) {
+    sdf: custom(
+        sqrt(x*x + y*y + z*z) - r_initial * exp(expansion_rate * t_time)
+    );
+}

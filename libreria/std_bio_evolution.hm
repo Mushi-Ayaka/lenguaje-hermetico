@@ -1,0 +1,93 @@
+// ============================================================
+// LIBRERÍA: std_bio_evolution.hm
+// CAPA:     5.1 — Teoría de la Evolución y Selección Natural
+// VERSIÓN:  0.2
+// FUENTE:   Darwin, Fisher, Wright, Kimura — Modern Synthesis
+// DEPS:     std_math_core.hm, std_math_probability.hm
+// FECHA:    6 de junio de 2026
+// ============================================================
+
+import "std_math_core.hm";
+import "std_math_probability.hm";
+
+// ============================================================
+// GENÉTICA DE POBLACIONES
+// ============================================================
+
+// Frecuencia alélica en tiempo t (selección simple): p(t) = p0 * e^(st) / (p0*e^(st) + q0)
+fn "allele_freq_t"(p0, s_coef, t_gen) {
+    p0 * exp(s_coef * t_gen) / (p0 * exp(s_coef * t_gen) + (1.0 - p0) + EPSILON)
+}
+
+// Carga genética: L = 1 - W_bar / W_max
+fn "genetic_load"(W_mean, W_max) { 1.0 - W_mean / (W_max + EPSILON) }
+
+// Deriva genética (varianza de frecuencia): Var(Δp) = p(1-p) / (2N)
+fn "drift_variance"(p_freq, N_pop) { p_freq * (1.0 - p_freq) / (2.0 * N_pop + EPSILON) }
+
+// Tamaño efectivo poblacional (modelo de Wright): Ne = 4*N_f*N_m / (N_f + N_m)
+fn "effective_pop_size"(N_females, N_males) {
+    4.0 * N_females * N_males / (N_females + N_males + EPSILON)
+}
+
+// Índice de fijación FST (diferenciación entre poblaciones)
+fn "fst_index"(Ht, Hs) { (Ht - Hs) / (Ht + EPSILON) }
+
+// ============================================================
+// APTITUD DARWINIANA
+// ============================================================
+
+// Aptitud relativa (fitness relativo): w = W/W_max
+fn "relative_fitness"(W, W_max) { W / (W_max + EPSILON) }
+
+// Coeficiente de selección: s = 1 - w
+fn "selection_coeff"(W, W_max) { 1.0 - relative_fitness(W, W_max) }
+
+// Número de descendientes esperados (lambda): R0 = Σ l(x) m(x)
+fn "net_reproductive_rate"(l0, m0, l1, m1, l2, m2) {
+    l0 * m0 + l1 * m1 + l2 * m2
+}
+
+// Tasa intrínseca de crecimiento (Euler-Lotka, aproximación)
+fn "intrinsic_growth_rate"(R0, T_generation) { log(abs(R0) + EPSILON) / (T_generation + EPSILON) }
+
+// ============================================================
+// MODELOS ECOLÓGICOS
+// ============================================================
+
+// Crecimiento logístico: N(t) = K / (1 + ((K-N0)/N0) * exp(-r*t))
+fn "logistic_N"(N0, K, r, t_gen) {
+    K / (1.0 + ((K - N0) / (N0 + EPSILON)) * exp(-r * t_gen))
+}
+
+// Competencia interespecífica (Lotka-Volterra): dN1/dt = r1*N1*(K1 - N1 - α12*N2)/K1
+fn "lv_growth_rate"(r_val, N, K, N_other, alpha_comp) {
+    r_val * N * (K - N - alpha_comp * N_other) / (K + EPSILON)
+}
+
+// Coexistencia (condición): K1/α12 > K2 y K2/α21 > K1
+fn "coexistence_possible"(K1, K2, alpha12, alpha21) {
+    step(K1 / (alpha12 + EPSILON), K2) * step(K2 / (alpha21 + EPSILON), K1)
+}
+
+// Número básico de reproducción (epidemiología): R0 = β * N / γ
+fn "R0_epidemic"(beta, N_pop, gamma) { beta * N_pop / (gamma + EPSILON) }
+
+// Curva de prevalencia SIR: dS/dt = -βSI/N
+fn "sir_S"(S, I, N, beta)  { -beta * S * I / (N + EPSILON) }
+fn "sir_I"(S, I, N, beta, gamma) { beta * S * I / (N + EPSILON) - gamma * I }
+fn "sir_R"(I, gamma)       { gamma * I }
+
+// ============================================================
+// SDFs EVOLUTIVOS Y ECOLÓGICOS
+// ============================================================
+
+// Paisaje de aptitud (fitness landscape 3D)
+def "fitness_landscape"(ruggedness, land_sc) {
+    sdf: custom(y - fbm2d_4(x * land_sc, z * land_sc) * ruggedness);
+}
+
+// Nicho ecológico (región de aptitud positiva)
+def "ecological_niche"(center_x, center_z, width_x, width_z, height) {
+    sdf: custom(y - height * exp(-(sq((x - center_x) / (width_x + EPSILON)) + sq((z - center_z) / (width_z + EPSILON)))));
+}

@@ -1,0 +1,82 @@
+// ============================================================
+// ARCHIVO DE PRUEBA: test_sdf.herm
+// OBJETIVO: Validar la librería std_phys_sdf.hm
+//          (Capa 2 - Física: SDFs primitivas y operadores)
+// FECHA: 6 de junio de 2026
+// ============================================================
+
+// IMPORTAR LIBRERÍA A PROBAR
+import "std_phys_sdf.hm"
+
+// ============================================================
+// PRUEBA 1: ESFERA BÁSICA
+// ============================================================
+
+node "sphere_test" {
+    // Posición animada con sin(w) para demostrar funciones puras
+    position: [sin(w)*0.5, 0, 0];
+    
+    // Usar sd_sphere de la librería
+    sdf: sd_sphere(x - sin(w)*0.5, y, z, 0.3);
+    
+    material: "default";
+    opacity: 0.8;
+}
+
+// ============================================================
+// PRUEBA 2: CAJA BÁSICA
+// ============================================================
+
+node "box_test" {
+    position: [0, 1.5, 0];
+    
+    // Usar sd_box de la librería
+    sdf: sd_box(x, y - 1.5, z, 0.25, 0.25, 0.25);
+    
+    material: "shiny";
+}
+
+// ============================================================
+// PRUEBA 3: TORUS BÁSICO
+// ============================================================
+
+node "torus_test" {
+    position: [1.5, 0, 0];
+    
+    // Usar sd_torus de la librería
+    sdf: sd_torus(x - 1.5, y, z, 0.6, 0.15);
+    
+    material: "metal";
+    roughness: 0.2;
+}
+
+// ============================================================
+// PRUEBA 4: CILINDRO BÁSICO
+// ============================================================
+
+node "cylinder_test" {
+    position: [-1.5, 0, 0];
+    
+    // Usar sd_cylinder de la librería
+    sdf: sd_cylinder(x + 1.5, y, z, 0.1, 0.6);
+    
+    material: "glass";
+    refraction: 1.5;
+}
+
+// ============================================================
+// PRUEBA 5: OPERADORES CSG - UNIÓN BÁSICA
+// ============================================================
+
+node "union_test" {
+    position: [0, -1.5, 0];
+    
+    // Unión básica entre esfera y caja
+    sdf: sd_union(
+        sd_sphere(x, y + 1.5, z, 0.4),
+        sd_box(x, y + 1.5, z, 0.35, 0.35, 0.35)
+    );
+    
+    material: "plastic";
+    color: [0.8, 0.2, 0.2];
+}

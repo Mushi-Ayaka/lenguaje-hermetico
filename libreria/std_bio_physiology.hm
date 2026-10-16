@@ -1,0 +1,63 @@
+// ============================================================
+// LIBRERÍA: std_bio_physiology.hm
+// CAPA:     6.4 — Fisiología (Sistémica y Celular)
+// VERSIÓN:  0.2
+// FUENTE:   Guyton & Hall, Ecuaciones de Flujo de Poiseuille, Alometría de Kleiber
+// DEPS:     std_math_core.hm, std_phys_kinematics.hm
+// FECHA:    6 de junio de 2026
+// ============================================================
+
+import "std_math_core.hm";
+import "std_phys_kinematics.hm";
+
+// ============================================================
+// DINÁMICA DE FLUIDOS SANGUÍNEOS (HEMODINÁMICA)
+// ============================================================
+
+// Ley de Poiseuille: Flujo (Q) = π * ΔP * r^4 / (8 * η * L)
+fn "poiseuille_flow"(delta_P, radius, viscosity, length) {
+    (PI * delta_P * pow(radius, 4.0)) / (8.0 * viscosity * length + EPSILON)
+}
+
+// Resistencia Vascular Periférica (R) = ΔP / Q = 8 * η * L / (π * r^4)
+fn "vascular_resistance"(viscosity, length, radius) {
+    (8.0 * viscosity * length) / (PI * pow(radius, 4.0) + EPSILON)
+}
+
+// Número de Reynolds (para turbulencia en vasos): Re = ρ * v * D / η
+fn "reynolds_number"(density, velocity, diameter, viscosity) {
+    (density * velocity * diameter) / (viscosity + EPSILON)
+}
+
+// ============================================================
+// FILTRACIÓN Y DINÁMICA DE FLUIDOS INTERSTICIALES
+// ============================================================
+
+// Ecuación de filtración de Starling: J_v = K_f * ((Pc - Pi) - σ(πc - πi))
+// K_f: coeficiente de filtración, Pc/Pi: presión hidrostática, πc/πi: presión oncótica
+fn "starling_filtration"(K_f, P_capillary, P_interstitial, sigma_ref, oncotic_cap, oncotic_int) {
+    K_f * ((P_capillary - P_interstitial) - sigma_ref * (oncotic_cap - oncotic_int))
+}
+
+// ============================================================
+// BIOMETRÍA Y ALOMETRÍA
+// ============================================================
+
+// Ley de Kleiber (Tasa Metabólica Basal): BMR = M_mass^(3/4)
+fn "kleiber_metabolism"(body_mass, scale_factor) {
+    scale_factor * pow(body_mass, 0.75)
+}
+
+// ============================================================
+// SDFs FISIOLÓGICOS (Estructuras de Sistemas)
+// ============================================================
+
+// Sección de un vaso sanguíneo (tubo elástico)
+def "blood_vessel"(radius, thickness) {
+    sdf: custom(abs(sqrt(x*x + z*z) - radius) - thickness);
+}
+
+// Alvéolo pulmonar simplificado (esferas concéntricas o agregados)
+def "alveolus"(radius_inner, wall_thickness) {
+    sdf: custom(abs(sqrt(x*x + y*y + z*z) - radius_inner) - wall_thickness);
+}

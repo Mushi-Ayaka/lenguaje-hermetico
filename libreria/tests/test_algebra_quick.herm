@@ -1,0 +1,6 @@
+scene { background: [0,0,0]; }
+import "std_math_core.hm"
+import "std_math_algebra.hm"
+material "m" {}
+let v = v3_dot(1.0, 0.0, 0.0, 0.0, 1.0, 0.0);
+instance "ellipsoid"(0.5, 0.3, 0.4) { position: [0,0,0]; material: "m"; }

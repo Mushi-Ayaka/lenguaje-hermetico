@@ -1,0 +1,122 @@
+// ============================================================
+// LIBRERÍA: std_geo_atmosphere.hm
+// CAPA:     4.2 — Ciencias Atmosféricas y Oceanografía
+// VERSIÓN:  0.2
+// FUENTE:   ICAO standard atmosphere, Navier-Stokes atmosférico
+// DEPS:     std_math_core.hm, std_math_calculus.hm, std_phys_sdf.hm
+// FECHA:    6 de junio de 2026
+// ============================================================
+
+import "std_math_core.hm";
+import "std_math_calculus.hm";
+import "std_phys_sdf.hm";
+import "std_math_noise.hm";
+
+// ============================================================
+// ATMÓSFERA ESTÁNDAR ICAO
+// ============================================================
+
+// Constantes atmosféricas
+let T_SEA_LEVEL     = 288.15;    // K (15°C)
+let P_SEA_LEVEL     = 101325.0;  // Pa
+let LAPSE_RATE      = 0.0065;    // K/m (troposfera)
+let M_AIR           = 0.02896;   // kg/mol
+let R_GAS           = 8.314;     // J/(mol·K)
+
+// Temperatura estándar a altura h (troposfera, h < 11km)
+fn "std_temp"(h_alt)         { max(216.65, T_SEA_LEVEL - LAPSE_RATE * h_alt) }
+
+// Presión estándar (fórmula barométrica)
+fn "std_pressure"(h_alt)     {
+    P_SEA_LEVEL * pow(std_temp(h_alt) / T_SEA_LEVEL, GRAVITY_EARTH * M_AIR / (R_GAS * LAPSE_RATE + EPSILON))
+}
+
+// Densidad del aire: ρ = PM/(RT)
+fn "air_density"(h_alt) {
+    std_pressure(h_alt) * M_AIR / (R_GAS * std_temp(h_alt) + EPSILON)
+}
+
+// Velocidad del sonido en aire: c = sqrt(γRT/M)
+fn "speed_of_sound"(h_alt)   { sqrt(1.4 * R_GAS * std_temp(h_alt) / M_AIR) }
+
+// ============================================================
+// DINÁMICA ATMOSFÉRICA
+// ============================================================
+
+// Parámetro de Coriolis: f = 2Ω sin(φ)  (Ω = 7.27e-5 rad/s)
+fn "coriolis_param"(latitude_rad) { 2.0 * 7.2921e-5 * sin(latitude_rad) }
+
+// Viento geostrófico: Vg = -1/(ρf) * dP/dy
+fn "geostrophic_wind"(dP_dy, rho, f_coriolis) {
+    -dP_dy / (rho * f_coriolis + EPSILON)
+}
+
+// Escala de Rossby: L_R = Nhb / f  donde N es la freq Brunt-Väisälä
+fn "rossby_deformation"(N_brunt, h_atm, f_coriolis) {
+    N_brunt * h_atm / (abs(f_coriolis) + EPSILON)
+}
+
+// Vorticidad relativa (2D): ζ = dv/dx - du/dy
+fn "vorticity"(dv_dx, du_dy) { dv_dx - du_dy }
+
+// ============================================================
+// NUBOSIDAD Y PRECIPITACIÓN
+// ============================================================
+
+// Presión de vapor saturante (Tetens): e_s = 611 * exp(17.27*(T-273)/(T-36))
+fn "saturation_pressure"(T_kelvin) {
+    611.0 * exp(17.27 * (T_kelvin - 273.15) / (T_kelvin - 36.0 + EPSILON))
+}
+
+// Humedad relativa: HR = e/e_s
+fn "relative_humidity"(vapor_pressure, T_kelvin) {
+    vapor_pressure / (saturation_pressure(T_kelvin) + EPSILON)
+}
+
+// Nivel de condensación (LCL): z_LCL ≈ 125 * (T - Td)
+fn "lifting_condensation_level"(T_celsius, Td_celsius) {
+    125.0 * (T_celsius - Td_celsius)
+}
+
+// ============================================================
+// OCEANOGRAFÍA
+// ============================================================
+
+// Velocidad de onda superficial oceánica: c = sqrt(g*d) (agua somera)
+fn "shallow_wave_speed"(depth)  { sqrt(GRAVITY_EARTH * abs(depth)) }
+
+// Ola de Stokes (perfil de ola avanzado): y = a * cos(kx - ωt) + a²k/2 * cos(2(kx-ωt))
+fn "stokes_wave"(amp, k, omega, x_val, t_val) {
+    amp * cos(k * x_val - omega * t_val) +
+    0.5 * sq(amp) * k * cos(2.0 * (k * x_val - omega * t_val))
+}
+
+// ============================================================
+// SDFs ATMOSFÉRICOS Y OCEÁNICOS
+// ============================================================
+
+// Perfil de temperatura atmosférica (campo escalar)
+def "atmosphere_temperature"(T_surface, T_iso) {
+    sdf: custom(std_temp(y * 1000.0) - T_iso);
+}
+
+// Nube cúmulo (FBM)
+def "cumulus_cloud"(cloud_scale, cloud_base, cloud_top, density_threshold) {
+    sdf: custom(density_threshold - fbm3d_4(x * cloud_scale, (y - cloud_base) * cloud_scale * 2.0, z * cloud_scale) *
+                sat((cloud_top - y) / (cloud_top - cloud_base + EPSILON)));
+}
+
+// Ola de Stokes oceánica
+def "ocean_stokes_wave"(amp, k, omega, t_anim) {
+    sdf: custom(y - stokes_wave(amp, k, omega, x, t_anim));
+}
+
+// Capa de mezcla oceánica (termoclina)
+def "ocean_thermocline"(z_mixed, z_thick, T_surface, T_deep, T_iso) {
+    sdf: custom(lerp(T_surface, T_deep, smoothstep(z_mixed, z_mixed + z_thick, -y)) - T_iso);
+}
+
+// Ciclón (vorticidad axisimétrica)
+def "cyclone_sdf"(r_eye, r_outer, t_anim) {
+    sdf: custom(abs(sqrt(x*x + z*z) - r_eye * (1.0 + 0.3 * sin(w * PI2 + t_anim))) - r_outer * 0.1);
+}

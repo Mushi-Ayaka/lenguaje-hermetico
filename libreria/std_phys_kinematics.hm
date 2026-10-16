@@ -1,0 +1,116 @@
+// ============================================================
+// LIBRERÍA: std_phys_kinematics.hm
+// CAPA:     2.1 — Mecánica Clásica (Cinemática y Dinámica)
+// VERSIÓN:  0.2
+// FUENTE:   Newton, Lagrange, Hamilton — mecánica analítica
+// DEPS:     std_math_core.hm, std_math_algebra.hm, std_math_calculus.hm
+// FECHA:    6 de junio de 2026
+// ============================================================
+
+import "std_math_core.hm";
+import "std_math_algebra.hm";
+import "std_math_calculus.hm";
+
+// ============================================================
+// CINEMÁTICA RECTILÍNEA
+// ============================================================
+
+// Posición bajo aceleración constante: x(t) = x0 + v0*t + ½at²
+fn "pos_accel"(x0, v0, a, t)       { x0 + v0 * t + 0.5 * a * t * t }
+fn "vel_accel"(v0, a, t)           { v0 + a * t }
+
+// Caída libre: y(t) = y0 + v0y*t - ½g*t²
+fn "freefall_y"(y0, v0y, g, t)     { y0 + v0y * t - 0.5 * g * t * t }
+
+// Distancia de frenado (v²=v0²-2ax)
+fn "braking_distance"(v0, a)       { v0 * v0 / (2.0 * abs(a) + EPSILON) }
+
+// ============================================================
+// MOVIMIENTO CIRCULAR Y ROTACIONAL
+// ============================================================
+
+// Posición en movimiento circular uniforme
+fn "circular_x"(r, omega, t, phi0) { r * cos(omega * t + phi0) }
+fn "circular_y"(r, omega, t, phi0) { r * sin(omega * t + phi0) }
+
+// Velocidad angular a partir de frecuencia
+fn "angular_vel"(freq)             { PI2 * freq }
+
+// Aceleración centrípeta: a = ω²r = v²/r
+fn "centripetal_accel"(omega, r)   { omega * omega * r }
+
+// Fuerza centrífuga (marco no inercial): F = mω²r
+fn "centrifugal_force"(mass, omega, r) { mass * omega * omega * r }
+
+// Energía cinética rotacional: E = ½Iω²
+fn "rotational_energy"(inertia, omega) { 0.5 * inertia * omega * omega }
+
+// Momento angular: L = Iω
+fn "angular_momentum"(inertia, omega) { inertia * omega }
+
+// ============================================================
+// PÉNDULO Y OSCILACIONES
+// ============================================================
+
+// Péndulo simple (pequeñas oscilaciones): θ(t) = A*cos(ωt + φ)
+fn "pendulum_angle"(amp, omega, t, phi0) { amp * cos(omega * t + phi0) }
+fn "pendulum_omega"(g, length)           { sqrt(g / (length + EPSILON)) }
+fn "pendulum_period"(g, length)          { PI2 * sqrt(length / (g + EPSILON)) }
+
+// Posición XY del péndulo
+fn "pendulum_x"(length, amp, omega, t, phi0) { length * sin(pendulum_angle(amp, omega, t, phi0)) }
+fn "pendulum_y"(length, amp, omega, t, phi0) { -length * cos(pendulum_angle(amp, omega, t, phi0)) }
+
+// Péndulo de doble torsión (caótico, simplificado)
+fn "double_pendulum_x"(L1, L2, amp1, amp2, omega1, omega2, t) {
+    L1 * sin(amp1 * cos(omega1 * t)) + L2 * sin(amp2 * cos(omega2 * t))
+}
+
+// ============================================================
+// COLISIONES Y CONSERVACIÓN
+// ============================================================
+
+// Velocidad después de colisión elástica: v1' = (m1-m2)v1/(m1+m2) + 2m2*v2/(m1+m2)
+fn "elastic_v1"(m1, m2, v1, v2) { (m1 - m2) * v1 / (m1 + m2 + EPSILON) + 2.0 * m2 * v2 / (m1 + m2 + EPSILON) }
+fn "elastic_v2"(m1, m2, v1, v2) { (m2 - m1) * v2 / (m1 + m2 + EPSILON) + 2.0 * m1 * v1 / (m1 + m2 + EPSILON) }
+
+// Coeficiente de restitución: e = (v2'-v1') / (v1-v2)
+fn "restitution"(v1_after, v2_after, v1_before, v2_before) {
+    abs(v2_after - v1_after) / (abs(v1_before - v2_before) + EPSILON)
+}
+
+// ============================================================
+// TRAYECTORIAS BALÍSTICAS Y ORBITALES
+// ============================================================
+
+// Proyectil: rango máximo = v0²*sin(2θ)/g
+fn "projectile_range"(v0, theta, g) { v0 * v0 * sin(2.0 * theta) / (g + EPSILON) }
+fn "projectile_max_height"(v0, theta, g) { v0 * v0 * sq(sin(theta)) / (2.0 * g + EPSILON) }
+
+// Posición XY del proyectil en t
+fn "projectile_x"(v0, theta, t)    { v0 * cos(theta) * t }
+fn "projectile_y"(v0, theta, g, t) { v0 * sin(theta) * t - 0.5 * g * t * t }
+
+// Órbita elíptica (parámetro de la cónica): r = p/(1 + e*cos(θ))
+fn "orbit_r"(p_param, ecc, theta_orbit) { p_param / (1.0 + ecc * cos(theta_orbit) + EPSILON) }
+
+// ============================================================
+// SDFs CINEMÁTICAS
+// ============================================================
+
+// Trayectoria de proyectil (tubo fino alrededor de la curva)
+def "projectile_trajectory"(v0, theta_deg, grav, thick) {
+    sdf: custom(abs(y - (x * sin(theta_deg * DEG2RAD) / (cos(theta_deg * DEG2RAD) + EPSILON) - 
+                         grav * x * x / (2.0 * sq(v0 * cos(theta_deg * DEG2RAD)) + EPSILON))) - thick);
+}
+
+// Péndulo (posición en tiempo w)
+def "pendulum_sdf"(arm_length, amp, freq) {
+    sdf: custom(sqrt(sq(x - pendulum_x(arm_length, amp, PI2 * freq, w, 0.0)) +
+                     sq(y - pendulum_y(arm_length, amp, PI2 * freq, w, 0.0))) - 0.05);
+}
+
+// Espiral de movimiento circular
+def "circular_orbit_trail"(r_orbit, omega_orb, thick) {
+    sdf: custom(abs(sqrt(x*x + y*y) - r_orbit) - thick);
+}

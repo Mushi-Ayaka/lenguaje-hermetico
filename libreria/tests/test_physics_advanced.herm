@@ -1,0 +1,179 @@
+// ============================================================
+// ARCHIVO DE PRUEBA AVANZADO: test_physics_advanced.herm
+// OBJETIVO: Validar std_phys_sdf.hm con física real usando custom(expr)
+// FECHA: 6 de junio de 2026
+// ============================================================
+
+// Escena básica
+scene {
+    background: [0.05, 0.05, 0.1];
+}
+
+// Material simple
+material "default" {}
+
+// ============================================================
+// FUNCIONES FÍSICAS SIN 'let' (expandidas inline)
+// ============================================================
+
+// Onda de gravedad (sin 'let')
+fn "gravity_wave_physics"(amp, k, g, t) {
+    y - amp * sin(k * x - sqrt(g * k) * t) * exp(-k * abs(z))
+}
+
+// Superficie esférica (sagitta sin 'let')
+fn "spherical_surface_physics"(R, h) {
+    y - (R - sqrt(R*R - x*x - z*z) - h)
+}
+
+// Campo de temperatura gaussiano (sin 'let')
+fn "temperature_field_physics"(T0, D, t, sx, sz) {
+    T0 * exp(-((x-sx)*(x-sx) + (z-sz)*(z-sz)) / (4.0 * D * t + 0.1)) / 
+    sqrt(4.0 * pi * D * t + 0.1) - 0.3
+}
+
+// Vórtice fluídico (presión completamente expandida sin 'let')
+fn "vortex_pressure_physics"(Gamma, rc, t) {
+    -0.5 * (Gamma / (2.0 * pi * max(sqrt(x*x + z*z), rc))) * 
+           (Gamma / (2.0 * pi * max(sqrt(x*x + z*z), rc))) + 
+           0.05 * sin(atan2(z, x) * 4.0 - t * 2.0) + 0.1
+}
+
+// ============================================================
+// PRUEBA 1: FENÓMENOS DE ONDAS
+// ============================================================
+
+node "gravity_wave_physics_test" {
+    position: [-3, 2, 0];
+    sdf: custom(gravity_wave_physics(0.15, 4.0, 9.8, w));
+    material: "default";
+}
+
+// Onda estacionaria
+fn "standing_wave_physics"(amp, k, omega, t) {
+    y - amp * sin(k * x) * cos(omega * t)
+}
+
+node "standing_wave_test" {
+    position: [0, 2, 0];
+    sdf: custom(standing_wave_physics(0.2, 3.0, 2.0, w));
+    material: "default";
+}
+
+// ============================================================
+// PRUEBA 2: ÓPTICA GEOMÉTRICA
+// ============================================================
+
+node "spherical_lens_physics_test" {
+    position: [3, 2, 0];
+    sdf: custom(spherical_surface_physics(2.0, 0.5));
+    material: "default";
+}
+
+// Lente parabólica (sin aberración esférica)
+fn "parabolic_lens_physics"(f, h) {
+    y - (x*x + z*z) / (4.0 * f) - h
+}
+
+node "parabolic_lens_test" {
+    position: [-3, 0, 0];
+    sdf: custom(parabolic_lens_physics(1.5, 0.3));
+    material: "default";
+}
+
+// ============================================================
+// PRUEBA 3: TERMODINÁMICA
+// ============================================================
+
+node "temperature_diffusion_test" {
+    position: [0, 0, 0];
+    sdf: custom(temperature_field_physics(1.0, 0.2, w * 0.5 + 1.0, 0, 0));
+    material: "default";
+}
+
+// Conducción de calor en barra (1D simplificada)
+fn "heat_conduction_physics"(T0, alpha, t) {
+    T0 * exp(-x*x / (4.0 * alpha * t + 0.1)) / sqrt(4.0 * pi * alpha * t + 0.1) - 0.4
+}
+
+node "heat_conduction_test" {
+    position: [3, 0, 0];
+    sdf: custom(heat_conduction_physics(1.0, 0.15, w + 1.0));
+    material: "default";
+}
+
+// ============================================================
+// PRUEBA 4: DINÁMICA DE FLUIDOS
+// ============================================================
+
+node "fluid_vortex_physics_test" {
+    position: [-3, -2, 0];
+    sdf: custom(vortex_pressure_physics(1.5, 0.3, w));
+    material: "default";
+}
+
+// Flujo potencial alrededor de cilindro
+fn "potential_flow_physics"(U, R, t) {
+    let r = sqrt(x*x + z*z);
+    let theta = atan2(z, x);
+    let psi = U * sin(theta) * (r - R*R/r) + 0.1 * sin(theta * 3.0 - t * 2.0);
+    psi - 0.2
+}
+
+node "potential_flow_test" {
+    position: [0, -2, 0];
+    sdf: custom(potential_flow_physics(1.0, 0.4, w));
+    material: "default";
+}
+
+// ============================================================
+// PRUEBA 5: CAMPOS ELECTROMAGNÉTICOS
+// ============================================================
+
+// Campo de dipolo eléctrico
+fn "electric_dipole_physics"(p, k, t) {
+    let r = sqrt(x*x + y*y + z*z);
+    let cos_theta = z / (r + 1e-6);
+    (k * p * cos_theta / (r*r + 1e-6)) + 0.1 * sin(t * 3.0) - 0.3
+}
+
+node "electric_dipole_test" {
+    position: [3, -2, 0];
+    sdf: custom(electric_dipole_physics(1.0, 1.0, w));
+    material: "default";
+}
+
+// ============================================================
+// PRUEBA 6: FENÓMENOS COMBINADOS
+// ============================================================
+
+// Onda en superficie fluida con corriente
+fn "wave_with_current_physics"(amp, k, g, U, t) {
+    let omega = sqrt(g * k);
+    y - amp * sin(k * x - (omega + k*U) * t) * exp(-k * abs(z))
+}
+
+node "wave_current_test" {
+    position: [0, -4, 0];
+    sdf: custom(wave_with_current_physics(0.2, 3.0, 9.8, 0.5, w));
+    material: "default";
+}
+
+// ============================================================
+// PRUEBA 7: SISTEMAS DINÁMICOS
+// ============================================================
+
+// Atractor de Lorenz (simplificado para visualización)
+fn "lorenz_attractor_physics"(sigma, rho, beta, scale, t) {
+    // Superficie basada en ecuación de Lorenz simplificada
+    let chaos = sin(sigma * (y - x) * scale + t) * 
+                sin(rho * x - y - x*z * scale + t) * 
+                sin(x*y * scale - beta * z + t);
+    chaos - 0.5
+}
+
+node "lorenz_attractor_test" {
+    position: [3, -4, 0];
+    sdf: custom(lorenz_attractor_physics(10.0, 28.0, 2.667, 0.1, w));
+    material: "default";
+}

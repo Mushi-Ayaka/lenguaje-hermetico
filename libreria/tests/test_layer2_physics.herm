@@ -1,0 +1,91 @@
+// Test de Capa 2 — Física (sdf, kinematics, quantum, relativity, statmech, thermo, condensed)
+
+scene {
+    background: [0, 0, 0];
+}
+
+import "std_math_core.hm"
+import "std_math_algebra.hm"
+import "std_math_calculus.hm"
+import "std_phys_sdf.hm"
+import "std_phys_kinematics.hm"
+import "std_phys_quantum.hm"
+import "std_phys_relativity.hm"
+import "std_phys_statmech.hm"
+import "std_phys_thermo.hm"
+import "std_phys_condensed.hm"
+
+material "phys_mat" {}
+
+// --- std_phys_sdf ---
+let wave_speed = shallow_wave_speed(10.0);
+let fresnelF0 = fresnel_F0(1.0, 1.5);
+let snell = snell_sin_refr(1.0, 1.5, 0.5);
+let elec_pot = electric_potential(8.99e9, 1.6e-19, 1.0e-10);
+let ber = fluid_pressure(4.0, 1000.0, 9.8, 0.0, 101325.0);
+
+// --- std_phys_kinematics ---
+let pos_k = pos_accel(0.0, 10.0, -9.8, 2.0);
+let pend_omega = pendulum_omega(9.8, 1.0);
+let pend_period = pendulum_period(9.8, 1.0);
+let proj_range = projectile_range(20.0, 0.785398, 9.8);
+let el_v1 = elastic_v1(1.0, 2.0, 3.0, 0.0);
+let orbit_r_val = orbit_r(5.0, 0.5, 0.0);
+
+// --- std_phys_quantum ---
+let psi0 = qho_psi0_1d(1.0, 1.0, 0.5);
+let qho_e0 = qho_energy(0.0, 1.0);
+let inf_e1 = inf_well_energy(1.0, 1.0, 1.0);
+let h1s = prob_density_1s(0.529e-10, 0.529e-10);
+let tunnel_t = tunnel_transmission(2.0, 1.0, 0.5e-10, 1.0);
+
+// --- std_phys_relativity ---
+let beta_val = beta(0.5, 1.0);
+let gamma_val = gamma_factor(0.5);
+let length_c = rel_length(10.0, 0.5);
+let rs = r_schwarzschild(1.989e30, 6.674e-11, 3e8);
+let redshift = gravitational_redshift(1e15, 1e4, 3e3);
+
+// --- std_phys_statmech ---
+let bfact = boltzmann_factor(1.0, 300.0);
+let mb_peak = maxwell_peak_speed(1.67e-27, 300.0);
+let mb_rms = maxwell_rms_speed(1.67e-27, 300.0);
+let helmholtz = helmholtz_free_energy(1.0, 300.0);
+let T_ising = ising_critical_temp(1.0);
+
+// --- std_phys_thermo ---
+let carnot = carnot_efficiency(300.0, 600.0);
+let rad_power = radiation_power(0.9, 1.0, 1000.0, 300.0);
+let vdw_p = van_der_waals_P(300.0, 0.025, 0.364, 4.27e-5);
+
+// --- std_phys_condensed ---
+let bloch = bloch_envelope(1.0, 1.0, 1.0);
+let fcc_d = fcc_density(0.36);
+let meissner = meissner_field(1.0, 50e-9, 20e-9);
+let debye_cv = debye_heat_capacity(100.0, 200.0);
+
+// --- SDFs de física ---
+instance "gravity_wave_surface"(0.3, 2.0, 9.8, 0.0) {
+    position: [0, 0, 0];
+    material: "phys_mat";
+}
+
+instance "spherical_lens"(1.0) {
+    position: [2.0, 0, 0];
+    material: "phys_mat";
+}
+
+instance "black_hole_event_horizon"(0.3) {
+    position: [-2.0, 0, 0];
+    material: "phys_mat";
+}
+
+instance "fcc_crystal"(0.36, 0.8) {
+    position: [0, 2.0, 0];
+    material: "phys_mat";
+}
+
+instance "vibrating_membrane_shape"(0.1, 6.28, 0.0) {
+    position: [0, -2.0, 0];
+    material: "phys_mat";
+}

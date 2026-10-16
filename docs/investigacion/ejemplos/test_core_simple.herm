@@ -1,0 +1,214 @@
+// ============================================================
+// PRUEBA SIMPLE: test_core_simple.herm
+// Propósito: Validar std_math_core.hm corregido
+// ============================================================
+
+scene "Prueba Core Simple" {
+    axes { X: 400, Y: 300, W: 1 }
+    
+    camera {
+        position: [0, 1, 5];
+        target:   [0, 0, 0];
+        fov:      50;
+    }
+    
+    background: [0.1, 0.1, 0.15];
+}
+
+// Importar librería corregida
+import "std_math_core.hm"
+
+material "rojo" {
+    base_color: [0.8, 0.1, 0.1];
+    roughness:  0.3;
+}
+
+material "verde" {
+    base_color: [0.1, 0.8, 0.1];
+    roughness:  0.3;
+}
+
+material "azul" {
+    base_color: [0.1, 0.1, 0.8];
+    roughness:  0.3;
+}
+
+// ============================================================
+// PRUEBAS DE FUNCIONES BÁSICAS
+// ============================================================
+
+// Test 1: Constantes y operaciones básicas
+let radio_base = 0.5;
+let radio_cuadrado = sq(radio_base);      // 0.25
+let radio_cubo = cube(radio_base);        // 0.125
+let radio_cuartico = quartic(radio_base); // 0.0625
+
+node "esfera_cuadrada" {
+    sdf: sphere(radio_cuadrado);
+    material: "rojo";
+    position: [-2, 1, 0];
+}
+
+node "esfera_cubica" {
+    sdf: sphere(radio_cubo);
+    material: "verde";
+    position: [0, 1, 0];
+}
+
+node "esfera_cuartica" {
+    sdf: sphere(radio_cuartico);
+    material: "azul";
+    position: [2, 1, 0];
+}
+
+// ============================================================
+// PRUEBAS DE INTERPOLACIÓN
+// ============================================================
+
+// Test 2: Interpolación lineal
+let interp_valor = lerp(0.2, 0.8, 0.5);  // 0.5
+
+node "esfera_lerp" {
+    sdf: sphere(interp_valor);
+    material: "rojo";
+    position: [-1, 0, 0];
+}
+
+// Test 3: Interpolación suave
+let smooth_valor = smoothstep3(0, 1, 0.7);
+
+node "esfera_smooth" {
+    sdf: sphere(smooth_valor * 0.3 + 0.1);
+    material: "verde";
+    position: [0, 0, 0];
+}
+
+// ============================================================
+// PRUEBAS DE FUNCIONES ESPECIALES
+// ============================================================
+
+// Test 4: Función gaussiana
+let gauss_valor = gaussian_norm(0, 0, 1);  // 1.0 en el centro
+
+node "esfera_gauss" {
+    sdf: sphere(gauss_valor * 0.2 + 0.1);
+    material: "azul";
+    position: [1, 0, 0];
+}
+
+// Test 5: Función sigmoidal
+let sigmoid_valor = sigmoid(0);  // 0.5
+
+node "esfera_sigmoid" {
+    sdf: sphere(sigmoid_valor * 0.3 + 0.1);
+    material: "rojo";
+    position: [-1, -1, 0];
+}
+
+// ============================================================
+// PRUEBAS DE ONDAS Y VARIACIÓN
+// ============================================================
+
+// Test 6: Onda triangular (concepto - usar en animación real)
+// let wave_valor = triangle_wave(0, 10);  // 0.0
+
+node "esfera_wave" {
+    sdf: sphere(0.2);
+    material: "verde";
+    position: [0, -1, 0];
+}
+
+// ============================================================
+// PRUEBAS DE OPERACIONES ALGEBRAICAS
+// ============================================================
+
+// Test 7: Funciones de paso algebraicas
+let step_valor = step(0.5, 0.7);  // 1.0
+let pulse_valor = pulse(0.3, 0, 1);  // 1.0 si |0.3| ≤ 0.5
+
+node "esfera_step" {
+    sdf: sphere(step_valor * 0.15 + 0.05);
+    material: "azul";
+    position: [1, -1, 0];
+}
+
+// ============================================================
+// PRUEBAS DE MÚLTIPLES VALORES
+// ============================================================
+
+// Test 8: Promedios
+let promedio = mean(0.2, 0.8);        // 0.5
+let promedio3 = mean3(0.1, 0.5, 0.9); // 0.5
+let geom_prom = geometric_mean(0.25, 4); // 1.0
+
+node "esfera_mean" {
+    sdf: sphere(promedio * 0.2 + 0.1);
+    material: "rojo";
+    position: [-2, -2, 0];
+}
+
+node "esfera_mean3" {
+    sdf: sphere(promedio3 * 0.2 + 0.1);
+    material: "verde";
+    position: [0, -2, 0];
+}
+
+node "esfera_geomean" {
+    sdf: sphere(geom_prom * 0.1);
+    material: "azul";
+    position: [2, -2, 0];
+}
+
+// ============================================================
+// LUCES
+// ============================================================
+
+light "luz_principal" {
+    type: directional;
+    direction: [0.5, 0.8, 0.3];
+    color: [1, 0.95, 0.8];
+    intensity: 0.7;
+}
+
+// ============================================================
+// VALIDACIÓN
+// ============================================================
+
+/*
+PARA VALIDAR:
+
+1. Compilar:
+   herm test_core_simple.herm --render prueba_core.png
+
+2. Resultado esperado:
+   - 11 esferas visibles con diferentes tamaños
+   - Colores: rojo, verde, azul según función probada
+   - Sin errores de compilación
+   - Archivo .rih generado exitosamente
+
+3. Si compila exitosamente:
+   - std_math_core.hm es CORRECTO
+   - Sintaxis fn funciona
+   - Sin return ni if-then-else
+   - Funciones algebraicas válidas
+
+4. Si hay errores:
+   - Revisar funciones problemáticas
+   - Verificar sintaxis específica
+   - Ajustar según mensajes de error
+*/
+
+// ============================================================
+// NOTA FINAL
+// ============================================================
+
+// Esta prueba valida que:
+// 1. Las constantes (PI, E, etc.) funcionan
+// 2. Las funciones fn se evalúan correctamente
+// 3. No hay errores de sintaxis
+// 4. El pipeline completo funciona
+
+// Si esta prueba pasa, podemos proceder con:
+// 1. std_math_algebra.hm (corregido)
+// 2. std_math_calculus.hm (nuevo)
+// 3. std_math_noise.hm (nuevo)

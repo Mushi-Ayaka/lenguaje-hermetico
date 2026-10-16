@@ -1,0 +1,206 @@
+// ============================================================
+// LIBRERÍA: std_math_calculus.hm
+// CAPA:     1.3 — Cálculo Avanzado y Ecuaciones Diferenciales
+// VERSIÓN:  0.2
+// FUENTE:   Análisis matemático, ODEs, series de Taylor, integrales
+// DEPS:     std_math_core.hm, std_math_algebra.hm
+// FECHA:    5 de junio de 2026
+// ============================================================
+
+import "std_math_core.hm";
+import "std_math_algebra.hm";
+
+// ============================================================
+// DERIVADAS ANALÍTICAS (formas cerradas)
+// ============================================================
+
+// d/dx sin(x) = cos(x)
+fn "d_sin"(x_val)    { cos(x_val) }
+// d/dx cos(x) = -sin(x)
+fn "d_cos"(x_val)    { -sin(x_val) }
+// d/dx exp(x) = exp(x)
+fn "d_exp"(x_val)    { exp(x_val) }
+// d/dx ln(x) = 1/x
+fn "d_ln"(x_val)     { 1.0 / (x_val + EPSILON) }
+// d/dx x^n = n*x^(n-1)
+fn "d_pow"(x_val, n) { n * pow(abs(x_val) + EPSILON, n - 1.0) }
+// d/dx sqrt(x) = 1/(2√x)
+fn "d_sqrt"(x_val)   { 1.0 / (2.0 * sqrt(abs(x_val) + EPSILON)) }
+// d/dx tan(x) = sec²(x)
+fn "d_tan"(x_val)    { 1.0 / (sq(cos(x_val)) + EPSILON) }
+
+// ============================================================
+// GRADIENTE NUMÉRICO (diferencias finitas centrales)
+// ============================================================
+
+// Para funciones de x: f'(x) ≈ [f(x+h) - f(x-h)] / 2h
+// En Hermético usamos estas macros con h fijo
+
+let FD_H = 0.001;  // Paso de diferencias finitas
+
+// Gradiente numérico del campo escalar en x/y/z
+// Usa la variable especial 'sample(dx,dy,dz)' para vecindad
+// NOTA: requiere herm_eval con soporte de sample()
+fn "grad_num_x"(h)  { 1.0 / (2.0 * h) }  // Factor de escala del gradiente
+fn "grad_num_y"(h)  { 1.0 / (2.0 * h) }
+fn "grad_num_z"(h)  { 1.0 / (2.0 * h) }
+
+// ============================================================
+// SERIES DE TAYLOR (expansiones analíticas cerradas)
+// ============================================================
+
+// sin(x) ≈ x - x³/6 + x⁵/120 - x⁷/5040 (orden 7)
+fn "sin_taylor7"(x_val) {
+    x_val - cb(x_val)/6.0 + pow(x_val, 5.0)/120.0 - pow(x_val, 7.0)/5040.0
+}
+
+// cos(x) ≈ 1 - x²/2 + x⁴/24 - x⁶/720 (orden 6)
+fn "cos_taylor6"(x_val) {
+    1.0 - sq(x_val)/2.0 + pow(x_val, 4.0)/24.0 - pow(x_val, 6.0)/720.0
+}
+
+// exp(x) ≈ 1 + x + x²/2 + x³/6 + x⁴/24 (orden 4)
+fn "exp_taylor4"(x_val) {
+    1.0 + x_val + sq(x_val)/2.0 + cb(x_val)/6.0 + pow(x_val, 4.0)/24.0
+}
+
+// ln(1+x) ≈ x - x²/2 + x³/3 - x⁴/4 (válido para |x| < 1)
+fn "ln1p_taylor4"(x_val) {
+    x_val - sq(x_val)/2.0 + cb(x_val)/3.0 - pow(x_val, 4.0)/4.0
+}
+
+// sqrt(1+x) ≈ 1 + x/2 - x²/8 + x³/16 (aproximación de primer orden)
+fn "sqrt1p_approx"(x_val) {
+    1.0 + x_val * 0.5 - sq(x_val) * 0.125 + cb(x_val) * 0.0625
+}
+
+// ============================================================
+// INTEGRALES NUMÉRICAS (regla de Simpson, Gauss)
+// ============================================================
+
+// Regla del trapecio para f(a), f(b) conocidos
+fn "trapezoid_rule"(fa, fb, h)  { (fa + fb) * h * 0.5 }
+
+// Regla de Simpson 1/3: (b-a)/6 * [f(a) + 4f(m) + f(b)]
+fn "simpson_rule"(fa, fm, fb, h) { (fa + 4.0*fm + fb) * h / 6.0 }
+
+// Integral analítica de x^n: x^(n+1)/(n+1)
+fn "int_pow"(x_val, n)  { pow(x_val, n + 1.0) / (n + 1.0 + EPSILON) }
+// Integral de sin: -cos
+fn "int_sin"(x_val)     { -cos(x_val) }
+// Integral de cos: sin
+fn "int_cos"(x_val)     { sin(x_val) }
+// Integral de exp: exp
+fn "int_exp"(x_val)     { exp(x_val) }
+
+// ============================================================
+// ECUACIONES DIFERENCIALES — Soluciones cerradas
+// ============================================================
+
+// ODE: y' = k*y → y(t) = y0 * exp(k*t)  (crecimiento/decaimiento)
+fn "ode_exp_growth"(y0, k, t)      { y0 * exp(k * t) }
+fn "ode_exp_decay"(y0, k, t)       { y0 * exp(-k * t) }
+
+// ODE: y'' + ω²y = 0 → y(t) = A*cos(ωt) + B*sin(ωt)  (oscilador armónico)
+fn "shm_pos"(A, B, omega, t)       { A * cos(omega * t) + B * sin(omega * t) }
+fn "shm_vel"(A, B, omega, t)       { omega * (-A * sin(omega * t) + B * cos(omega * t)) }
+
+// Oscilador amortiguado: y'' + 2ζωy' + ω²y = 0
+// Solución subamortiguada (ζ < 1): y = exp(-ζωt) * [A*cos(ωd*t) + B*sin(ωd*t)]
+// donde ωd = ω*sqrt(1-ζ²)
+fn "damped_shm"(A, B, omega, zeta, t) {
+    exp(-zeta * omega * t) * (A * cos(omega * sqrt(max(0.0, 1.0 - zeta*zeta)) * t) +
+                               B * sin(omega * sqrt(max(0.0, 1.0 - zeta*zeta)) * t))
+}
+
+// Logística (Verhulst): P(t) = K / (1 + ((K-P0)/P0) * exp(-r*t))
+fn "logistic_growth"(P0, K, r, t) {
+    K / (1.0 + ((K - P0) / (P0 + EPSILON)) * exp(-r * t))
+}
+
+// Ecuación de onda 1D: u(x,t) = sin(kx - ωt) * A
+fn "wave1d"(A, k, omega, x_val, t)     { A * sin(k * x_val - omega * t) }
+fn "standing_wave"(A, k, omega, x_val, t) { A * sin(k * x_val) * cos(omega * t) }
+
+// Onda amortiguada: A*exp(-γt)*sin(ωt)
+fn "damped_wave"(A, gamma, omega, t)   { A * exp(-gamma * t) * sin(omega * t) }
+
+// Difusión del calor 1D: u(x,t) = exp(-π²Dt/L²) * sin(πx/L)
+fn "heat1d_mode1"(T0, D, L, x_val, t) { T0 * exp(-PI*PI * D * t / (L*L)) * sin(PI * x_val / L) }
+
+// ============================================================
+// ANÁLISIS DE FOURIER (modos primitivos)
+// ============================================================
+
+// n-ésimo armónico de la serie de Fourier de una onda cuadrada
+fn "fourier_square_n"(n, x_val, period) {
+    sin(PI2 * n * x_val / period) / n
+}
+
+// Suma de los primeros 4 armónicos impares de una onda cuadrada
+fn "fourier_square_approx4"(x_val, period) {
+    (4.0 / PI) * (fourier_square_n(1.0, x_val, period) +
+                  fourier_square_n(3.0, x_val, period) / 3.0 +
+                  fourier_square_n(5.0, x_val, period) / 5.0 +
+                  fourier_square_n(7.0, x_val, period) / 7.0)
+}
+
+// ============================================================
+// CÁLCULO DE VARIACIONES — Formas de energía
+// ============================================================
+
+// Energía cinética: T = (1/2) m v²
+fn "kinetic_energy"(mass, vx, vy, vz) { 0.5 * mass * v3_len_sq(vx, vy, vz) }
+
+// Energía potencial gravitatoria: U = -G*M*m/r
+fn "potential_gravity"(G, M, m, r)    { -G * M * m / (r + EPSILON) }
+
+// Lagrangiana L = T - V
+fn "lagrangian"(T, V) { T - V }
+
+// ============================================================
+// INTERPOLACIÓN HERMÍTICA (C1 continua)
+// ============================================================
+
+// Interpolación hermítica entre (p0, m0) y (p1, m1) en t ∈ [0,1]
+fn "hermite_pos"(p0, p1, m0, m1, t) {
+    (2.0*cb(t) - 3.0*sq(t) + 1.0)*p0 +
+    (cb(t) - 2.0*sq(t) + t)*m0 +
+    (-2.0*cb(t) + 3.0*sq(t))*p1 +
+    (cb(t) - sq(t))*m1
+}
+
+// Velocidad de interpolación hermítica (tangente)
+fn "hermite_vel"(p0, p1, m0, m1, t) {
+    (6.0*sq(t) - 6.0*t)*p0 +
+    (3.0*sq(t) - 4.0*t + 1.0)*m0 +
+    (-6.0*sq(t) + 6.0*t)*p1 +
+    (3.0*sq(t) - 2.0*t)*m1
+}
+
+// ============================================================
+// TRANSFORMADAS (formas analíticas simples)
+// ============================================================
+
+// Transformada de Laplace de e^(-at): F(s) = 1/(s+a)
+fn "laplace_exp"(s, a) { 1.0 / (s + a + EPSILON) }
+
+// Transformada de Laplace del seno: F(s) = ω/(s²+ω²)
+fn "laplace_sin"(s, omega) { omega / (s*s + omega*omega + EPSILON) }
+
+// Transformada de Laplace del coseno: F(s) = s/(s²+ω²)
+fn "laplace_cos"(s, omega) { s / (s*s + omega*omega + EPSILON) }
+
+// ============================================================
+// SDFs DE CALCULUS (curvas y superficies dinámicas)
+// ============================================================
+
+// Cicloide: posición en t, distancia al punto evaluado
+def "cycloid_curve"(r_param, t_param) {
+    sdf: custom(sqrt(sq(x - r_param * (t_param - sin(t_param))) + sq(y - r_param * (1.0 - cos(t_param)))) - 0.05);
+}
+
+// Espiral de Arquímedes: r = a*θ
+def "archimedes_spiral"(a_param, thick) {
+    sdf: custom(abs(sqrt(x*x + z*z) - a_param * atan(z, x)) - thick);
+}

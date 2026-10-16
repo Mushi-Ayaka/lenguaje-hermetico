@@ -1,0 +1,564 @@
+// ============================================================
+// LIBRERÍA: std_chem_theoretical.hm
+// CAPA:     Química (4.7 - Química Teórica y Computacional)
+// VERSIÓN:  1.0
+// FUENTE:   "Computational Chemistry" by Jensen
+// DEPS:     std_math_core.hm, std_math_algebra.hm, std_math_calculus.hm
+// DEPS:     std_bridge_quantchem.hm, std_phys_statmech.hm
+// FECHA:    6 de junio de 2026
+// ============================================================
+
+// QUÍMICA TEÓRICA Y COMPUTACIONAL: Métodos computacionales para química,
+// modelado molecular, simulaciones, dinámica molecular, química cuántica computacional
+
+// ============================================================
+// CONSTANTES FUNDAMENTALES
+// ============================================================
+
+let BOLTZMANN_THEOR = 1.380649e-23;            // k_B (J/K)
+let PLANCK_THEOR = 6.62607015e-34;             // h (J·s)
+let AVOGADRO_THEOR = 6.02214076e23;            // N_A (mol⁻¹)
+
+// ============================================================
+// INTERFAZ PÚBLICA - MÉTODOS CUÁNTICOS COMPUTACIONALES (fn)
+// ============================================================
+
+// --- Funcional DFT (B3LYP híbrido) ---
+fn "b3lyp_exchange_correlation"(density, gradient, kinetic_energy_density) {
+    // B3LYP: 0.20·HF + 0.80·Slater + 0.72·B88 + 0.81·LYP
+    let exchange_hf = kinetic_energy_density;
+    let exchange_slater = pow(density, 4.0/3.0);
+    let exchange_b88 = gradient * gradient / density;
+    let correlation_lyp = density * exp(-density * 0.1);
+    
+    0.20 * exchange_hf + 0.80 * exchange_slater + 0.72 * exchange_b88 + 0.81 * correlation_lyp
+}
+
+// --- Energía de Correlación MP2 ---
+fn "mp2_energy_computation"(orbital_energies, two_electron_integrals, occupied, virtual) {
+    let correlation = 0.0;
+    
+    for i in range(0, occupied) {
+        for j in range(0, occupied) {
+            for a in range(occupied, occupied + virtual) {
+                for b in range(occupied, occupied + virtual) {
+                    let denominator = orbital_energies[i] + orbital_energies[j] - 
+                                     orbital_energies[a] - orbital_energies[b];
+                    let integral = two_electron_integrals[i][j][a][b];
+                    correlation = correlation + integral * integral / (denominator + 1e-6);
+                }
+            }
+        }
+    }
+    
+    correlation * 0.25
+}
+
+// --- Costo Computacional Hartree-Fock ---
+fn "hartree_fock_cost"(basis_functions) {
+    // O(N^4) para integrales de dos electrones
+    pow(basis_functions, 4.0)
+}
+
+// --- Costo Computacional DFT ---
+fn "dft_cost"(basis_functions, grid_points) {
+    // O(N^3) para diagonalización + O(N·G) para integración
+    pow(basis_functions, 3.0) + basis_functions * grid_points
+}
+
+// --- Costo Computacional CCSD(T) ---
+fn "ccsdt_cost"(basis_functions) {
+    // O(N^7) para CCSD(T)
+    pow(basis_functions, 7.0)
+}
+
+// --- Aproximación de Resolution of Identity (RI) ---
+fn "ri_approximation_savings"(basis_functions, auxiliary_functions) {
+    // Reduce costo de O(N^4) a O(N^2·M) donde M < N
+    let original = pow(basis_functions, 4.0);
+    let ri_cost = basis_functions * basis_functions * auxiliary_functions;
+    
+    (original - ri_cost) / original  // Fracción ahorrada
+}
+
+// ============================================================
+// INTERFAZ PÚBLICA - DINÁMICA MOLECULAR (fn)
+// ============================================================
+
+// --- Integrador Velocity-Verlet ---
+fn "velocity_verlet_step"(position, velocity, acceleration, dt) {
+    let new_position = position + velocity * dt + 0.5 * acceleration * dt * dt;
+    let half_velocity = velocity + 0.5 * acceleration * dt;
+    
+    // Requiere cálculo de nueva aceleración
+    [new_position, half_velocity]
+}
+
+// --- Campo de Fuerza (Lennard-Jones) ---
+fn "lennard_jones_force"(r, epsilon, sigma) {
+    // F = 24ε/r·[2(σ/r)^12 - (σ/r)^6]
+    let sr6 = pow(sigma / (r + 1e-6), 6.0);
+    let sr12 = sr6 * sr6;
+    
+    24.0 * epsilon / (r + 1e-6) * (2.0 * sr12 - sr6)
+}
+
+// --- Energía de Enlace (Armónico) ---
+fn "harmonic_bond_energy"(r, r0, k_bond) {
+    0.5 * k_bond * (r - r0) * (r - r0)
+}
+
+// --- Energía de Ángulo (Armónico) ---
+fn "harmonic_angle_energy"(theta, theta0, k_angle) {
+    0.5 * k_angle * (theta - theta0) * (theta - theta0)
+}
+
+// --- Energía de Torsión (Dihedro) ---
+fn "torsion_energy"(phi, V_n, n, gamma) {
+    // E = V_n·(1 + cos(n·φ - γ))
+    V_n * (1.0 + cos(n * phi - gamma))
+}
+
+// --- Energía Electroestática (Ewald) ---
+fn "ewald_electrostatic_energy"(charges, positions, alpha, cutoff) {
+    // Suma directa + recíproca + auto-término
+    let direct_sum = 0.0;
+    for i in range(0, len(charges)) {
+        for j in range(i + 1, len(charges)) {
+            let r = distance(positions[i], positions[j]);
+            if r < cutoff {
+                direct_sum = direct_sum + charges[i] * charges[j] * erfc(alpha * r) / (r + 1e-6);
+            }
+        }
+    }
+    
+    direct_sum
+}
+
+// ============================================================
+// INTERFAZ PÚBLICA - SIMULACIÓN DE MONTE CARLO (fn)
+// ============================================================
+
+// --- Criterio de Metropolis ---
+fn "metropolis_criterion"(energy_change, temperature) {
+    // Aceptar si ΔE < 0, o con probabilidad exp(-ΔE/(k_B·T))
+    if energy_change < 0 {
+        true
+    } else {
+        exp(-energy_change / (BOLTZMANN_THEOR * temperature)) > random()
+    }
+}
+
+// --- Movimiento de Translación MC ---
+fn "mc_translation_move"(position, max_displacement) {
+    let dx = (random() - 0.5) * 2.0 * max_displacement;
+    let dy = (random() - 0.5) * 2.0 * max_displacement;
+    let dz = (random() - 0.5) * 2.0 * max_displacement;
+    
+    [position[0] + dx, position[1] + dy, position[2] + dz]
+}
+
+// --- Movimiento de Rotación MC ---
+fn "mc_rotation_move"(orientation, max_rotation) {
+    let axis = [random() - 0.5, random() - 0.5, random() - 0.5];
+    let angle = (random() - 0.5) * 2.0 * max_rotation;
+    
+    // Rotación simplificada
+    rotate_vector(orientation, axis, angle)
+}
+
+// --- Muestreo de Gibbs ---
+fn "gibbs_sampling_step"(particle_index, configurations, temperatures) {
+    // Muestrear configuración para partícula dada
+    let config_sum = 0.0;
+    for i in range(0, len(configurations)) {
+        config_sum = config_sum + configurations[i][particle_index];
+    }
+    
+    config_sum / len(configurations)
+}
+
+// ============================================================
+// INTERFAZ PÚBLICA - OPTIMIZACIÓN GEOMÉTRICA (fn)
+// ============================================================
+
+// --- Gradiente de Energía ---
+fn "energy_gradient_numerical"(coordinates, energy_function, delta) {
+    let gradient = [];
+    
+    for i in range(0, len(coordinates)) {
+        let coords_plus = coordinates;
+        coords_plus[i] = coords_plus[i] + delta;
+        
+        let coords_minus = coordinates;
+        coords_minus[i] = coords_minus[i] - delta;
+        
+        let dE = energy_function(coords_plus) - energy_function(coords_minus);
+        gradient = append(gradient, dE / (2.0 * delta));
+    }
+    
+    gradient
+}
+
+// --- Hessiano (Segunda Derivada) ---
+fn "hessian_matrix"(coordinates, energy_function, delta) {
+    let hessian = [];
+    
+    for i in range(0, len(coordinates)) {
+        let row = [];
+        for j in range(0, len(coordinates)) {
+            let coords_pp = coordinates;
+            coords_pp[i] = coords_pp[i] + delta;
+            coords_pp[j] = coords_pp[j] + delta;
+            
+            let coords_pm = coordinates;
+            coords_pm[i] = coords_pm[i] + delta;
+            coords_pm[j] = coords_pm[j] - delta;
+            
+            let coords_mp = coordinates;
+            coords_mp[i] = coords_mp[i] - delta;
+            coords_mp[j] = coords_mp[j] + delta;
+            
+            let coords_mm = coordinates;
+            coords_mm[i] = coords_mm[i] - delta;
+            coords_mm[j] = coords_mm[j] - delta;
+            
+            let d2E = energy_function(coords_pp) - energy_function(coords_pm) - 
+                     energy_function(coords_mp) + energy_function(coords_mm);
+            row = append(row, d2E / (4.0 * delta * delta));
+        }
+        hessian = append(hessian, row);
+    }
+    
+    hessian
+}
+
+// --- Convergencia de Optimización ---
+fn "optimization_converged"(gradient_norm, energy_change, threshold_gradient, threshold_energy) {
+    gradient_norm < threshold_gradient && abs(energy_change) < threshold_energy
+}
+
+// --- Algoritmo BFGS (Quasi-Newton) ---
+fn "bfgs_update_hessian"(hessian, position_diff, gradient_diff) {
+    // H_{k+1} = H_k + (y·y^T)/(y^T·s) - (H·s·s^T·H)/(s^T·H·s)
+    let s = position_diff;
+    let y = gradient_diff;
+    
+    let sy = dot_product(s, y);
+    let hessian_s = matrix_vector_product(hessian, s);
+    let shs = dot_product(s, hessian_s);
+    
+    // Actualización simplificada
+    let update_factor = 1.0 / (sy + 1e-6);
+    
+    hessian  // En implementación real se actualizaría
+}
+
+// ============================================================
+// INTERFAZ PÚBLICA - ANÁLISIS VIBRACIONAL (fn)
+// ============================================================
+
+// --- Frecuencias Vibracionales ---
+fn "vibrational_frequencies"(hessian, masses) {
+    // ω = √(λ/m) donde λ son autovalores del Hessiano masificado
+    let mass_weighted_hessian = hessian;
+    
+    for i in range(0, len(hessian)) {
+        for j in range(0, len(hessian[0])) {
+            mass_weighted_hessian[i][j] = hessian[i][j] / sqrt(masses[i/3] * masses[j/3] + 1e-6);
+        }
+    }
+    
+    // Autovalores (simplificado)
+    let eigenvalues = diagonal_approximation(mass_weighted_hessian);
+    
+    let frequencies = [];
+    for i in range(0, len(eigenvalues)) {
+        if eigenvalues[i] > 0 {
+            frequencies = append(frequencies, sqrt(eigenvalues[i]));
+        } else {
+            frequencies = append(frequencies, -sqrt(-eigenvalues[i]));  // Frecuencia imaginaria
+        }
+    }
+    
+    frequencies
+}
+
+// --- Intensidad IR ---
+fn "infrared_intensity"(dipole_derivative, normal_mode) {
+    // I ∝ |∂μ/∂Q|²
+    let intensity = 0.0;
+    for i in range(0, 3) {
+        intensity = intensity + dipole_derivative[i] * dipole_derivative[i];
+    }
+    
+    intensity * normal_mode * normal_mode
+}
+
+// --- Actividad Raman ---
+fn "raman_activity"(polarizability_derivative, normal_mode) {
+    // A ∝ |∂α/∂Q|²
+    let activity = 0.0;
+    for i in range(0, 3) {
+        for j in range(0, 3) {
+            activity = activity + polarizability_derivative[i][j] * polarizability_derivative[i][j];
+        }
+    }
+    
+    activity * 0.5
+}
+
+// ============================================================
+// INTERFAZ PÚBLICA - SDFs DE CÓMPUTO QUÍMICO (def)
+// ============================================================
+
+// --- Superficie de Energía Potencial ---
+def "potential_energy_surface_computational"(grid_points, energy_function, intensity_threshold) {
+    // Malla de energía
+    let energy_surface = 0.0;
+    
+    for i in range(0, grid_points) {
+        for j in range(0, grid_points) {
+            let x_val = (i - grid_points/2) * 0.1;
+            let y_val = (j - grid_points/2) * 0.1;
+            let energy = energy_function([x_val, y_val]);
+            
+            // Acumular superficie
+            energy_surface = energy_surface + step(abs(x_val - x), 0.05) * step(abs(y_val - y), 0.05) * energy * 0.01;
+        }
+    }
+    
+    // Mínimo y estados de transición
+    let minimum = sphere([0, -0.1, 0], 0.03);
+    let saddle = sphere([0.2, 0.05, 0], 0.025);
+    
+    sdf: union(custom(energy_surface - intensity_threshold), union(minimum, saddle));
+}
+
+// --- Trajectory de Dinámica Molecular ---
+def "md_trajectory_visualization"(initial_positions, velocities, forces, time_steps, intensity_threshold) {
+    // Trayectorias de partículas
+    let trajectories = [];
+    
+    for i in range(0, len(initial_positions)) {
+        let trajectory = [];
+        let pos = initial_positions[i];
+        let vel = velocities[i];
+        
+        for t in range(0, time_steps) {
+            // Paso de Velocity-Verlet
+            let acc = forces[i];  // Simplificado
+            pos = pos + vel * 0.01 + 0.5 * acc * 0.0001;
+            vel = vel + 0.5 * acc * 0.01;
+            
+            let point = sphere([pos[0], pos[1], pos[2]], 0.01);
+            trajectory = append(trajectory, point);
+        }
+        
+        trajectories = append(trajectories, union_array(trajectory));
+    }
+    
+    // Partículas actuales
+    let particles = [];
+    for i in range(0, len(initial_positions)) {
+        let particle = sphere(initial_positions[i], 0.03);
+        particles = append(particles, particle);
+    }
+    
+    sdf: union(union_array(trajectories), union_array(particles));
+}
+
+// --- Muestreo Monte Carlo ---
+def "monte_carlo_sampling_visualization"(acceptance_rate, energy_histogram, intensity_threshold) {
+    // Histograma de energía
+    let hist_bars = [];
+    let max_count = max_array(energy_histogram);
+    
+    for i in range(0, len(energy_histogram)) {
+        let bar_height = energy_histogram[i] / (max_count + 1e-6) * 0.3;
+        let bar = cylinder([i * 0.05 - 0.5, 0, 0], [i * 0.05 - 0.5, bar_height, 0], 0.02);
+        hist_bars = append(hist_bars, bar);
+    }
+    
+    // Tasa de aceptación visualizada
+    let acceptance_sphere = sphere([0.6, acceptance_rate * 0.3, 0], 0.05);
+    
+    // Configuraciones aceptadas vs rechazadas
+    let accepted = custom(sin(x*10.0) * sin(z*10.0) * acceptance_rate * 0.1);
+    let rejected = custom(cos(x*10.0) * cos(z*10.0) * (1.0 - acceptance_rate) * 0.05);
+    
+    sdf: union(union_array(hist_bars), union(acceptance_sphere, union(accepted, rejected)));
+}
+
+// --- Optimización Geométrica ---
+def "geometry_optimization_pathway"(initial_geometry, optimized_geometry, intermediate_steps, intensity_threshold) {
+    // Trayectoria de optimización
+    let pathway = [];
+    let current = initial_geometry;
+    
+    for step in range(0, intermediate_steps) {
+        let t = step / intermediate_steps;
+        
+        // Interpolación entre geometrías
+        for i in range(0, len(initial_geometry)) {
+            let pos = [initial_geometry[i][0] * (1.0 - t) + optimized_geometry[i][0] * t,
+                      initial_geometry[i][1] * (1.0 - t) + optimized_geometry[i][1] * t,
+                      initial_geometry[i][2] * (1.0 - t) + optimized_geometry[i][2] * t];
+            
+            let atom = sphere(pos, 0.02);
+            pathway = append(pathway, atom);
+        }
+    }
+    
+    // Geometría inicial
+    let initial = [];
+    for i in range(0, len(initial_geometry)) {
+        let atom = sphere(initial_geometry[i], 0.03);
+        initial = append(initial, atom);
+    }
+    
+    // Geometría optimizada
+    let optimized = [];
+    for i in range(0, len(optimized_geometry)) {
+        let atom = sphere(optimized_geometry[i], 0.035);
+        optimized = append(optimized, atom);
+    }
+    
+    sdf: union(union_array(pathway), union(union_array(initial), union_array(optimized)));
+}
+
+// --- Modos Vibracionales Animados ---
+def "vibrational_mode_animation"(equilibrium_geometry, mode_vectors, frequency, amplitude, intensity_threshold) {
+    // Geometría de equilibrio
+    let atoms = [];
+    let bonds = [];
+    
+    for i in range(0, len(equilibrium_geometry)) {
+        // Oscilación según modo normal
+        let displacement = sin(frequency * w) * amplitude;
+        let displaced_pos = [equilibrium_geometry[i][0] + mode_vectors[i][0] * displacement,
+                            equilibrium_geometry[i][1] + mode_vectors[i][1] * displacement,
+                            equilibrium_geometry[i][2] + mode_vectors[i][2] * displacement];
+        
+        let atom = sphere(displaced_pos, 0.03);
+        atoms = append(atoms, atom);
+    }
+    
+    // Enlaces
+    for i in range(0, len(equilibrium_geometry) - 1) {
+        let displacement_i = sin(frequency * w) * amplitude;
+        let displacement_j = sin(frequency * w) * amplitude;
+        
+        let pos_i = [equilibrium_geometry[i][0] + mode_vectors[i][0] * displacement_i,
+                    equilibrium_geometry[i][1] + mode_vectors[i][1] * displacement_i,
+                    equilibrium_geometry[i][2] + mode_vectors[i][2] * displacement_i];
+        
+        let pos_j = [equilibrium_geometry[i+1][0] + mode_vectors[i+1][0] * displacement_j,
+                    equilibrium_geometry[i+1][1] + mode_vectors[i+1][1] * displacement_j,
+                    equilibrium_geometry[i+1][2] + mode_vectors[i+1][2] * displacement_j];
+        
+        let bond = cylinder(pos_i, pos_j, 0.01);
+        bonds = append(bonds, bond);
+    }
+    
+    sdf: union(union_array(atoms), union_array(bonds));
+}
+
+// --- Malla de Integración DFT ---
+def "dft_integration_grid_visualization"(nuclear_positions, grid_density, intensity_threshold) {
+    // Núcleos
+    let nuclei = [];
+    for i in range(0, len(nuclear_positions)) {
+        let nucleus = sphere(nuclear_positions[i], 0.04);
+        nuclei = append(nuclei, nucleus);
+    }
+    
+    // Puntos de integración (más densos cerca de núcleos)
+    let grid_points = [];
+    for i in range(0, grid_density) {
+        for j in range(0, grid_density) {
+            for k in range(0, grid_density) {
+                let x = (i - grid_density/2) * 0.1;
+                let y = (j - grid_density/2) * 0.1;
+                let z = (k - grid_density/2) * 0.1;
+                
+                // Peso de integración (mayor cerca de núcleos)
+                let min_dist = 1e10;
+                for n in range(0, len(nuclear_positions)) {
+                    let d = distance([x, y, z], nuclear_positions[n]);
+                    min_dist = min(min_dist, d);
+                }
+                
+                let weight = exp(-min_dist * min_dist / 0.1);
+                let point = sphere([x, y, z], 0.005 * weight);
+                grid_points = append(grid_points, point);
+            }
+        }
+    }
+    
+    sdf: union(union_array(nuclei), union_array(grid_points));
+}
+
+// ============================================================
+// EJEMPLOS DE USO CON custom(expr)
+// ============================================================
+
+/*
+// EJEMPLO 1: Superficie de energía potencial
+node "pes_computational_example" {
+    position: [-4, 0, 0];
+    sdf: potential_energy_surface_computational(20, fn(coords) { coords[0]*coords[0] + coords[1]*coords[1] }, 0.15);
+    material: "computational_chemistry";
+}
+
+// EJEMPLO 2: Trayectoria de MD
+node "md_trajectory_example" {
+    position: [0, 0, 0];
+    sdf: md_trajectory_visualization([[0,0,0], [0.2,0,0]], [[0.1,0.1,0.1], [-0.05,0,0]], [[0.01,0,0], [-0.01,0,0]], 100, 0.1);
+    material: "molecular_dynamics";
+}
+
+// EJEMPLO 3: Muestreo Monte Carlo
+node "monte_carlo_example" {
+    position: [4, 0, 0];
+    sdf: monte_carlo_sampling_visualization(0.5, [10, 20, 30, 25, 15, 5], 0.12);
+    material: "statistical_sampling";
+}
+
+// EJEMPLO 4: Optimización geométrica
+node "geometry_optimization_example" {
+    position: [-2, 3, 0];
+    sdf: geometry_optimization_pathway([[0,0,0], [0.3,0,0]], [[0,0,0], [0.15,0,0]], 10, 0.1);
+    material: "optimization";
+}
+
+// EJEMPLO 5: Modos vibracionales
+node "vibrational_mode_example" {
+    position: [2, 3, 0];
+    sdf: vibrational_mode_animation([[0,0,0], [0.15,0,0]], [[0,0.1,0], [0,-0.1,0]], 10.0, 0.02, 0.1);
+    material: "normal_modes";
+}
+
+// EJEMPLO 6: Malla de integración DFT
+node "dft_grid_example" {
+    position: [0, -3, 0];
+    sdf: dft_integration_grid_visualization([[0,0,0]], 10, 0.1);
+    material: "quantum_method";
+}
+*/
+
+// ============================================================
+// NOTAS PARA USUARIOS
+// ============================================================
+
+// 1. La química computacional aplica métodos matemáticos a problemas químicos
+// 2. Los métodos cuánticos (HF, DFT, MP2, CC) calculan estructura electrónica
+// 3. La dinámica molecular simula movimiento atómico en el tiempo
+// 4. Monte Carlo muestrea configuraciones según distribución estadística
+// 5. La optimización geométrica encuentra mínimos en superficies de energía
+// 6. El análisis vibracional predice espectros IR y Raman
+
+// ============================================================
+// "La química computacional es el laboratorio virtual donde
+//  las moléculas danzan según las ecuaciones de la mecánica cuántica."
+// ============================================================

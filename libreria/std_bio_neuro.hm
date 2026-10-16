@@ -1,0 +1,77 @@
+// ============================================================
+// LIBRERÍA: std_bio_neuro.hm
+// CAPA:     6.5 — Neurobiología y Neurociencia Computacional
+// VERSIÓN:  0.2
+// FUENTE:   Integrate-and-Fire, Hodgkin-Huxley Simplificado, Regla de Hebb
+// DEPS:     std_math_core.hm, std_math_dynamics.hm
+// FECHA:    6 de junio de 2026
+// ============================================================
+
+import "std_math_core.hm";
+import "std_math_dynamics.hm";
+
+// ============================================================
+// MODELOS NEURONALES SIMPLES
+// ============================================================
+
+// Integrate-and-Fire perfecto (derivada del voltaje): dV/dt = (I - V/R) / C
+fn "integrate_and_fire_dv"(V_current, I_input, R_mem, C_mem) {
+    (I_input - V_current / (R_mem + EPSILON)) / (C_mem + EPSILON)
+}
+
+// Disparo condicional (Spike): V = V_rest si V > V_thresh
+fn "spike_reset"(V_current, V_thresh, V_rest) {
+    select(step(V_thresh, V_current), V_rest, V_current)
+}
+
+// Modelo Izhikevich simplificado (dinámica de spikes)
+// v' = 0.04*v^2 + 5*v + 140 - u + I
+fn "izhikevich_dv"(v, u, I_ext) {
+    0.04 * sq(v) + 5.0 * v + 140.0 - u + I_ext
+}
+// u' = a * (b*v - u)
+fn "izhikevich_du"(v, u, a_param, b_param) {
+    a_param * (b_param * v - u)
+}
+
+// ============================================================
+// PLASTICIDAD SINÁPTICA
+// ============================================================
+
+// Regla de aprendizaje de Hebb (variación del peso sináptico): Δw = η * x_i * y_j
+fn "hebbian_plasticity"(learning_rate, pre_syn_activity, post_syn_activity) {
+    learning_rate * pre_syn_activity * post_syn_activity
+}
+
+// Oja's rule (Hebbian con normalización): Δw = η * y * (x - y*w)
+fn "oja_rule"(learning_rate, x_in, y_out, w_current) {
+    learning_rate * y_out * (x_in - y_out * w_current)
+}
+
+// ============================================================
+// REDES NEURONALES (Estructura Funcional)
+// ============================================================
+
+// Activación Sigmoide (Neurona Perceptrón)
+fn "sigmoid_activation"(x_val) {
+    1.0 / (1.0 + exp(-x_val))
+}
+
+// ============================================================
+// SDFs NEURONALES
+// ============================================================
+
+// Cuerpo neuronal (Soma) con aproximación a dendritas
+def "neuron_soma"(r_soma) {
+    sdf: custom(sqrt(x*x + y*y + z*z) - r_soma * (1.0 + 0.2 * sin(4.0 * x) * sin(4.0 * y)));
+}
+
+// Axón con vaina de mielina segmentada
+def "myelinated_axon"(r_axon, myelin_thick, segment_len, gap_len) {
+    sdf: custom(
+        min(
+            sqrt(x*x + z*z) - r_axon,
+            sqrt(x*x + z*z) - r_axon - myelin_thick * step(frac(y / (segment_len + gap_len + EPSILON)), segment_len / (segment_len + gap_len + EPSILON))
+        )
+    );
+}

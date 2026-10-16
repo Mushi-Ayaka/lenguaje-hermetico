@@ -1,0 +1,67 @@
+// ============================================================
+// ARCHIVO DE PRUEBA MÍNIMO: test_physics_minimal.herm
+// OBJETIVO: Validar sintaxis básica de std_phys_sdf.hm
+// FECHA: 6 de junio de 2026
+// ============================================================
+
+// Escena básica
+scene {
+    background: [0, 0, 0];
+}
+
+// Material simple
+material "default" {}
+
+// ============================================================
+// PRUEBA 1: PRIMITIVAS NATIVAS
+// ============================================================
+
+node "sphere_test" {
+    position: [-2, 0, 0];
+    sdf: sphere(0.3);
+    material: "default";
+}
+
+node "box_test" {
+    position: [0, 0, 0];
+    sdf: box([0.4, 0.4, 0.4]);
+    material: "default";
+}
+
+node "cylinder_test" {
+    position: [2, 0, 0];
+    sdf: cylinder(0.2, 0.6);
+    material: "default";
+}
+
+// ============================================================
+// PRUEBA 2: OPERADORES CSG
+// ============================================================
+
+node "union_test" {
+    position: [-2, -2, 0];
+    sdf: union(
+        sphere(0.25),
+        box([0.3, 0.3, 0.3])
+    );
+    material: "default";
+}
+
+node "subtract_test" {
+    position: [0, -2, 0];
+    sdf: subtract(
+        sphere(0.35),
+        box([0.25, 0.25, 0.25])
+    );
+    material: "default";
+}
+
+// ============================================================
+// PRUEBA 3: ANIMACIÓN SIMPLE
+// ============================================================
+
+node "animated_sphere" {
+    position: [2, -2, 0];
+    sdf: sphere(0.2 + sin(w) * 0.1);
+    material: "default";
+}

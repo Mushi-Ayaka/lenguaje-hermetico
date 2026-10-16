@@ -1,0 +1,80 @@
+// ============================================================
+// LIBRERÍA: std_chem_reactions.hm
+// CAPA:     3.3 — Cinética Química y Termodinámica de Reacciones
+// VERSIÓN:  0.2
+// FUENTE:   Arrhenius, Eyring, van't Hoff, Le Chatelier
+// DEPS:     std_math_core.hm, std_phys_sdf.hm
+// FECHA:    6 de junio de 2026
+// ============================================================
+
+import "std_math_core.hm";
+import "std_phys_sdf.hm";
+
+// ============================================================
+// CINÉTICA QUÍMICA
+// ============================================================
+
+// Ley de velocidad de reacción: v = k * [A]^m * [B]^n
+fn "reaction_rate"(k_rate, concA, m_order, concB, n_order) {
+    k_rate * pow(abs(concA) + EPSILON, m_order) * pow(abs(concB) + EPSILON, n_order)
+}
+
+// Constante de Arrhenius: k(T) = A * exp(-Ea / RT)
+fn "arrhenius"(A_factor, Ea, R_gas, T_temp) { A_factor * exp(-Ea / (R_gas * T_temp + EPSILON)) }
+
+// Teoría del estado de transición (Eyring): k = (kBT/h) * exp(-ΔG‡/RT)
+fn "eyring_rate"(T_temp, delta_G_ddagger, R_gas) {
+    (BOLTZMANN * T_temp / (PLANCK + EPSILON)) * exp(-delta_G_ddagger / (R_gas * T_temp + EPSILON))
+}
+
+// Concentración en reacción de primer orden: [A](t) = [A]0 * exp(-k*t)
+fn "first_order_conc"(conc0, k_rate, t_val) { conc0 * exp(-k_rate * t_val) }
+
+// Semivida de primer orden: t1/2 = ln(2) / k
+fn "half_life_first_order"(k_rate) { LN2 / (k_rate + EPSILON) }
+
+// ============================================================
+// EQUILIBRIO QUÍMICO
+// ============================================================
+
+// Constante de equilibrio de van't Hoff: d(lnK)/dT = ΔH / RT²
+// Integrada: ln(K2/K1) = -ΔH/R * (1/T2 - 1/T1)
+fn "equilibrium_K_at_T"(K1, delta_H, R_gas, T1, T2) {
+    K1 * exp(-delta_H / R_gas * (1.0 / (T2 + EPSILON) - 1.0 / (T1 + EPSILON)))
+}
+
+// Grado de disociación de ácido débil: α = Ka / (Ka + [A])
+fn "acid_dissociation_degree"(Ka, conc_acid) { Ka / (Ka + conc_acid + EPSILON) }
+
+// pH de ácido débil: pH = ½(pKa - log[HA])
+fn "weak_acid_pH"(Ka, conc_acid) {
+    -0.5 * log(Ka * conc_acid + EPSILON) / log(10.0)
+}
+
+// Solubilidad de sal AB: s = sqrt(Ksp) (para Ksp = s²)
+fn "solubility_AB"(Ksp) { sqrt(abs(Ksp)) }
+
+// ============================================================
+// ENERGÍA DE REACCIÓN Y SUPERFICIE DE ENERGÍA POTENCIAL (PES)
+// ============================================================
+
+// Diagrama de coordenada de reacción (perfil de energía 1D)
+// Dos pozos separados por barrera de activación
+fn "reaction_energy_profile"(x_rxn, E_reactants, E_products, E_barrier, x_ts) {
+    E_reactants + (E_barrier - E_reactants) * exp(-sq(x_rxn - x_ts) / 0.2) +
+    (E_products - E_reactants) * sat(x_rxn)
+}
+
+// ============================================================
+// SDFs CINÉTICO-QUÍMICA
+// ============================================================
+
+// Barrera de activación (montículo gaussiano en espacio de coordenadas de reacción)
+def "activation_barrier"(E_a, x_ts, barrier_width) {
+    sdf: custom(y - E_a * exp(-sq(x - x_ts) / (sq(barrier_width) + EPSILON)));
+}
+
+// Concentración de reactivo como densidad radial (difusión esférica)
+def "reactant_diffusion"(conc0, k_rate, t_anim, c_threshold) {
+    sdf: custom(c_threshold - first_order_conc(conc0, k_rate, t_anim) * exp(-sq(sqrt(x*x + y*y + z*z))));
+}

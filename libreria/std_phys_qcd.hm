@@ -1,0 +1,64 @@
+// ============================================================
+// LIBRERÍA: std_phys_qcd.hm
+// CAPA:     2.4 — Cromodinámica Cuántica (QCD)
+// VERSIÓN:  0.2
+// FUENTE:   Gell-Mann, Gross, Wilczek, Politzer
+// DEPS:     std_math_core.hm, std_phys_sdf.hm
+// FECHA:    6 de junio de 2026
+// ============================================================
+
+import "std_math_core.hm";
+import "std_phys_sdf.hm";
+
+// ============================================================
+// CONSTANTES QCD
+// ============================================================
+
+// Escala de QCD (Lambda_QCD), aprox 200 MeV
+let LAMBDA_QCD = 0.2; 
+
+// ============================================================
+// POTENCIAL ENTRE QUARKS (Modelo de Cornell)
+// ============================================================
+
+// Potencial Cornell: V(r) = -4/3 * α_s/r + k*r
+// A corta distancia (Coulomb-like), a larga distancia (Confinamiento)
+fn "cornell_potential"(r_val, alpha_s, string_tension) {
+    (-4.0 / 3.0) * alpha_s / (r_val + EPSILON) + string_tension * r_val
+}
+
+// Libertad asintótica (Running coupling constant): α_s(Q²) ≈ 1 / (β0 * ln(Q²/Λ²))
+// beta0 = (33 - 2*n_f)/(12π)
+fn "running_coupling"(q_sq, beta0) {
+    1.0 / (beta0 * log(abs(q_sq) / (sq(LAMBDA_QCD) + EPSILON) + EPSILON) + EPSILON)
+}
+
+// ============================================================
+// MODELOS FENOMENOLÓGICOS DE HADRONES
+// ============================================================
+
+// Modelo de la bolsa de MIT (MIT Bag Model)
+// Energía del hadrón: E(R) = C/R + 4/3 π R³ B (donde B es constante de la bolsa)
+fn "mit_bag_energy"(r_val, kinetic_C, bag_B) {
+    kinetic_C / (r_val + EPSILON) + (4.0 / 3.0) * PI * cb(r_val) * bag_B
+}
+
+// Radio de equilibrio de la bolsa (minimizando la energía: dE/dR = 0)
+// R_0 = (C / 4πB)^(1/4)
+fn "mit_bag_radius"(kinetic_C, bag_B) {
+    pow(kinetic_C / (4.0 * PI * bag_B + EPSILON), 0.25)
+}
+
+// ============================================================
+// SDFs DE QCD
+// ============================================================
+
+// Tubo de flujo de color (Color flux tube) entre dos quarks en eje x
+def "color_flux_tube"(q_dist, tube_radius) {
+    sdf: custom(max(sqrt(y*y + z*z) - tube_radius, abs(x) - q_dist * 0.5));
+}
+
+// Confinamiento (Bolsa de MIT geométrica)
+def "hadron_bag"(kinetic_C, bag_B) {
+    sdf: custom(sqrt(x*x + y*y + z*z) - mit_bag_radius(kinetic_C, bag_B));
+}

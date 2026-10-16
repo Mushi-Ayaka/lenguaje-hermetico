@@ -1,0 +1,85 @@
+// ============================================================
+// LIBRERÍA: std_phys_relativity.hm
+// CAPA:     2.5 — Relatividad General y Especial
+// VERSIÓN:  0.2
+// FUENTE:   Einstein (1905, 1916), Schwarzschild (1916)
+// DEPS:     std_math_core.hm, std_phys_sdf.hm
+// FECHA:    6 de junio de 2026
+// ============================================================
+
+import "std_math_core.hm";
+import "std_phys_sdf.hm";
+
+// Constantes relativistas
+let SCHWARZSCHILD_SCALE = 2.0;  // r_s = 2GM/c² (M=1, G=1, c=1)
+
+// ============================================================
+// RELATIVIDAD ESPECIAL
+// ============================================================
+
+fn "beta"(v_val, c_val)          { v_val / (c_val + EPSILON) }
+fn "gamma_factor"(beta_val)      { 1.0 / sqrt(max(EPSILON, 1.0 - beta_val * beta_val)) }
+fn "rel_length"(L0, beta_val)    { L0 * sqrt(max(0.0, 1.0 - beta_val * beta_val)) }
+fn "rel_time"(t0, beta_val)      { t0 / sqrt(max(EPSILON, 1.0 - beta_val * beta_val)) }
+
+// Energía relativista: E = γmc²
+fn "rel_energy"(mass, beta_val, c_val) { gamma_factor(beta_val) * mass * c_val * c_val }
+
+// Adición relativista de velocidades: w = (v+u)/(1 + vu/c²)
+fn "vel_addition"(v_val, u_val, c_val) { (v_val + u_val) / (1.0 + v_val * u_val / (c_val * c_val + EPSILON) + EPSILON) }
+
+// Efecto Doppler relativista (aproximado)
+fn "doppler_rel"(f0, beta_val) {
+    f0 * sqrt((1.0 + beta_val) / (max(EPSILON, 1.0 - beta_val)))
+}
+
+// Intervalo espacio-temporal (métrica de Minkowski)
+fn "minkowski_ds2"(dt_val, dx_val, dy_val, dz_val, c_val) {
+    -c_val * c_val * dt_val * dt_val + dx_val * dx_val + dy_val * dy_val + dz_val * dz_val
+}
+
+// ============================================================
+// CURVATURA GRAVITATORIA — Métrica de Schwarzschild
+// ============================================================
+
+// Radio de Schwarzschild: r_s = 2GM/c²
+fn "r_schwarzschild"(M_mass, G, c_val) { 2.0 * G * M_mass / (c_val * c_val + EPSILON) }
+
+// Factor de curvatura temporal: sqrt(1 - r_s/r)
+fn "schwarzschild_time_factor"(r_val, r_s)  { sqrt(max(0.0, 1.0 - r_s / (r_val + EPSILON))) }
+
+// Redshift gravitacional: ν_obs = ν_emitted * sqrt(1 - r_s/r)
+fn "gravitational_redshift"(freq_emitted, r_val, r_s)  {
+    freq_emitted * sqrt(max(0.0, 1.0 - r_s / (r_val + EPSILON)))
+}
+
+// Lente gravitacional (desviación de rayos de luz): δφ = 4GM/(c²b) [ángulo]
+fn "gravitational_lensing_angle"(G, M_mass, b_param, c_val) {
+    4.0 * G * M_mass / (c_val * c_val * b_param + EPSILON)
+}
+
+// Energía potencial newtoniana generalizada (curvatura débil)
+fn "curved_potential"(r_val, r_s)  { -0.5 * r_s / (r_val + EPSILON) }
+
+// ============================================================
+// SDFs RELATIVISTAS
+// ============================================================
+
+// Horizonte de eventos de Schwarzschild (esfera negra)
+def "black_hole_event_horizon"(r_s) {
+    sdf: custom(sqrt(x*x + y*y + z*z) - r_s);
+}
+
+// Contracción de Lorentz (caja aplastada en eje x)
+def "lorentz_contracted_box"(w_box, h_box, d_box, beta_val) {
+    sdf: custom(
+        max(abs(x / (w_box * rel_length(1.0, beta_val) + EPSILON)) - 1.0,
+            max(abs(y / (h_box + EPSILON)) - 1.0,
+                abs(z / (d_box + EPSILON)) - 1.0))
+    );
+}
+
+// Embudo gravitacional (visualización 2D de curvatura espacial)
+def "gravity_funnel"(M_mass, sc_val) {
+    sdf: custom(y + sc_val * sqrt(max(0.0, SCHWARZSCHILD_SCALE * M_mass / (sqrt(x*x + z*z) + EPSILON))));
+}

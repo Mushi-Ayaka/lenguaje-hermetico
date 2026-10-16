@@ -1,0 +1,557 @@
+// ============================================================
+// LIBRERÍA: std_bridge_molbio.hm
+// CAPA:     Intermediario: Química-Biología (5.3 - Biología Molecular)
+// VERSIÓN:  1.0
+// FUENTE:   Watson & Crick "DNA Structure", Alberts "Molecular Biology of the Cell"
+// DEPS:     std_math_core.hm, std_math_algebra.hm, std_math_calculus.hm
+// DEPS:     std_bridge_biochem.hm, std_chem_polymer.hm
+// FECHA:    6 de junio de 2026
+// ============================================================
+
+// BIOLOGÍA MOLECULAR: Replicación del ADN, transcripción, traducción,
+// expresión génica, regulación, reparación del ADN, biología sintética
+
+// ============================================================
+// CONSTANTES DE BIOLOGÍA MOLECULAR
+// ============================================================
+
+// Tamaños moleculares (Å, escalados)
+let DNA_BASE_PAIR_DISTANCE = 3.4;          // Distancia entre pares de bases
+let DNA_HELIX_DIAMETER = 20.0;             // Diámetro de doble hélice
+let DNA_HELIX_PITCH = 34.0;                // Paso de hélice (10.4 pares de bases)
+let RNA_POLYMERASE_SIZE = 100.0;           // Tamaño de RNA polimerasa
+let RIBOSOME_SIZE = 250.0;                 // Tamaño de ribosoma
+
+// Constantes de cinética molecular
+let POLYMERASE_ELONGATION_RATE = 50.0;     // Nucleótidos/segundo (escalado)
+let TRANSLATION_ELONGATION_RATE = 20.0;    // Aminoácidos/segundo (escalado)
+let DNA_REPLICATION_RATE = 100.0;          // Pares de bases/segundo (escalado)
+
+// Constantes de termodinámica molecular
+let DNA_MELTING_TEMPERATURE_BASE = 85.0;   // °C para GC-rich (escalado)
+let PROTEIN_FOLDING_TIME_SCALE = 1.0;      // Escala de tiempo de plegamiento
+let RNA_HAIRPIN_STABILITY = -5.0;          // kcal/mol (escalado)
+
+// ============================================================
+// INTERFAZ PÚBLICA - ESTRUCTURA DEL ADN (fn)
+// ============================================================
+
+// --- Geometría de la Doble Hélice (B-DNA) ---
+// Coordenadas helicoidales para ADN
+fn "dna_helix_coordinates"(t, radius, pitch) {
+    // t: parámetro a lo largo del eje, radio: radio de hélice, pitch: paso
+    [radius * cos(2.0 * pi * t / pitch), 
+     t, 
+     radius * sin(2.0 * pi * t / pitch)]
+}
+
+// --- Distancia entre Pares de Bases (Stacking) ---
+fn "dna_base_pair_spacing"(sequence_context) {
+    // 3.4Å promedio, varía según secuencia
+    DNA_BASE_PAIR_DISTANCE * (1.0 + 0.05 * sequence_context)
+}
+
+// --- Angulo de Twist (Giro entre pares de bases) ---
+fn "dna_twist_angle"(sequence) {
+    // 36° promedio por par de bases en B-DNA
+    36.0 * (1.0 + 0.1 * sin(sequence * 0.5))
+}
+
+// --- Parámetros de Roll y Tilt (Flexión del ADN) ---
+fn "dna_roll_tilt_parameters"(sequence, protein_binding) {
+    // Roll: inclinación de pares de bases
+    // Tilt: giro fuera del plano
+    [5.0 * sequence, 3.0 * protein_binding]  // grados (escalados)
+}
+
+// --- Estabilidad de Apareamiento de Bases (GC vs AT) ---
+fn "dna_base_pair_stability"(is_gc_pair) {
+    // Pares GC: 3 puentes H, más estables
+    // Pares AT: 2 puentes H, menos estables
+    is_gc_pair * 3.0 + (1.0 - is_gc_pair) * 2.0
+}
+
+// --- Temperatura de Fusión (Melting) del ADN ---
+fn "dna_melting_temperature"(gc_content, salt_concentration, length) {
+    // Tm ≈ 81.5 + 16.6·log₁₀[Na⁺] + 0.41·(%GC) - 675/length
+    DNA_MELTING_TEMPERATURE_BASE + 
+    0.41 * gc_content * 100.0 + 
+    16.6 * log10(salt_concentration) - 
+    675.0 / (length + 1e-6)
+}
+
+// ============================================================
+// INTERFAZ PÚBLICA - REPLICACIÓN DEL ADN (fn)
+// ============================================================
+
+// --- Velocidad de Replicación (Horfología de replicación) ---
+fn "dna_replication_rate"(polymerase_processivity, nucleotide_concentration, atp_availability) {
+    POLYMERASE_ELONGATION_RATE * polymerase_processivity * 
+    sqrt(nucleotide_concentration) * atp_availability
+}
+
+// --- Fidelidad de Replicación (Tasa de error) ---
+fn "dna_replication_fidelity"(proofreading_activity, mismatch_repair) {
+    // Tasa de error ≈ 10⁻⁵ a 10⁻¹⁰ con corrección
+    let base_error_rate = 1e-5;
+    base_error_rate / (proofreading_activity * mismatch_repair + 1e-6)
+}
+
+// --- Formación de Horquilla de Replicación ---
+fn "replication_fork_geometry"(leading_strand_rate, lagging_strand_rate) {
+    // Asimetría entre cadena líder y retardada
+    let asymmetry = leading_strand_rate / (lagging_strand_rate + 1e-6);
+    asymmetry * 0.5  // Factor geométrico
+}
+
+// --- Síntesis de Fragmentos de Okazaki ---
+fn "okazaki_fragment_length"(lagging_strand_rate, primase_activity) {
+    // 100-200 nucleótidos en eucariotas
+    150.0 * lagging_strand_rate * primase_activity
+}
+
+// --- Remoción de Cebadores y Unión ---
+fn "primer_removal_efficiency"(rnase_h_activity, dna_ligase_activity) {
+    rnase_h_activity * dna_ligase_activity
+}
+
+// ============================================================
+// INTERFAZ PÚBLICA - TRANSCRIPCIÓN (fn)
+// ============================================================
+
+// --- Unión de RNA Polimerasa al Promotor ---
+fn "rna_polymerase_promoter_binding"(promoter_strength, transcription_factors) {
+    // Fuerza del promotor + factores de transcripción
+    promoter_strength * (1.0 + transcription_factors * 0.5)
+}
+
+// --- Iniciación de la Transcripción ---
+fn "transcription_initiation_rate"(polymerase_bound, initiation_factors) {
+    polymerase_bound * initiation_factors
+}
+
+// --- Elongación Transcripcional ---
+fn "transcription_elongation_rate"(polymerase_processivity, nucleotide_triphosphates) {
+    POLYMERASE_ELONGATION_RATE * polymerase_processivity * sqrt(nucleotide_triphosphates)
+}
+
+// --- Terminación de la Transcripción ---
+fn "transcription_termination_efficiency"(terminator_strength, rho_factor) {
+    terminator_strength * (1.0 + rho_factor * 0.3)
+}
+
+// --- Procesamiento del RNA (Capping, Splicing, Polyadenilación) ---
+fn "rna_processing_efficiency"(capping_enzyme, splicing_machinery, polyA_polymerase) {
+    capping_enzyme * splicing_machinery * polyA_polymerase
+}
+
+// --- Estabilidad del mRNA ---
+fn "mrna_half_life"(polyA_tail_length, uorfs, degradation_signals) {
+    // Vida media influenciada por múltiples factores
+    polyA_tail_length * 10.0 - uorfs * 5.0 - degradation_signals * 20.0
+}
+
+// ============================================================
+// INTERFAZ PÚBLICA - TRADUCCIÓN (fn)
+// ============================================================
+
+// --- Unión del Ribosoma al mRNA ---
+fn "ribosome_mrna_binding"(shine_dalgarno, initiation_factors) {
+    // Secuencia Shine-Dalgarno en procariotas, Kozak en eucariotas
+    shine_dalgarno * initiation_factors
+}
+
+// --- Iniciación de la Traducción ---
+fn "translation_initiation"(initiator_trna, eif2_gtp) {
+    initiator_trna * eif2_gtp
+}
+
+// --- Elongación Traduccional ---
+fn "translation_elongation_rate"(ribosome_processivity, aminoacyl_trna, gtp) {
+    TRANSLATION_ELONGATION_RATE * ribosome_processivity * aminoacyl_trna * sqrt(gtp)
+}
+
+// --- Plegamiento Cotraduccional ---
+fn "cotranslational_folding"(chaperones, translation_rate) {
+    // Plegamiento durante la traducción
+    chaperones * (1.0 - translation_rate * 0.1)  // Más lento = mejor plegamiento
+}
+
+// --- Terminación de la Traducción ---
+fn "translation_termination"(release_factors, stop_codon_context) {
+    release_factors * stop_codon_context
+}
+
+// --- Modificaciones Postraduccionales ---
+fn "post_translational_modifications"(phosphorylation, glycosylation, acetylation) {
+    phosphorylation * 0.3 + glycosylation * 0.4 + acetylation * 0.3
+}
+
+// ============================================================
+// INTERFAZ PÚBLICA - REGULACIÓN GÉNICA (fn)
+// ============================================================
+
+// --- Unión de Factores de Transcripción ---
+fn "transcription_factor_binding"(affinity, concentration, cooperativity) {
+    affinity * concentration * (1.0 + cooperativity * 0.5)
+}
+
+// --- Activación Transcripcional ---
+fn "transcriptional_activation"(tf_bound, coactivators, chromatin_openness) {
+    tf_bound * coactivators * chromatin_openness
+}
+
+// --- Represión Transcripcional ---
+fn "transcriptional_repression"(repressor_bound, corepressors, chromatin_condensation) {
+    repressor_bound * corepressors * chromatin_condensation
+}
+
+// --- Silenciamiento Epigenético (Metilación del ADN) ---
+fn "dna_methylation_silencing"(cpg_methylation, histone_deacetylation) {
+    cpg_methylation * histone_deacetylation
+}
+
+// --- Remodelación de la Cromatina ---
+fn "chromatin_remodeling"(atpase_activity, histone_modifications) {
+    atpase_activity * (1.0 + histone_modifications * 0.3)
+}
+
+// --- Bucles de Regulación (Feedback) ---
+fn "regulatory_feedback_loop"(activator, repressor, delay) {
+    // Sistema dinámico simple
+    activator * exp(-delay) - repressor * (1.0 - exp(-delay))
+}
+
+// ============================================================
+// INTERFAZ PÚBLICA - REPARACIÓN DEL ADN (fn)
+// ============================================================
+
+// --- Reparación por Escisión de Bases (BER) ---
+fn "base_excision_repair"(glycosylase, ap_endonuclease, dna_polymerase_beta) {
+    glycosylase * ap_endonuclease * dna_polymerase_beta
+}
+
+// --- Reparación por Escisión de Nucleótidos (NER) ---
+fn "nucleotide_excision_repair"(xpc, tfiiH, xpa, xpg) {
+    xpc * tfiiH * xpa * xpg
+}
+
+// --- Reparación de Apareamientos Incorrectos (MMR) ---
+fn "mismatch_repair"(msh, mlh, pms, exonuclease) {
+    msh * mlh * pms * exonuclease
+}
+
+// --- Reparación de Roturas de Doble Cadena (NHEJ vs HR) ---
+fn "double_strand_break_repair"(ku70_80, dna_pkcs, ligase4, rad51) {
+    // NHEJ: ku70/80, dna-pkcs, ligase4
+    // HR: rad51, rad52, etc.
+    let nhej = ku70_80 * dna_pkcs * ligase4;
+    let hr = rad51 * 0.8;  // HR más lento pero más preciso
+    nhej + hr * 0.5
+}
+
+// --- Respuesta al Daño del ADN (DDR) ---
+fn "dna_damage_response"(atm_atr, chk1_chk2, p53) {
+    atm_atr * chk1_chk2 * p53
+}
+
+// ============================================================
+// INTERFAZ PÚBLICA - SDFs DE BIOLOGÍA MOLECULAR (def)
+// ============================================================
+
+// --- Doble Hélice de ADN (B-DNA) ---
+def "dna_double_helix_detailed"(helix_radius, pitch, length, twist_variation) {
+    let t = y * 10.0;  // Eje y como eje largo
+    
+    // Dos hebras antiparalelas
+    let strand1_x = helix_radius * cos(2.0 * pi * t / pitch);
+    let strand1_z = helix_radius * sin(2.0 * pi * t / pitch);
+    
+    let strand2_x = helix_radius * cos(2.0 * pi * t / pitch + pi + twist_variation * sin(t * 0.1));
+    let strand2_z = helix_radius * sin(2.0 * pi * t / pitch + pi + twist_variation * sin(t * 0.1));
+    
+    // Bases nitrogenadas conectando las hebras
+    fn "base_pair"(t_val) {
+        let bp_t = t_val;
+        let s1x = helix_radius * cos(2.0 * pi * bp_t / pitch);
+        let s1z = helix_radius * sin(2.0 * pi * bp_t / pitch);
+        let s2x = helix_radius * cos(2.0 * pi * bp_t / pitch + pi);
+        let s2z = helix_radius * sin(2.0 * pi * bp_t / pitch + pi);
+        
+        let mid_x = (s1x + s2x) * 0.5;
+        let mid_z = (s1z + s2z) * 0.5;
+        
+        sqrt((x - mid_x)*(x - mid_x) + (z - mid_z)*(z - mid_z)) - 0.08
+    }
+    
+    // Hebras de azúcar-fosfato
+    let backbone1 = sqrt((x - strand1_x)*(x - strand1_x) + (z - strand1_z)*(z - strand1_z)) - 0.04;
+    let backbone2 = sqrt((x - strand2_x)*(x - strand2_x) + (z - strand2_z)*(z - strand2_z)) - 0.04;
+    
+    // Bases cada 3.4Å (aproximadamente)
+    let base_pairs = base_pair(t);
+    
+    sdf: min(min(backbone1, backbone2), base_pairs);
+}
+
+// --- RNA Polimerasa en Promotor ---
+def "rna_polymerase_promoter_complex"(polymerase_size, promoter_length, dna_bend) {
+    // RNA polimerasa unida al ADN en promotor
+    let polymerase = sphere([0, 0, 0], polymerase_size * 0.1);
+    
+    // ADN doble hélice doblado en promotor
+    let bent_dna = custom(
+        sin(x * 2.0) * 0.1 + 
+        cos(z * 2.0) * 0.1 - 
+        y * 0.05 + 
+        dna_bend * sin(x * 3.0) * 0.2
+    );
+    
+    // Sitio de unión
+    let binding_site = sphere([0, polymerase_size * 0.15, 0], polymerase_size * 0.05);
+    
+    sdf: union(polymerase, bent_dna, binding_site);
+}
+
+// --- Ribosoma durante Traducción ---
+def "ribosome_translation_complex"(ribosome_size, mrna_length, polypeptide_chain) {
+    // Ribosoma (subunidades grande y pequeña)
+    let large_subunit = sphere([-ribosome_size * 0.1, 0, 0], ribosome_size * 0.15);
+    let small_subunit = sphere([ribosome_size * 0.1, 0, 0], ribosome_size * 0.1);
+    
+    // mRNA pasando a través
+    let mrna = cylinder([-mrna_length * 0.5, -ribosome_size * 0.05, 0], 
+                        [mrna_length * 0.5, -ribosome_size * 0.05, 0], 
+                        ribosome_size * 0.02);
+    
+    // Cadena polipeptídica emergente
+    let polypeptide = cylinder([0, ribosome_size * 0.1, 0], 
+                               [0, ribosome_size * 0.3, 0], 
+                               ribosome_size * 0.015 * polypeptide_chain);
+    
+    sdf: union(large_subunit, small_subunit, mrna, polypeptide);
+}
+
+// --- Horquilla de Replicación ---
+def "dna_replication_fork"(parent_dna_length, daughter_strands_length, fork_angle) {
+    // ADN parental
+    let parent_dna = box([-parent_dna_length * 0.5, -0.02, -0.02], 
+                         [0, 0.02, 0.02]);
+    
+    // Cadenas hijas (líder y retardada)
+    let leading_strand = box([0, 0, -0.015], 
+                             [daughter_strands_length * 0.8, 0.01, 0.015]);
+    
+    let lagging_strand = union(
+        box([0, 0.02, -0.015], [daughter_strands_length * 0.3, 0.03, 0.015]),
+        box([daughter_strands_length * 0.4, 0.02, -0.015], [daughter_strands_length * 0.7, 0.03, 0.015])
+    );
+    
+    // Polimerasas
+    let pol_leading = sphere([daughter_strands_length * 0.75, 0.005, 0], 0.03);
+    let pol_lagging = sphere([daughter_strands_length * 0.65, 0.025, 0], 0.03);
+    
+    sdf: union(parent_dna, leading_strand, lagging_strand, pol_leading, pol_lagging);
+}
+
+// --- Cromosoma Condensado (Metafase) ---
+def "condensed_chromosome"(chromosome_length, condensation_level, sister_chromatids) {
+    // Cromosoma altamente condensado
+    let main_axis = cylinder([-chromosome_length * 0.5, 0, 0], 
+                             [chromosome_length * 0.5, 0, 0], 
+                             0.05 * condensation_level);
+    
+    // Bucles de cromatina
+    fn "chromatin_loop"(pos_x) {
+        let loop_radius = 0.1 * (1.0 - condensation_level * 0.5);
+        let loop = sqrt((x - pos_x)*(x - pos_x) + y*y + z*z) - loop_radius;
+        loop
+    }
+    
+    // Cromátidas hermanas (si está en metafase)
+    let chromatid_offset = sister_chromatids * 0.08;
+    let sister1 = cylinder([-chromosome_length * 0.5, chromatid_offset, 0], 
+                           [chromosome_length * 0.5, chromatid_offset, 0], 
+                           0.04 * condensation_level);
+    let sister2 = cylinder([-chromosome_length * 0.5, -chromatid_offset, 0], 
+                           [chromosome_length * 0.5, -chromatid_offset, 0], 
+                           0.04 * condensation_level);
+    
+    sdf: union(main_axis, sister1, sister2);
+}
+
+// --- Complejo de Splicing (Spliceosoma) ---
+def "spliceosome_complex"(mrna_length, intron_exon_pattern) {
+    // Spliceosoma en pre-mRNA
+    let spliceosome = sphere([0, 0, 0], 0.15);
+    
+    // pre-mRNA con intrones y exones
+    let mrna_base = cylinder([-mrna_length * 0.5, 0, 0], 
+                             [mrna_length * 0.5, 0, 0], 0.02);
+    
+    // Exones (más gruesos)
+    let exon_pattern = sin(x * 10.0 * intron_exon_pattern) * 0.01;
+    
+    // Sitios de splicing (5' y 3')
+    let splice_site_5 = sphere([-mrna_length * 0.2, 0, 0], 0.03);
+    let splice_site_3 = sphere([mrna_length * 0.2, 0, 0], 0.03);
+    
+    sdf: union(spliceosome, custom(mrna_base + exon_pattern), splice_site_5, splice_site_3);
+}
+
+// ============================================================
+// INTERFAZ PÚBLICA - SISTEMAS MOLECULARES (def)
+// ============================================================
+
+// --- Operón Lac (Regulación Procarionte) ---
+def "lac_operon_system"(lactose_present, glucose_absent) {
+    // Promotor + operador + genes estructurales
+    let promoter = box([-1.0, -0.05, -0.05], [-0.8, 0.05, 0.05]);
+    let operator = box([-0.6, -0.04, -0.04], [-0.4, 0.04, 0.04]);
+    let genes = union(
+        box([-0.2, -0.06, -0.06], [0.0, 0.06, 0.06]),  // lacZ
+        box([0.1, -0.05, -0.05], [0.3, 0.05, 0.05]),   // lacY
+        box([0.4, -0.04, -0.04], [0.6, 0.04, 0.04])    // lacA
+    );
+    
+    // Represor (unido si no hay lactosa)
+    let repressor_bound = (1.0 - lactose_present) * 0.1;
+    let repressor = sphere([-0.5, 0.1, 0], 0.08 * repressor_bound);
+    
+    // CAP-cAMP (unido si no hay glucosa)
+    let cap_bound = glucose_absent * 0.1;
+    let cap = sphere([-0.9, 0.1, 0], 0.06 * cap_bound);
+    
+    sdf: union(promoter, operator, genes, repressor, cap);
+}
+
+// --- Máquina de Replicación (Replisoma) ---
+def "replisome_machine"(fork_position, polymerase_count, helicase_activity) {
+    // Helicasa desenrollando el ADN
+    let helicase = sphere([fork_position, 0, 0], 0.08 * helicase_activity);
+    
+    // ADN parental desenrollado
+    let unwound_dna = union(
+        cylinder([fork_position - 0.3, 0.05, 0], [fork_position - 0.1, 0.05, 0], 0.02),
+        cylinder([fork_position - 0.3, -0.05, 0], [fork_position - 0.1, -0.05, 0], 0.02)
+    );
+    
+    // Múltiples polimerasas
+    fn "dna_polymerase_unit"(offset_x, offset_y) {
+        sphere([fork_position + offset_x, offset_y, 0], 0.05)
+    }
+    
+    let polymerases = dna_polymerase_unit(0.1, 0.06);
+    for i in range(1, polymerase_count) {
+        polymerases = union(polymerases, dna_polymerase_unit(0.1 + i*0.05, 0.06 - i*0.02));
+    }
+    
+    // Proteínas de sujeción (sliding clamps)
+    let clamp = torus([fork_position + 0.15, 0, 0], [0, 1, 0], 0.03, 0.01);
+    
+    sdf: union(helicase, unwound_dna, polymerases, clamp);
+}
+
+// --- Ruta de Señalización (MAPK Cascade) ---
+def "mapk_signaling_cascade"(signal_strength, phosphorylation_levels) {
+    // Tres niveles de quinasa: MAPKKK → MAPKK → MAPK
+    let mapkkk = sphere([-0.8, 0, 0], 0.07 * signal_strength);
+    let mapkk = sphere([0, 0, 0], 0.08 * phosphorylation_levels);
+    let mapk = sphere([0.8, 0, 0], 0.09 * phosphorylation_levels * 1.2);
+    
+    // Fosforilaciones (transferencia de fosfato)
+    let phosphate_transfer1 = cylinder([-0.7, 0, 0], [-0.1, 0, 0], 0.01);
+    let phosphate_transfer2 = cylinder([0.1, 0, 0], [0.7, 0, 0], 0.01);
+    
+    // Fosfatos (esferas pequeñas)
+    let phosphates = union(
+        sphere([-0.4, 0.1, 0], 0.02 * phosphorylation_levels),
+        sphere([0.4, 0.1, 0], 0.02 * phosphorylation_levels * 1.5)
+    );
+    
+    sdf: union(mapkkk, mapkk, mapk, phosphate_transfer1, phosphate_transfer2, phosphates);
+}
+
+// --- Degradación Proteica (Proteasoma) ---
+def "proteasome_degradation_machine"(proteasome_activity, substrate_size, ubiquitination) {
+    // Proteasoma 26S (simplificado)
+    let proteasome = cylinder([-0.2, 0, 0], [0.2, 0, 0], 0.1 * proteasome_activity);
+    
+    // Proteína sustrato (poliubiquitinada)
+    let substrate = sphere([0.4, 0, 0], 0.06 * substrate_size);
+    
+    // Cadena de ubiquitina
+    let ubiquitin_chain = union(
+        sphere([0.5, 0.05, 0], 0.02 * ubiquitination),
+        sphere([0.55, 0, 0.05], 0.02 * ubiquitination),
+        sphere([0.5, -0.05, 0], 0.02 * ubiquitination)
+    );
+    
+    // Sitio catalítico
+    let catalytic_site = sphere([0, 0, 0], 0.03 * proteasome_activity);
+    
+    sdf: union(proteasome, substrate, ubiquitin_chain, catalytic_site);
+}
+
+// ============================================================
+// EJEMPLOS DE USO CON custom(expr)
+// ============================================================
+
+/*
+// EJEMPLO 1: Doble hélice de ADN detallada
+node "dna_detailed_example" {
+    position: [-4, 0, 0];
+    sdf: dna_double_helix_detailed(0.2, 3.4, 5.0, 0.1);
+    material: "dna_molecular";
+}
+
+// EJEMPLO 2: Horquilla de replicación
+node "replication_fork_example" {
+    position: [0, 0, 0];
+    sdf: dna_replication_fork(2.0, 1.5, 45.0);
+    material: "replication";
+}
+
+// EJEMPLO 3: Ribosoma en traducción
+node "ribosome_example" {
+    position: [4, 0, 0];
+    sdf: ribosome_translation_complex(0.3, 1.0, 0.7);
+    material: "translation";
+}
+
+// EJEMPLO 4: Operón Lac (regulación)
+node "lac_operon_example" {
+    position: [-2, 3, 0];
+    sdf: lac_operon_system(0.8, 0.6);
+    material: "gene_regulation";
+}
+
+// EJEMPLO 5: Cascada de señalización MAPK
+node "mapk_cascade_example" {
+    position: [2, 3, 0];
+    sdf: mapk_signaling_cascade(0.9, 0.7);
+    material: "signaling";
+}
+
+// EJEMPLO 6: Cromosoma condensado
+node "condensed_chromosome_example" {
+    position: [0, -3, 0];
+    sdf: condensed_chromosome(1.5, 0.8, 1.0);
+    material: "chromosome";
+}
+*/
+
+// ============================================================
+// NOTAS PARA USUARIOS
+// ============================================================
+
+// 1. Las estructuras moleculares son representaciones geométricas simplificadas
+// 2. Los parámetros cinéticos y termodinámicos están escalados para visualización
+// 3. Los sistemas de regulación son abstracciones de procesos reales complejos
+// 4. Los procesos moleculares (replicación, transcripción, traducción) están simplificados
+// 5. Las SDFs representan conceptos más que estructuras atómicamente precisas
+
+// ============================================================
+// "El ADN no es solo un código, es una máquina molecular,
+//  una biblioteca que se copia a sí misma y se lee a sí misma."
+// ============================================================

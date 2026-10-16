@@ -1,0 +1,50 @@
+// Test de Capa 6 — Fisiología, Neurobio, Ecología, Sistemas
+
+scene { background: [0, 0, 0]; }
+
+import "std_math_core.hm"
+import "std_math_dynamics.hm"
+import "std_math_probability.hm"
+import "std_phys_kinematics.hm"
+import "std_bio_physiology.hm"
+import "std_bio_neuro.hm"
+import "std_bio_ecology.hm"
+import "std_bio_systems.hm"
+
+material "bio_mat" {}
+
+// --- std_bio_physiology ---
+let q_flow = poiseuille_flow(120.0, 0.01, 0.004, 0.5);
+let r_vasc = vascular_resistance(0.004, 0.5, 0.01);
+let reynolds = reynolds_number(1060.0, 0.5, 0.02, 0.004);
+let starling = starling_filtration(0.1, 35.0, 0.0, 0.9, 28.0, 8.0);
+let bmr = kleiber_metabolism(70.0, 3.4);
+
+// --- std_bio_neuro ---
+let if_dv = integrate_and_fire_dv(-65.0, 10.0, 5.0, 1.0);
+let spk = spike_reset(-40.0, -50.0, -70.0);
+let izh_dv = izhikevich_dv(-65.0, 10.0, 5.0);
+let izh_du = izhikevich_du(-65.0, 10.0, 0.02, 0.2);
+let hebb = hebbian_plasticity(0.01, 1.0, 1.0);
+let oja = oja_rule(0.01, 1.0, 0.8, 0.5);
+let sig = sigmoid_activation(2.0);
+
+// --- std_bio_ecology ---
+let lvp = lv_prey_dv(100.0, 10.0, 0.1, 0.01);
+let lvpred = lv_predator_dv(100.0, 10.0, 0.01, 0.1);
+let lev_dp = levins_metapopulation_dp(0.5, 0.2, 0.1);
+let lev_eq = levins_equilibrium(0.2, 0.1);
+let marg = margalef_richness(10.0, 100.0);
+let simp = simpson_dominance3(0.5, 0.3, 0.2);
+
+// --- std_bio_systems ---
+let fcc = flux_control_coefficient(10.0, 1.0, 5.0, 0.5);
+let elc = elasticity_coefficient(5.0, 0.5, 2.0, 0.2);
+let neg_auto = negative_autoregulation(1.0, 10.0, 0.1, 2.0, 2.0);
+let ffl = ffl_coherent_and(1.0, 1.0, 0.5, 10.0, 0.1, 0.5, 0.5, 2.0);
+
+// --- SDFs ---
+instance "blood_vessel"(0.5, 0.1) { position: [0,0,0]; material: "bio_mat"; }
+instance "neuron_soma"(0.5) { position: [2.0,0,0]; material: "bio_mat"; }
+instance "patch_landscape"(1.0, 0.2) { position: [-2.0,0,0]; material: "bio_mat"; }
+instance "scale_free_network_node"(0.3, 0.1, 5.0) { position: [0,2.0,0]; material: "bio_mat"; }

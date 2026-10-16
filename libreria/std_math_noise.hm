@@ -1,0 +1,166 @@
+// ============================================================
+// LIBRERÍA: std_math_noise.hm
+// CAPA:     1.4 — Teoría de la Probabilidad y Ruido Procedural
+// VERSIÓN:  0.2
+// FUENTE:   Perlin (1985), Worley (1996), FBM procedural noise
+// DEPS:     std_math_core.hm
+// FECHA:    5 de junio de 2026
+// ============================================================
+
+import "std_math_core.hm";
+
+// ============================================================
+// RUIDO DE VALOR (Value Noise) — interpolación suave de hash
+// ============================================================
+
+// Componentes del ruido 1D suavizado
+fn "vnoise1d"(x_val) {
+    lerp(hash11(floor(x_val)), hash11(floor(x_val) + 1.0), smootherstep(0.0, 1.0, frac(x_val)))
+}
+
+// Ruido de valor 2D (interpolación bilineal)
+fn "vnoise2d"(x_val, y_val) {
+    lerp(
+        lerp(hash12(floor(x_val),   floor(y_val)),   hash12(floor(x_val)+1.0, floor(y_val)),   smootherstep(0.0, 1.0, frac(x_val))),
+        lerp(hash12(floor(x_val),   floor(y_val)+1.0), hash12(floor(x_val)+1.0, floor(y_val)+1.0), smootherstep(0.0, 1.0, frac(x_val))),
+        smootherstep(0.0, 1.0, frac(y_val))
+    )
+}
+
+// Ruido de valor 3D (trilineal)
+fn "vnoise3d"(x_val, y_val, z_val) {
+    lerp(
+        lerp(
+            lerp(hash13(floor(x_val),   floor(y_val),   floor(z_val)),
+                 hash13(floor(x_val)+1.0, floor(y_val),   floor(z_val)),
+                 smootherstep(0.0, 1.0, frac(x_val))),
+            lerp(hash13(floor(x_val),   floor(y_val)+1.0, floor(z_val)),
+                 hash13(floor(x_val)+1.0, floor(y_val)+1.0, floor(z_val)),
+                 smootherstep(0.0, 1.0, frac(x_val))),
+            smootherstep(0.0, 1.0, frac(y_val))
+        ),
+        lerp(
+            lerp(hash13(floor(x_val),   floor(y_val),   floor(z_val)+1.0),
+                 hash13(floor(x_val)+1.0, floor(y_val),   floor(z_val)+1.0),
+                 smootherstep(0.0, 1.0, frac(x_val))),
+            lerp(hash13(floor(x_val),   floor(y_val)+1.0, floor(z_val)+1.0),
+                 hash13(floor(x_val)+1.0, floor(y_val)+1.0, floor(z_val)+1.0),
+                 smootherstep(0.0, 1.0, frac(x_val))),
+            smootherstep(0.0, 1.0, frac(y_val))
+        ),
+        smootherstep(0.0, 1.0, frac(z_val))
+    )
+}
+
+// ============================================================
+// FBM — Fractional Brownian Motion
+// (suma de octavas de ruido con lacunarity y gain)
+// ============================================================
+
+// FBM 2D con 4 octavas (hardcoded por no tener loops)
+fn "fbm2d_4"(x_val, y_val) {
+    vnoise2d(x_val, y_val) * 0.5 +
+    vnoise2d(x_val * 2.0, y_val * 2.0) * 0.25 +
+    vnoise2d(x_val * 4.0, y_val * 4.0) * 0.125 +
+    vnoise2d(x_val * 8.0, y_val * 8.0) * 0.0625
+}
+
+// FBM 3D con 4 octavas
+fn "fbm3d_4"(x_val, y_val, z_val) {
+    vnoise3d(x_val, y_val, z_val) * 0.5 +
+    vnoise3d(x_val * 2.0, y_val * 2.0, z_val * 2.0) * 0.25 +
+    vnoise3d(x_val * 4.0, y_val * 4.0, z_val * 4.0) * 0.125 +
+    vnoise3d(x_val * 8.0, y_val * 8.0, z_val * 8.0) * 0.0625
+}
+
+// FBM 3D con 6 octavas (más detalle, más costoso)
+fn "fbm3d_6"(x_val, y_val, z_val) {
+    vnoise3d(x_val, y_val, z_val) * 0.5 +
+    vnoise3d(x_val * 2.0, y_val * 2.0, z_val * 2.0) * 0.25 +
+    vnoise3d(x_val * 4.0, y_val * 4.0, z_val * 4.0) * 0.125 +
+    vnoise3d(x_val * 8.0, y_val * 8.0, z_val * 8.0) * 0.0625 +
+    vnoise3d(x_val * 16.0, y_val * 16.0, z_val * 16.0) * 0.03125 +
+    vnoise3d(x_val * 32.0, y_val * 32.0, z_val * 32.0) * 0.015625
+}
+
+// FBM turbulento (abs para arrugas orgánicas)
+fn "turbulence3d_4"(x_val, y_val, z_val) {
+    abs(vnoise3d(x_val, y_val, z_val)) * 0.5 +
+    abs(vnoise3d(x_val * 2.0, y_val * 2.0, z_val * 2.0)) * 0.25 +
+    abs(vnoise3d(x_val * 4.0, y_val * 4.0, z_val * 4.0)) * 0.125 +
+    abs(vnoise3d(x_val * 8.0, y_val * 8.0, z_val * 8.0)) * 0.0625
+}
+
+// ============================================================
+// RUIDO CELULAR (Worley / Voronoi)
+// ============================================================
+
+// Distancia al vecino Voronoi más cercano (2D)
+fn "voronoi2d"(x_val, y_val) {
+    min(
+        min(
+            min(v2_len(frac(x_val) - hash21_x(floor(x_val),   floor(y_val)),
+                       frac(y_val) - hash21_y(floor(x_val),   floor(y_val))),
+                v2_len(frac(x_val) - 1.0 - hash21_x(floor(x_val)+1.0, floor(y_val)),
+                       frac(y_val) - hash21_y(floor(x_val)+1.0, floor(y_val)))),
+            min(v2_len(frac(x_val) - hash21_x(floor(x_val),   floor(y_val)+1.0),
+                       frac(y_val) - 1.0 - hash21_y(floor(x_val),   floor(y_val)+1.0)),
+                v2_len(frac(x_val) - 1.0 - hash21_x(floor(x_val)+1.0, floor(y_val)+1.0),
+                       frac(y_val) - 1.0 - hash21_y(floor(x_val)+1.0, floor(y_val)+1.0)))
+        ),
+        0.5
+    )
+}
+
+// ============================================================
+// PATRONES GEOMÉTRICOS PROCEDURALES
+// ============================================================
+
+// Patrón de cuadrícula (grid)
+fn "grid_pattern"(x_val, y_val, cell_size, line_width) {
+    1.0 - step(line_width, abs(frac(x_val / cell_size) - 0.5)) *
+          step(line_width, abs(frac(y_val / cell_size) - 0.5))
+}
+
+// Patrón de puntos (dot pattern)
+fn "dot_pattern"(x_val, y_val, cell_size, dot_radius) {
+    v2_len(frac(x_val / cell_size) - 0.5, frac(y_val / cell_size) - 0.5) - dot_radius
+}
+
+// Damier (tablero de ajedrez)
+fn "checker"(x_val, y_val, size) {
+    mod_unit(floor(x_val / size) + floor(y_val / size))
+}
+
+fn "checker3d"(x_val, y_val, z_val, size) {
+    mod_unit(floor(x_val / size) + floor(y_val / size) + floor(z_val / size))
+}
+
+// ============================================================
+// RUIDO DOMINIO-WARPED (distorsión de dominio Quilez)
+// ============================================================
+
+// Domain warping 2D con 1 nivel
+fn "domain_warp2d"(x_val, y_val, warp_strength) {
+    vnoise2d(x_val + warp_strength * fbm2d_4(x_val, y_val),
+             y_val + warp_strength * fbm2d_4(x_val + 5.2, y_val + 1.3))
+}
+
+// ============================================================
+// SDFs CON RUIDO PROCEDURAL
+// ============================================================
+
+// Esfera con ruido FBM superficial (apariencia orgánica)
+def "noisy_sphere"(r_param, noise_scale, noise_strength) {
+    sdf: custom(sqrt(x*x + y*y + z*z) - r_param - noise_strength * fbm3d_4(x * noise_scale, y * noise_scale, z * noise_scale));
+}
+
+// Terreno procedural (plano con desplazamiento FBM)
+def "terrain_fbm"(terrain_scale, terrain_height) {
+    sdf: custom(y - terrain_height * fbm2d_4(x * terrain_scale, z * terrain_scale));
+}
+
+// Nube volumétrica (volumen implícito con FBM)
+def "cloud_volume"(cloud_scale, density_threshold) {
+    sdf: custom(density_threshold - fbm3d_6(x * cloud_scale, y * cloud_scale, z * cloud_scale));
+}

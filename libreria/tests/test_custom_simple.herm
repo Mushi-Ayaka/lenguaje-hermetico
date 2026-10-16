@@ -1,0 +1,81 @@
+// ============================================================
+// ARCHIVO DE PRUEBA SIMPLE: test_custom_simple.herm
+// OBJETIVO: Validar primitiva custom(expr) básica
+// FECHA: 6 de junio de 2026
+// ============================================================
+
+// Escena básica
+scene {
+    background: [0.05, 0.05, 0.1];
+}
+
+// Material simple
+material "default" {}
+
+// ============================================================
+// PRUEBA 1: CUSTOM SDF MUY SIMPLE
+// ============================================================
+
+// Función simple sin 'let'
+fn "simple_surface"(a, f) {
+    y - a * sin(x * f)
+}
+
+node "test_custom_simple" {
+    position: [0, 0, 0];
+    sdf: custom(simple_surface(0.2, 3.0));
+    material: "default";
+}
+
+// ============================================================
+// PRUEBA 2: CUSTOM CON ANIMACIÓN
+// ============================================================
+
+// Función animada sin 'let'
+fn "animated_surface"(a, f) {
+    y - a * sin(x * f + w)
+}
+
+node "test_custom_animated" {
+    position: [2, 0, 0];
+    sdf: custom(animated_surface(0.2, 3.0));
+    material: "default";
+}
+
+// ============================================================
+// PRUEBA 3: CUSTOM CON OPERACIONES MATEMÁTICAS
+// ============================================================
+
+// Superficie algebraica sin 'let'
+fn "algebraic_surface"(a, b) {
+    x*x/(a*a) + y*y/(b*b) + z*z - 1.0
+}
+
+node "test_custom_algebraic" {
+    position: [-2, 0, 0];
+    sdf: custom(algebraic_surface(0.5, 0.3));
+    material: "default";
+}
+
+// ============================================================
+// PRUEBA 4: CUSTOM CON COMBINACIÓN DE PRIMITIVAS
+// ============================================================
+
+node "test_custom_with_sphere" {
+    position: [0, 2, 0];
+    sdf: union(
+        sphere(0.3),
+        custom(y - 0.1 * sin(x * 5.0))
+    );
+    material: "default";
+}
+
+// ============================================================
+// PRUEBA 5: CUSTOM CON EXPRESIÓN DIRECTA
+// ============================================================
+
+node "test_custom_direct" {
+    position: [0, -2, 0];
+    sdf: custom(y - 0.2 * sin(x * 4.0) * cos(z * 3.0));
+    material: "default";
+}

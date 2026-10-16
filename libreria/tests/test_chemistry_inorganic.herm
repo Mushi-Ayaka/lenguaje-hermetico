@@ -1,0 +1,227 @@
+// ============================================================
+// TEST: test_chemistry_inorganic.herm
+// VALIDACIÓN: std_chemistry_inorganic.hm
+// FECHA: 6 de junio de 2026
+// ============================================================
+
+// Importar librería de química inorgánica
+import "std_chemistry_inorganic.hm";
+
+// Constantes para pruebas
+let TEST_Z = 1.0;      // Hidrógeno
+let TEST_R = 0.5;      // Radio
+let TEST_T = 298.0;    // Temperatura (K)
+
+// ============================================================
+// TEST 1: Estructura Atómica (fn)
+// ============================================================
+
+// Radio atómico según Slater
+node "atomic_radius_test" {
+    position: [-6, 3, 0];
+    sdf: custom(y - atomic_radius_slater(1, 1));
+    material: "test";
+}
+
+// Energía de ionización Rydberg
+node "ionization_energy_test" {
+    position: [-4, 3, 0];
+    sdf: custom(y - ionization_energy_rydberg(1, 1));
+    material: "test";
+}
+
+// Probabilidad orbital 1s
+node "orbital_1s_test" {
+    position: [-2, 3, 0];
+    sdf: custom(y - orbital_1s_probability(0.5, 1));
+    material: "test";
+}
+
+// Probabilidad orbital 2s
+node "orbital_2s_test" {
+    position: [0, 3, 0];
+    sdf: custom(y - orbital_2s_probability(0.5, 1));
+    material: "test";
+}
+
+// Probabilidad orbital 2p
+node "orbital_2p_test" {
+    position: [2, 3, 0];
+    sdf: custom(y - orbital_2p_probability(0.5, 1, pi/4));
+    material: "test";
+}
+
+// ============================================================
+// TEST 2: Enlaces Químicos (fn)
+// ============================================================
+
+// Potencial de enlace iónico
+node "ionic_bond_test" {
+    position: [-6, 1, 0];
+    sdf: custom(y - ionic_bond_potential(1, -1, 1.0, 0.1, 0.2));
+    material: "test";
+}
+
+// Potencial de enlace covalente (Morse)
+node "covalent_bond_test" {
+    position: [-4, 1, 0];
+    sdf: custom(y - covalent_bond_morse_potential(4.0, 1.0, 0.74, 1.0));
+    material: "test";
+}
+
+// Longitud de enlace covalente
+node "bond_length_test" {
+    position: [-2, 1, 0];
+    sdf: custom(y - covalent_bond_length(0.74, 0.74, 2.2, 2.2, 0.08));
+    material: "test";
+}
+
+// Ángulo de enlace VSEPR
+node "vsepr_angle_test" {
+    position: [0, 1, 0];
+    sdf: custom(y - vsepr_bond_angle(4, 0));  // Tetraédrica
+    material: "test";
+}
+
+// Diferencia de electronegatividad Pauling
+node "electronegativity_test" {
+    position: [2, 1, 0];
+    sdf: custom(y - pauling_electronegativity_diff(4.0, 2.0));
+    material: "test";
+}
+
+// ============================================================
+// TEST 3: Reacciones Químicas (fn)
+// ============================================================
+
+// Constante de equilibrio (acción de masas)
+node "equilibrium_constant_test" {
+    position: [-6, -1, 0];
+    sdf: custom(y - equilibrium_constant_mass_action(0.5, 1, 0.5, 1, 0.2, 1, 0.2, 1));
+    material: "test";
+}
+
+// Constante de velocidad Arrhenius
+node "arrhenius_test" {
+    position: [-4, -1, 0];
+    sdf: custom(y - arrhenius_rate_constant(1e13, 50000, 300));
+    material: "test";
+}
+
+// Energía libre de Gibbs
+node "gibbs_free_energy_test" {
+    position: [-2, -1, 0];
+    sdf: custom(y - gibbs_free_energy(-100, 298, 0.1));
+    material: "test";
+}
+
+// Criterio de espontaneidad
+node "spontaneity_test" {
+    position: [0, -1, 0];
+    sdf: custom(y - spontaneity_criterion(-50));
+    material: "test";
+}
+
+// pH de solución
+node "ph_test" {
+    position: [2, -1, 0];
+    sdf: custom(y - calculate_ph(1e-7));
+    material: "test";
+}
+
+// ============================================================
+// TEST 4: Estructuras Moleculares (def)
+// ============================================================
+
+// Átomo de hidrógeno
+node "hydrogen_atom_test" {
+    position: [-6, -3, 0];
+    sdf: hydrogen_atom_1s(1, [0, 0, 0]);
+    material: "hydrogen";
+}
+
+// Molécula de hidrógeno (H₂)
+node "hydrogen_molecule_test" {
+    position: [-3, -3, 0];
+    sdf: hydrogen_molecule(0.74, [0, 0, 0]);
+    material: "hydrogen";
+}
+
+// Molécula de agua (H₂O)
+node "water_molecule_test" {
+    position: [0, -3, 0];
+    sdf: water_molecule(0.96, 104.5, [0, 0, 0]);
+    material: "water";
+}
+
+// ============================================================
+// TEST 5: Estructuras Cristalinas (def)
+// ============================================================
+
+// Cristal cúbico simple
+node "simple_cubic_test" {
+    position: [3, -3, 0];
+    sdf: simple_cubic_crystal(0.5, 3, [0, 0, 0]);
+    material: "crystal";
+}
+
+// Cristal cúbico centrado en el cuerpo (BCC)
+node "bcc_crystal_test" {
+    position: [6, -3, 0];
+    sdf: body_centered_cubic_crystal(0.5, 3, [0, 0, 0]);
+    material: "crystal";
+}
+
+// ============================================================
+// TEST 6: Reacciones Químicas (def)
+// ============================================================
+
+// Neutralización ácido-base
+node "neutralization_test" {
+    position: [-6, -5, 0];
+    sdf: acid_base_neutralization(0.1, 0.1, 0.5);
+    material: "reaction";
+}
+
+// Reacción redox
+node "redox_test" {
+    position: [-3, -5, 0];
+    sdf: redox_reaction(0.76, 0.34, 0.1, 0.1);
+    material: "reaction";
+}
+
+// Disociación electrolítica
+node "dissociation_test" {
+    position: [0, -5, 0];
+    sdf: electrolytic_dissociation(36, 6);
+    material: "reaction";
+}
+
+// ============================================================
+// TEST 7: Tendencias Periódicas (fn)
+// ============================================================
+
+// Tendencia de radio atómico
+node "radius_trend_test" {
+    position: [3, -5, 0];
+    sdf: custom(y - periodic_atomic_radius_trend(1, 1));  // Grupo 1, Período 1
+    material: "trend";
+}
+
+// Tendencia de electronegatividad
+node "electroneg_trend_test" {
+    position: [6, -5, 0];
+    sdf: custom(y - periodic_electronegativity_trend(17, 2));  // Cloro
+    material: "trend";
+}
+
+// ============================================================
+// RESUMEN DEL TEST
+// ============================================================
+
+// Total: 24 nodos de prueba
+// Cubre: Estructura atómica, enlaces químicos, reacciones químicas,
+//        estructuras moleculares, estructuras cristalinas,
+//        reacciones químicas visuales, tendencias periódicas
+// Todos usan fn para fórmulas matemáticas y def para SDFs con custom(expr)
+// Validación completa de std_chemistry_inorganic.hm

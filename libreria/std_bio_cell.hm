@@ -1,0 +1,116 @@
+// ============================================================
+// LIBRERÍA: std_bio_cell.hm
+// CAPA:     6.1 — Biología Celular
+// VERSIÓN:  0.2
+// FUENTE:   Biología molecular de la célula (Alberts et al.)
+// DEPS:     std_math_core.hm, std_math_noise.hm
+// FECHA:    6 de junio de 2026
+// ============================================================
+
+import "std_math_core.hm";
+import "std_math_noise.hm";
+
+// ============================================================
+// TRANSPORTE A TRAVÉS DE MEMBRANAS
+// ============================================================
+
+// Potencial de Nernst: E = (RT/zF) * ln([X]o / [X]i)
+fn "nernst_potential"(R, T_temp, z_val, conc_out, conc_in) {
+    (R * T_temp / (z_val * 96485.0 + EPSILON)) * log(abs(conc_out / (conc_in + EPSILON)) + EPSILON)
+}
+
+// Ecuación de Goldman-Hodgkin-Katz (membrana plasmática)
+// V_m = (RT/F) * ln((P_K*[K+]o + P_Na*[Na+]o + P_Cl*[Cl-]i) / (...))
+fn "goldman_potential"(R, T_temp, PK, PNa, PCl, Ko, Nao, Cli, Ki, Nai, Clo) {
+    (R * T_temp / 96485.0) * log(abs(PK*Ko + PNa*Nao + PCl*Cli) / (PK*Ki + PNa*Nai + PCl*Clo + EPSILON) + EPSILON)
+}
+
+// Difusión de Fick: J = -D * dC/dx
+fn "fick_flux"(D_coef, dC_dx) { -D_coef * dC_dx }
+
+// Transporte activo (Michaelis-Menten): J = Jmax * [S] / (Km + [S])
+fn "active_transport"(J_max, S_conc, K_m) {
+    J_max * S_conc / (K_m + S_conc + EPSILON)
+}
+
+// ============================================================
+// SEÑALIZACIÓN Y POTENCIAL DE ACCIÓN
+// ============================================================
+
+// Modelo de Hodgkin-Huxley (m gate, n gate, h gate — aproximaciones estáticas)
+fn "hh_alpha_m"(V_m) { 0.1 * (25.0 - V_m) / (exp((25.0 - V_m) / 10.0 + EPSILON) - 1.0 + EPSILON) }
+fn "hh_beta_m"(V_m)  { 4.0 * exp(-V_m / 18.0) }
+fn "hh_alpha_n"(V_m) { 0.01 * (10.0 - V_m) / (exp((10.0 - V_m) / 10.0 + EPSILON) - 1.0 + EPSILON) }
+fn "hh_beta_n"(V_m)  { 0.125 * exp(-V_m / 80.0) }
+fn "hh_alpha_h"(V_m) { 0.07 * exp(-V_m / 20.0) }
+fn "hh_beta_h"(V_m)  { 1.0 / (exp((30.0 - V_m) / 10.0 + EPSILON) + 1.0) }
+
+// Corriente de membrana HH: I = gNa*m³h*(V-ENa) + gK*n⁴*(V-EK) + gL*(V-EL)
+fn "hh_current_Na"(gNa, m_gate, h_gate, V_m, ENa) { gNa * cb(m_gate) * h_gate * (V_m - ENa) }
+fn "hh_current_K"(gK, n_gate, V_m, EK)            { gK * pow(n_gate, 4.0) * (V_m - EK) }
+fn "hh_current_leak"(gL, V_m, EL)                 { gL * (V_m - EL) }
+
+// ============================================================
+// CICLO CELULAR Y APOPTOSIS
+// ============================================================
+
+// Actividad de la CDK (Cyclin-Dependent Kinase, oscilación)
+fn "cdk_activity"(t_val, period, phase) {
+    sat(sin(PI2 * t_val / (period + EPSILON) + phase))
+}
+
+// Señal de apoptosis (caspase cascade, sigmoide con umbral)
+fn "apoptosis_signal"(damage_level, thresh_val) {
+    smoothstep(thresh_val * 0.8, thresh_val * 1.2, damage_level)
+}
+
+// Crecimiento celular (exponencial + logístico)
+fn "cell_growth_rate"(N_cells, r_div, K_capacity, inhibition) {
+    r_div * N_cells * (1.0 - N_cells / (K_capacity + EPSILON)) * (1.0 - inhibition)
+}
+
+// ============================================================
+// SDFs DE ORGANELOS Y ESTRUCTURAS CELULARES
+// ============================================================
+
+// Célula esférica completa
+def "spherical_cell"(r_cell) {
+    sdf: custom(sqrt(x*x + y*y + z*z) - r_cell);
+}
+
+// Núcleo celular (esfera interior)
+def "cell_nucleus"(r_nucleus) {
+    sdf: custom(sqrt(x*x + y*y + z*z) - r_nucleus);
+}
+
+// Membrana celular (cáscara esférica de grosor delta)
+def "cell_membrane"(r_cell, membrane_thick) {
+    sdf: custom(abs(sqrt(x*x + y*y + z*z) - r_cell) - membrane_thick);
+}
+
+// Mitocondria (elipsoide prolado)
+def "mitochondrion"(a_len, b_rad) {
+    sdf: custom(sqrt(sq(x / a_len) + sq(y / b_rad) + sq(z / b_rad)) - 1.0);
+}
+
+// Retículo endoplásmico (sistema de láminas paralelas con ruido)
+def "endoplasmic_reticulum"(thickness, layer_spacing, noise_scale, noise_amp) {
+    sdf: custom(
+        abs(frac(y / layer_spacing + noise_amp * vnoise3d(x * noise_scale, y * noise_scale, z * noise_scale)) - 0.5) - thickness
+    );
+}
+
+// Cilia (cilindros periféricos oscilantes)
+def "cilia"(r_base, length, n_cilia, t_anim) {
+    sdf: custom(
+        sqrt(sq(sqrt(x*x + z*z) - r_base) + sq(y - length * 0.5 * sat(sin(PI2 * w + t_anim)))) - 0.02
+    );
+}
+
+// División celular (dos esferas superponiéndose)
+def "cell_division"(r_cell, separation) {
+    sdf: custom(
+        min(sqrt(sq(x - separation * 0.5) + y*y + z*z) - r_cell,
+            sqrt(sq(x + separation * 0.5) + y*y + z*z) - r_cell)
+    );
+}

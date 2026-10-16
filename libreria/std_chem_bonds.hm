@@ -1,0 +1,105 @@
+// ============================================================
+// LIBRERÍA: std_chem_bonds.hm
+// CAPA:     3.2 — Enlace Químico y Geometría Molecular
+// VERSIÓN:  0.2
+// FUENTE:   VSEPR, hibridación sp, teoría de bandas
+// DEPS:     std_math_core.hm, std_math_algebra.hm, std_chem_atoms.hm
+// FECHA:    6 de junio de 2026
+// ============================================================
+
+import "std_math_core.hm";
+import "std_math_algebra.hm";
+import "std_chem_atoms.hm";
+
+// ============================================================
+// GEOMETRÍA MOLECULAR (VSEPR — ángulos canónicos)
+// ============================================================
+
+// Ángulos de enlace en geometrías ideales (en radianes)
+let ANGLE_LINEAR      = 3.14159265;   // 180°
+let ANGLE_TRIGPLANAR  = 2.09439510;   // 120°
+let ANGLE_TETRAHEDRAL = 1.91063323;   // 109.47°
+let ANGLE_BIPYRAMIDAL = 1.57079633;   // 90°
+
+// Posición de átomo en geometría tetraédrica (vértice i de 0 a 3)
+fn "tetrahedral_x"(bond_len, vertex_i) {
+    bond_len * select(step(vertex_i, 0.5), 0.0,
+               select(step(vertex_i, 1.5), 0.942809,
+               select(step(vertex_i, 2.5), -0.471405, -0.471405)))
+}
+fn "tetrahedral_y"(bond_len, vertex_i) {
+    bond_len * select(step(vertex_i, 0.5), 1.0,
+               select(step(vertex_i, 1.5), -0.333333,
+               select(step(vertex_i, 2.5), -0.333333, -0.333333)))
+}
+fn "tetrahedral_z"(bond_len, vertex_i) {
+    bond_len * select(step(vertex_i, 0.5), 0.0,
+               select(step(vertex_i, 1.5), 0.0,
+               select(step(vertex_i, 2.5), 0.816497, -0.816497)))
+}
+
+// ============================================================
+// ENERGÍA DE ENLACE Y RESONANCIA
+// ============================================================
+
+// Integral de solapamiento S para dos orbitales gaussianos
+fn "overlap_integral_1s"(r_val, a0) {
+    exp(-r_val / (a0 + EPSILON)) * (1.0 + r_val / (a0 + EPSILON) + sq(r_val) / (3.0 * sq(a0) + EPSILON))
+}
+
+// Energía de enlace en LCAO (MO theory): E± = (α ± β) / (1 ± S)
+fn "mo_energy_bonding"(alpha_e, beta_e, S_overlap)    { (alpha_e + beta_e) / (1.0 + S_overlap + EPSILON) }
+fn "mo_energy_antibonding"(alpha_e, beta_e, S_overlap) { (alpha_e - beta_e) / (1.0 - S_overlap + EPSILON) }
+
+// Orden de enlace de Wiberg (aproximado por densidad de solapamiento)
+fn "bond_order_approx"(n_bonding, n_antibonding) { (n_bonding - n_antibonding) * 0.5 }
+
+// ============================================================
+// MOMENTOS DIPOLARES Y POLARIDAD
+// ============================================================
+
+// Momento dipolar: μ = q * d (en Debye aproximado)
+fn "dipole_moment"(q_charge, d_dist)          { q_charge * d_dist }
+// Dipolo de enlace por diferencia de electronegatividad
+fn "bond_dipole"(EN_A, EN_B, bond_len)        { abs(EN_A - EN_B) * bond_len * 0.4  }
+// Polarizabilidad volumétrica (esfera): α = r³
+fn "polarizability_sphere"(r_atom)            { cb(r_atom) }
+
+// ============================================================
+// SDFs DE ENLACE QUÍMICO
+// ============================================================
+
+// Enlace covalente simple (cápsula entre dos átomos)
+def "covalent_bond"(bond_len, bond_radius) {
+    sdf: custom(max(sqrt(y*y + z*z) - bond_radius, abs(x) - bond_len * 0.5));
+}
+
+// Molécula diatómica (dos esferas unidas por un enlace)
+def "diatomic_molecule"(bond_len, r_atom1, r_atom2) {
+    sdf: custom(min(sqrt(sq(x - bond_len * 0.5) + y*y + z*z) - r_atom1,
+                    sqrt(sq(x + bond_len * 0.5) + y*y + z*z) - r_atom2));
+}
+
+// Molécula de agua (V-shape, ángulo 104.5°)
+def "water_molecule"(r_O, r_H, bond_len_OH) {
+    sdf: custom(
+        min(
+            sqrt(x*x + y*y + z*z) - r_O,
+            min(
+                sqrt(sq(x - bond_len_OH * 0.79) + sq(y - bond_len_OH * 0.62) + z*z) - r_H,
+                sqrt(sq(x + bond_len_OH * 0.79) + sq(y - bond_len_OH * 0.62) + z*z) - r_H
+            )
+        )
+    );
+}
+
+// Molécula de metano (tetraédrica)
+def "methane_molecule"(r_C, r_H, bond_len) {
+    sdf: custom(
+        min(sqrt(x*x + y*y + z*z) - r_C,
+        min(sqrt(sq(x - tetrahedral_x(bond_len, 0.0)) + sq(y - tetrahedral_y(bond_len, 0.0)) + sq(z - tetrahedral_z(bond_len, 0.0))) - r_H,
+        min(sqrt(sq(x - tetrahedral_x(bond_len, 1.0)) + sq(y - tetrahedral_y(bond_len, 1.0)) + sq(z - tetrahedral_z(bond_len, 1.0))) - r_H,
+        min(sqrt(sq(x - tetrahedral_x(bond_len, 2.0)) + sq(y - tetrahedral_y(bond_len, 2.0)) + sq(z - tetrahedral_z(bond_len, 2.0))) - r_H,
+            sqrt(sq(x - tetrahedral_x(bond_len, 3.0)) + sq(y - tetrahedral_y(bond_len, 3.0)) + sq(z - tetrahedral_z(bond_len, 3.0))) - r_H))))
+    );
+}

@@ -1,0 +1,106 @@
+// ============================================================
+// LIBRERÍA: std_chem_organic.hm
+// CAPA:     3.4 — Química Orgánica y Biomoléculas
+// VERSIÓN:  0.2
+// FUENTE:   Geometría sp3/sp2/sp, cadenas carbonadas, SMILES-SDF
+// DEPS:     std_math_core.hm, std_math_algebra.hm, std_chem_bonds.hm
+// FECHA:    6 de junio de 2026
+// ============================================================
+
+import "std_math_core.hm";
+import "std_math_algebra.hm";
+import "std_chem_bonds.hm";
+
+// ============================================================
+// FRAGMENTOS ORGÁNICOS BÁSICOS (Grupos funcionales como SDFs)
+// ============================================================
+
+// Átomo de carbono genérico (esfera van der Waals)
+let R_C   = 0.17;   // Radio VdW carbono en nm
+let R_H   = 0.12;   // Radio VdW hidrógeno en nm
+let R_O   = 0.152;  // Radio VdW oxígeno en nm
+let R_N   = 0.155;  // Radio VdW nitrógeno en nm
+let R_S   = 0.18;   // Radio VdW azufre en nm
+
+// Longitudes de enlace típicas (en angstroms / 10 = nm)
+let BOND_CC_SINGLE  = 0.154;
+let BOND_CC_DOUBLE  = 0.134;
+let BOND_CC_TRIPLE  = 0.120;
+let BOND_CO         = 0.143;
+let BOND_CN         = 0.147;
+let BOND_OH         = 0.096;
+let BOND_NH         = 0.101;
+
+// ============================================================
+// SDFs DE MOLÉCULAS ORGÁNICAS CANÓNICAS
+// ============================================================
+
+// Grupo metilo: CH4 (tetraédrico)
+def "methyl_group"(sz) {
+    sdf: custom(
+        min(sqrt(x*x + y*y + z*z) - R_C * sz,
+        min(sqrt(sq(x - 0.09) + sq(y - 0.09) + sq(z - 0.09)) - R_H * sz,
+        min(sqrt(sq(x + 0.09) + sq(y - 0.09) + sq(z + 0.09)) - R_H * sz,
+        min(sqrt(sq(x + 0.09) + sq(y + 0.09) + sq(z - 0.09)) - R_H * sz,
+            sqrt(sq(x - 0.09) + sq(y + 0.09) + sq(z + 0.09)) - R_H * sz))))
+    );
+}
+
+// Grupo etileno: C=C (planar sp2)
+def "ethylene"(sz) {
+    sdf: custom(
+        min(sqrt(sq(x - BOND_CC_DOUBLE * 0.5 * sz) + y*y + z*z) - R_C * sz,
+            sqrt(sq(x + BOND_CC_DOUBLE * 0.5 * sz) + y*y + z*z) - R_C * sz)
+    );
+}
+
+// Benceno (anillo aromático de 6 C)
+def "benzene"(r_ring, tube_r) {
+    sdf: custom(
+        abs(sqrt(sq(sqrt(x*x + z*z) - r_ring)) + abs(y) - tube_r) - tube_r
+    );
+}
+
+// Anillo de 6 miembros (azúcares piranosa, etc)
+def "sixmember_ring"(r_ring, tube_r) {
+    sdf: custom(abs(sqrt(x*x + z*z) - r_ring) - tube_r);
+}
+
+// Cadena de carbonos lineales (n-alcano aproximado como tubo)
+def "linear_chain"(n_carbons, bond_len, tube_r) {
+    sdf: custom(max(sqrt(y*y + z*z) - tube_r, abs(x) - n_carbons * bond_len * 0.5));
+}
+
+// Hélice alfa de proteína
+def "alpha_helix"(r_helix, pitch, tube_r, t_start, t_end) {
+    sdf: custom(
+        sqrt(sq(x - r_helix * cos(w * PI2)) + sq(z - r_helix * sin(w * PI2)) +
+             sq(y - pitch * frac(w))) - tube_r
+    );
+}
+
+// Lámina beta (superficie plana con pliegues)
+def "beta_sheet"(width, wave_amp, wave_freq, thickness) {
+    sdf: custom(abs(y - wave_amp * sin(wave_freq * x)) - thickness);
+}
+
+// ============================================================
+// PROPIEDADES FISICOQUÍMICAS
+// ============================================================
+
+// LogP (partición octanol-agua, modelo de Crippen simplificado)
+// Aproximación por número de átomos de C hidrofóbicos
+fn "logP_approx"(n_C, n_O, n_N, n_S) {
+    0.53 * n_C - 1.0 * n_O - 0.68 * n_N + 0.68 * n_S
+}
+
+// Peso molecular aproximado: M = 12*nC + nH + 16*nO + 14*nN + 32*nS
+fn "mol_weight"(n_C, n_H, n_O, n_N, n_S) {
+    12.0 * n_C + n_H + 16.0 * n_O + 14.0 * n_N + 32.0 * n_S
+}
+
+// Regla de Lipinski (druglikeness): 1 si pasa los 4 criterios, 0 si no
+// MW ≤ 500, LogP ≤ 5, HBD ≤ 5, HBA ≤ 10
+fn "lipinski_score"(MW, logP, HBD, HBA) {
+    step(MW, 500.0) * step(logP, 5.0) * step(HBD, 5.0) * step(HBA, 10.0)
+}

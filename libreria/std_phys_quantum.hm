@@ -1,0 +1,96 @@
+// ============================================================
+// LIBRERÍA: std_phys_quantum.hm
+// CAPA:     2.1 — Física Cuántica y Mecánica de Matrices
+// VERSIÓN:  0.2
+// FUENTE:   Schrödinger, Heisenberg, Dirac
+// DEPS:     std_math_core.hm, std_math_algebra.hm, std_math_calculus.hm
+// FECHA:    6 de junio de 2026
+// ============================================================
+
+import "std_math_core.hm";
+import "std_math_algebra.hm";
+import "std_math_calculus.hm";
+
+// ============================================================
+// ECUACIÓN DE SCHRÖDINGER (Soluciones 1D)
+// ============================================================
+
+// Pozo de potencial infinito 1D: ψ_n(x) = sqrt(2/L) * sin(n*π*x/L)
+fn "inf_well_psi"(n, L_width, x_val) {
+    sqrt(2.0 / (L_width + EPSILON)) * sin(PI * n * x_val / (L_width + EPSILON))
+}
+fn "inf_well_prob"(n, L_width, x_val) { sq(inf_well_psi(n, L_width, x_val)) }
+fn "inf_well_energy"(n, mass, L_width) {
+    sq(n * PI * PLANCK) / (2.0 * mass * sq(L_width) + EPSILON)
+}
+
+// Oscilador armónico cuántico 1D: ψ_0(x) (gaussiana)
+fn "qho_psi0_1d"(mass, omega, x_val) {
+    pow(mass * omega / (PI * PLANCK + EPSILON), 0.25) *
+    exp(-mass * omega * sq(x_val) / (2.0 * PLANCK + EPSILON))
+}
+fn "qho_energy"(n, omega) { PLANCK * omega * (n + 0.5) }
+
+// Escalón de potencial (coeficientes de reflexión y transmisión)
+// R = ((k1 - k2) / (k1 + k2))²  ;  T = 4k1k2 / (k1 + k2)²
+fn "potential_step_R"(k1, k2) { sq((k1 - k2) / (k1 + k2 + EPSILON)) }
+fn "potential_step_T"(k1, k2) { 4.0 * k1 * k2 / (sq(k1 + k2) + EPSILON) }
+
+// ============================================================
+// ÁTOMO DE HIDRÓGENO (Aproximación orbital s)
+// ============================================================
+
+// Radio de Bohr: a0 = 4πε0*ℏ² / (m_e*e²)
+fn "bohr_radius"(m_e, e_charge, eps0) {
+    4.0 * PI * eps0 * sq(PLANCK) / (m_e * sq(e_charge) + EPSILON)
+}
+
+// Orbital 1s (aproximación no normalizada): ψ_1s ∝ e^(-r/a0)
+fn "orbital_1s"(r_val, a0) { exp(-r_val / (a0 + EPSILON)) }
+fn "prob_density_1s"(r_val, a0) { sq(orbital_1s(r_val, a0)) }
+// Distribución radial: P(r) = 4πr²|ψ|²
+fn "radial_dist_1s"(r_val, a0) { 4.0 * PI * sq(r_val) * prob_density_1s(r_val, a0) }
+
+// Orbital 2s (aproximación no normalizada): ψ_2s ∝ (2 - r/a0) * e^(-r/2a0)
+fn "orbital_2s"(r_val, a0) { (2.0 - r_val / (a0 + EPSILON)) * exp(-r_val / (2.0 * a0 + EPSILON)) }
+
+// Orbital 2p_z (aproximación no normalizada): ψ_2pz ∝ (r/a0) * cos(θ) * e^(-r/2a0)
+fn "orbital_2pz"(r_val, theta, a0) {
+    (r_val / (a0 + EPSILON)) * cos(theta) * exp(-r_val / (2.0 * a0 + EPSILON))
+}
+
+// ============================================================
+// PAQUETES DE ONDAS Y RELACIÓN DE INCERTIDUMBRE
+// ============================================================
+
+// Paquete de ondas gaussiano móvil
+fn "wave_packet"(x_val, t_val, k0, v_group, sigma_x) {
+    exp(-sq(x_val - v_group * t_val) / (2.0 * sq(sigma_x) + EPSILON)) * cos(k0 * x_val)
+}
+
+// Límite de incertidumbre: Δx * Δp ≥ ℏ/2
+fn "uncertainty_limit"(sigma_x) { PLANCK / (2.0 * sigma_x + EPSILON) }
+
+// Esparcimiento del paquete de ondas: σ(t) = σ0 * sqrt(1 + (ℏt/(2mσ0²))²)
+fn "wave_packet_spreading"(sigma0, mass, t_val) {
+    sigma0 * sqrt(1.0 + sq(PLANCK * t_val / (2.0 * mass * sq(sigma0) + EPSILON)))
+}
+
+// ============================================================
+// SDFs CUÁNTICOS (Visualización de Orbitales y Probabilidades)
+// ============================================================
+
+// Nube de probabilidad orbital 1s (isosuperficie de densidad electrónica)
+def "orbital_1s_cloud"(a0, prob_threshold) {
+    sdf: custom(prob_threshold - prob_density_1s(sqrt(x*x + y*y + z*z), a0));
+}
+
+// Nube de probabilidad orbital 2pz (lóbulos polares)
+def "orbital_2pz_cloud"(a0, prob_threshold) {
+    sdf: custom(prob_threshold - sq(orbital_2pz(sqrt(x*x + y*y + z*z), acos(clamp(y / (sqrt(x*x + y*y + z*z) + EPSILON), -1.0, 1.0)), a0)));
+}
+
+// Paquete de ondas móvil (probabilidad como volumen)
+def "moving_wave_packet"(k0, v_group, sigma_x, prob_threshold, t_anim) {
+    sdf: custom(prob_threshold - sq(wave_packet(x, t_anim, k0, v_group, sigma_x)) * exp(-sq(y) - sq(z)));
+}

@@ -1,0 +1,114 @@
+// ============================================================
+// LIBRERÍA: std_phys_condensed.hm
+// CAPA:     2.8 — Física del Estado Sólido y Materia Condensada
+// VERSIÓN:  0.2
+// FUENTE:   Kittel, Ashcroft & Mermin, Bloch, Landau
+// DEPS:     std_math_core.hm, std_phys_sdf.hm, std_phys_statmech.hm
+// FECHA:    6 de junio de 2026
+// ============================================================
+
+import "std_math_core.hm";
+import "std_phys_sdf.hm";
+import "std_phys_statmech.hm";
+
+// ============================================================
+// REDES CRISTALINAS Y BLOCH
+// ============================================================
+
+// Función de Bloch: ψ_k(r) = u_k(r) * exp(ik·r)
+// Parte periódica u_k: aproximada como sum de armónicos
+fn "bloch_envelope"(kx, ky, kz)  { cos(kx * x) * cos(ky * y) * cos(kz * z) }
+fn "bloch_wave"(kx, ky, kz, ux)  { ux * exp(-0.5 * sq(x / 0.5)) }
+
+// Red cúbica simple: potencial periódico de iones
+fn "cubic_lattice_potential"(V0, a_lat)  {
+    V0 * (cos(PI2 * x / a_lat) + cos(PI2 * y / a_lat) + cos(PI2 * z / a_lat))
+}
+
+// Red FCC (face-centered cubic) — densidad
+fn "fcc_density"(a_lat)  {
+    exp(-sq(x) - sq(y) - sq(z)) +
+    exp(-sq(x - a_lat*0.5) - sq(y - a_lat*0.5) - sq(z)) +
+    exp(-sq(x - a_lat*0.5) - sq(y) - sq(z - a_lat*0.5)) +
+    exp(-sq(x) - sq(y - a_lat*0.5) - sq(z - a_lat*0.5))
+}
+
+// Red BCC (body-centered cubic) — densidad
+fn "bcc_density"(a_lat)  {
+    exp(-sq(x) - sq(y) - sq(z)) +
+    exp(-sq(x - a_lat*0.5) - sq(y - a_lat*0.5) - sq(z - a_lat*0.5))
+}
+
+// ============================================================
+// FONONES Y VIBRACIONES DE RED
+// ============================================================
+
+// Relación de dispersión de fonones ópticos (curva plana)
+fn "optical_phonon_freq"(omega0, D_opt, k_val)  { omega0 - D_opt * sq(k_val) }
+
+// Relación de dispersión de fonones acústicos: ω = v_s * |k|
+fn "acoustic_phonon_freq"(v_sound, k_val)  { v_sound * abs(k_val) }
+
+// Densidad de estados de Debye: g(ω) ∝ ω² para ω < ωD
+fn "debye_dos"(omega, omega_D)  { select(step(omega, omega_D), 3.0 * sq(omega) / cb(omega_D), 0.0) }
+
+// Calor específico de Debye (aproximación)
+fn "debye_heat_capacity"(T_temp, T_Debye)  {
+    select(step(0.1, T_temp / (T_Debye + EPSILON)),
+           12.0 * PI * PI * PI * PI / 5.0 * BOLTZMANN * cb(T_temp / (T_Debye + EPSILON)),
+           BOLTZMANN * 3.0)
+}
+
+// ============================================================
+// SUPERCONDUCTIVIDAD Y ESTADO CUÁNTICO COLECTIVO
+// ============================================================
+
+// Función de onda de Cooper (BCS simplificada): ψ ∝ e^(-r/ξ)
+fn "cooper_pair_wave"(r_val, xi_coherence)  { exp(-r_val / (xi_coherence + EPSILON)) }
+
+// Longitud de penetración de London: B = B0 * exp(-z/λ_L)
+fn "meissner_field"(B0, lambda_L, depth)  { B0 * exp(-abs(depth) / (lambda_L + EPSILON)) }
+
+// Vórtice de Abrikosov (superconductor tipo II)
+fn "abrikosov_vortex"(r_val, xi_coh, lambda_L)  {
+    select(step(xi_coh, r_val), log((r_val + EPSILON) / xi_coh) / log(lambda_L / xi_coh + EPSILON), 0.0)
+}
+
+// ============================================================
+// ÓPTICA DE SÓLIDOS
+// ============================================================
+
+// Índice de refracción de Drude (metales): n² = 1 - ωp²/ω²
+fn "drude_permittivity"(omega, omega_plasma, gamma_drude)  {
+    1.0 - sq(omega_plasma) / (sq(omega) + sq(gamma_drude) + EPSILON)
+}
+
+// Plasma de Drude — reflectividad
+fn "drude_reflectivity"(omega, omega_plasma, gamma_drude)  {
+    sq((1.0 - sqrt(max(0.0, drude_permittivity(omega, omega_plasma, gamma_drude)))) /
+       (1.0 + sqrt(max(EPSILON, drude_permittivity(omega, omega_plasma, gamma_drude)))))
+}
+
+// ============================================================
+// SDFs DE MATERIA CONDENSADA
+// ============================================================
+
+// Celda unitaria cúbica
+def "cubic_unit_cell"(a_lat) {
+    sdf: custom(max(max(abs(x) - a_lat * 0.5, abs(y) - a_lat * 0.5), abs(z) - a_lat * 0.5));
+}
+
+// Red cristalina FCC como campo de densidad
+def "fcc_crystal"(a_lat, iso_level) {
+    sdf: custom(iso_level - fcc_density(a_lat));
+}
+
+// Vórtice de Abrikosov (cilindro con decaimiento)
+def "abrikosov_vortex_shape"(xi_coh, lambda_L) {
+    sdf: custom(abs(abrikosov_vortex(sqrt(x*x + z*z), xi_coh, lambda_L)) - 0.1);
+}
+
+// Zona de Meissner (exclusión de campo magnético)
+def "meissner_zone"(lambda_L, field_threshold) {
+    sdf: custom(meissner_field(1.0, lambda_L, y) - field_threshold);
+}

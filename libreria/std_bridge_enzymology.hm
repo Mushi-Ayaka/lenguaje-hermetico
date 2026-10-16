@@ -1,0 +1,549 @@
+// ============================================================
+// LIBRERÍA: std_bridge_enzymology.hm
+// CAPA:     Intermediario Química-Biología (5.6 - Enzimología)
+// VERSIÓN:  1.0
+// FUENTE:   "Enzymes" by Bugg
+// DEPS:     std_math_core.hm, std_math_algebra.hm, std_bridge_biochem.hm
+// DEPS:     std_bridge_kinetics.hm, std_bridge_chembio.hm
+// FECHA:    6 de junio de 2026
+// ============================================================
+
+// ENZIMOLOGÍA: Estudio de enzimas, mecanismos catalíticos, cinética enzimática,
+// sitios activos, inhibición, regulación, evolución enzimática
+
+// ============================================================
+// CONSTANTES FUNDAMENTALES
+// ============================================================
+
+let BOLTZMANN_ENZYME = 1.380649e-23;           // k_B (J/K)
+let AVOGADRO_ENZYME = 6.02214076e23;           // N_A (mol⁻¹)
+let GAS_CONSTANT_ENZYME = 8.314462618;         // R (J/(mol·K))
+let PLANCK_ENZYME = 6.62607015e-34;            // h (J·s)
+
+// ============================================================
+// INTERFAZ PÚBLICA - CINÉTICA ENZIMÁTICA (fn)
+// ============================================================
+
+// --- Constante de Michaelis-Menten ---
+fn "michaelis_menten_kinetics"(substrate_concentration, vmax, km) {
+    vmax * substrate_concentration / (km + substrate_concentration)
+}
+
+// --- Constante de Especificidad (k_cat/K_M) ---
+fn "specificity_constant"(kcat, km) {
+    kcat / (km + 1e-6)
+}
+
+// --- Constante de Catalicidad (k_cat) ---
+fn "turnover_number"(vmax, enzyme_concentration) {
+    vmax / (enzyme_concentration + 1e-6)
+}
+
+// --- Aproximación de Estado Estacionario (Briggs-Haldane) ---
+fn "steady_state_velocity"(k1, k_neg1, k2, substrate, enzyme) {
+    // v = k2·[E]·[S]/(K_M + [S]) donde K_M = (k_neg1 + k2)/k1
+    let km = (k_neg1 + k2) / k1;
+    k2 * enzyme * substrate / (km + substrate)
+}
+
+// --- Competencia entre Múltiples Sustratos ---
+fn "multi_substrate_competition"(vmax, substrateA, substrateB, kmA, kmB, mechanism_type) {
+    if mechanism_type == "ordered" {
+        vmax * substrateA * substrateB / (kmA * kmB + kmB * substrateA + substrateA * substrateB)
+    } else if mechanism_type == "random" {
+        vmax * substrateA * substrateB / ((kmA + substrateA) * (kmB + substrateB))
+    } else if mechanism_type == "pingpong" {
+        vmax * substrateA * substrateB / (kmB * substrateA + kmA * substrateB + substrateA * substrateB)
+    } else {
+        0.0
+    }
+}
+
+// --- Cinética de Reacción de Dos Sustratos ---
+fn "two_substrate_kinetics"(substrate1, substrate2, mechanism, kinetic_constants) {
+    let vmax = kinetic_constants[0];
+    
+    if mechanism == "random_bi_bi" {
+        // Mecanismo aleatorio bi-bi
+        vmax * substrate1 * substrate2 / 
+        ((kinetic_constants[1] + substrate1) * (kinetic_constants[2] + substrate2))
+    } else if mechanism == "ordered_bi_bi" {
+        // Mecanismo ordenado bi-bi
+        vmax * substrate1 * substrate2 / 
+        (kinetic_constants[1] * kinetic_constants[2] + 
+         kinetic_constants[2] * substrate1 + 
+         substrate1 * substrate2)
+    } else if mechanism == "ping_pong" {
+        // Mecanismo ping-pong
+        vmax * substrate1 * substrate2 / 
+        (kinetic_constants[2] * substrate1 + 
+         kinetic_constants[1] * substrate2 + 
+         substrate1 * substrate2)
+    } else {
+        0.0
+    }
+}
+
+// ============================================================
+// INTERFAZ PÚBLICA - INHIBICIÓN ENZIMÁTICA (fn)
+// ============================================================
+
+// --- Inhibición Competitiva ---
+fn "competitive_inhibition_velocity"(vmax, substrate, inhibitor, km, ki) {
+    vmax * substrate / (km * (1.0 + inhibitor/ki) + substrate)
+}
+
+// --- Inhibición No Competitiva ---
+fn "noncompetitive_inhibition_velocity"(vmax, substrate, inhibitor, km, ki) {
+    (vmax / (1.0 + inhibitor/ki)) * substrate / (km + substrate)
+}
+
+// --- Inhibición Acompetitiva ---
+fn "uncompetitive_inhibition_velocity"(vmax, substrate, inhibitor, km, ki) {
+    vmax * substrate / (km + substrate * (1.0 + inhibitor/ki))
+}
+
+// --- Inhibición Mixta ---
+fn "mixed_inhibition_velocity"(vmax, substrate, inhibitor, km, alpha, beta) {
+    // α y β definen tipo de inhibición mixta
+    vmax * substrate / (km * (1.0 + inhibitor/alpha) + substrate * (1.0 + inhibitor/beta))
+}
+
+// --- Inhibición por Retroalimentación ---
+fn "feedback_inhibition"(activity, product_concentration, inhibition_constant, cooperativity) {
+    activity * (1.0 - pow(product_concentration / (inhibition_constant + product_concentration), cooperativity))
+}
+
+// --- Desinhibición (Reactivación) ---
+fn "enzyme_reactivation"(inhibited_fraction, reactivation_rate, time) {
+    inhibited_fraction * exp(-reactivation_rate * time)
+}
+
+// ============================================================
+// INTERFAZ PÚBLICA - CATÁLISIS ENZIMÁTICA (fn)
+// ============================================================
+
+// --- Aceleración Catalítica ---
+fn "catalytic_rate_acceleration"(k_cat, k_uncat) {
+    k_cat / (k_uncat + 1e-6)
+}
+
+// --- Eficiencia Catalítica ---
+fn "catalytic_efficiency"(k_cat, km, k_uncat, substrate_concentration) {
+    let accelerated_rate = k_cat * enzyme_concentration / (km + substrate_concentration);
+    let uncatalyzed_rate = k_uncat * substrate_concentration;
+    
+    accelerated_rate / (uncatalyzed_rate + 1e-6)
+}
+
+// --- Contribución de Energía Libre ---
+fn "binding_energy_contribution"(delta_g_binding, delta_g_catalysis) {
+    // Energía de unión utilizada para catálisis
+    delta_g_binding - delta_g_catalysis
+}
+
+// --- Catálisis Ácido-Base General ---
+fn "general_acid_base_catalysis"(ph, pka1, pka2) {
+    // Fracción de catalizador en forma ácida/básica
+    let fraction_acid = 1.0 / (1.0 + pow(10.0, ph - pka1));
+    let fraction_base = 1.0 / (1.0 + pow(10.0, pka2 - ph));
+    
+    fraction_acid + fraction_base
+}
+
+// --- Catálisis Covalente ---
+fn "covalent_catalysis_rate"(nucleophile_strength, electrophile_reactivity, leaving_group_ability) {
+    nucleophile_strength * electrophile_reactivity * leaving_group_ability
+}
+
+// --- Catálisis de Tensión (Strain) ---
+fn "strain_catalysis"(substrate_distortion, transition_state_complementarity) {
+    // Energía de distorsión utilizada para catálisis
+    substrate_distortion * transition_state_complementarity * 0.1
+}
+
+// ============================================================
+// INTERFAZ PÚBLICA - SITIO ACTIVO (fn)
+// ============================================================
+
+// --- Composición del Sitio Activo ---
+fn "active_site_composition"(catalytic_residues, metal_ions, cofactors) {
+    let composition = [];
+    
+    if contains(catalytic_residues, "His") {
+        composition = append(composition, "general_acid_base");
+    }
+    if contains(catalytic_residues, "Asp") || contains(catalytic_residues, "Glu") {
+        composition = append(composition, "electrostatic");
+    }
+    if contains(catalytic_residues, "Cys") {
+        composition = append(composition, "nucleophilic");
+    }
+    if len(metal_ions) > 0 {
+        composition = append(composition, "metal_ion_catalysis");
+    }
+    if len(cofactors) > 0 {
+        composition = append(composition, "cofactor_dependent");
+    }
+    
+    composition
+}
+
+// --- Accesibilidad del Sitio Activo ---
+fn "active_site_accessibility"(pore_radius, substrate_size, flexibility) {
+    let size_ratio = substrate_size / (pore_radius + 1e-6);
+    
+    if size_ratio < 0.8 {
+        1.0 * flexibility
+    } else if size_ratio < 1.2 {
+        (1.5 - size_ratio) * flexibility
+    } else {
+        0.0
+    }
+}
+
+// --- Complementaridad al Estado de Transición ---
+fn "transition_state_complementarity"(active_site_shape, transition_state_shape, induced_fit) {
+    let shape_match = 1.0 - abs(active_site_shape - transition_state_shape) / (active_site_shape + 1e-6);
+    shape_match * (1.0 + induced_fit * 0.3)
+}
+
+// --- Efecto de Entropía de Preorganización ---
+fn "preorganization_entropy_gain"(substrate_conformation_entropy, active_site_rigidity) {
+    // Ganancia por reducir entropía conformacional del sustrato
+    substrate_conformation_entropy * active_site_rigidity * 0.5
+}
+
+// --- Desolvatación en Sitio Activo ---
+fn "active_site_desolvation"(water_molecules_displaced, dielectric_constant) {
+    // Energía de desolvatación
+    water_molecules_displaced * 5.0 * (1.0 - 1.0/dielectric_constant)  // kcal/mol por molécula de agua
+}
+
+// ============================================================
+// INTERFAZ PÚBLICA - REGULACIÓN ENZIMÁTICA (fn)
+// ============================================================
+
+// --- Alosterismo (Modelo de Monod-Wyman-Changeux) ---
+fn "mwc_allosteric_model"(substrate_concentration, r_state, t_state, l0, c) {
+    // Modelo MWC: L = [T]/[R] en ausencia de sustrato
+    // c = Kr/Kt (diferencia de afinidad)
+    let numerator = substrate_concentration * (1.0 + substrate_concentration) * (1.0 + r_state);
+    let denominator = l0 * (1.0 + c * substrate_concentration) + (1.0 + substrate_concentration) * (1.0 + r_state);
+    
+    numerator / (denominator + 1e-6)
+}
+
+// --- Alosterismo (Modelo de Koshland-Némethy-Filmer) ---
+fn "knf_allosteric_model"(substrate_concentration, binding_constant, cooperativity_factor) {
+    // Modelo secuencial KNF
+    let base_activity = substrate_concentration / (substrate_concentration + binding_constant);
+    let cooperative_activity = pow(base_activity, cooperativity_factor);
+    
+    cooperative_activity
+}
+
+// --- Coeficiente de Hill ---
+fn "hill_coefficient"(substrate_concentrations, activities) {
+    // n_H = ∂log(v/(V_max-v))/∂log[S]
+    let log_ratio = log((activities[1] * (1.0 - activities[0])) / (activities[0] * (1.0 - activities[1]) + 1e-6));
+    let log_concentration = log(substrate_concentrations[1] / (substrate_concentrations[0] + 1e-6));
+    
+    log_ratio / (log_concentration + 1e-6)
+}
+
+// --- Regulación Covalente (Modificación) ---
+fn "covalent_regulation"(active_state, modification_rate, demodification_rate) {
+    let equilibrium = modification_rate / (modification_rate + demodification_rate + 1e-6);
+    active_state * equilibrium
+}
+
+// --- Regulación por Compartimentalización ---
+fn "compartmentalization_regulation"(enzyme_concentration, substrate_concentration, compartment_size) {
+    // Concentración efectiva aumentada por compartimentalización
+    enzyme_concentration * substrate_concentration / (compartment_size + 1e-6)
+}
+
+// --- Sensibilidad a Inhibidores ---
+fn "inhibitor_sensitivity"(basal_activity, inhibited_activity, inhibitor_concentration) {
+    (basal_activity - inhibited_activity) / (inhibitor_concentration + 1e-6)
+}
+
+// ============================================================
+// INTERFAZ PÚBLICA - EVOLUCIÓN ENZIMÁTICA (fn)
+// ============================================================
+
+// --- Diversidad de Especificidad ---
+fn "substrate_specificity_diversity"(specificity_constants) {
+    let max_specificity = max_array(specificity_constants);
+    let diversity_index = 0.0;
+    
+    for i in range(0, len(specificity_constants)) {
+        let relative_specificity = specificity_constants[i] / (max_specificity + 1e-6);
+        diversity_index = diversity_index - relative_specificity * log(relative_specificity + 1e-6);
+    }
+    
+    diversity_index
+}
+
+// --- Robustez Evolutiva ---
+fn "evolutionary_robustness"(stability_mutations, activity_mutations) {
+    // Fracción de mutaciones que no afectan función
+    activity_mutations / (stability_mutations + activity_mutations + 1e-6)
+}
+
+// --- Promiscuidad Catalítica ---
+fn "catalytic_promiscuity"(main_activity, secondary_activities) {
+    let promiscuity_index = 0.0;
+    
+    for i in range(0, len(secondary_activities)) {
+        promiscuity_index = promiscuity_index + secondary_activities[i] / (main_activity + 1e-6);
+    }
+    
+    promiscuity_index
+}
+
+// --- Evolución de Afinidad ---
+fn "affinity_evolution"(ancestral_affinity, descendant_affinity, mutation_count) {
+    // Cambio en afinidad por mutación
+    (descendant_affinity - ancestral_affinity) / (mutation_count + 1e-6)
+}
+
+// --- Presión Selectiva en Sitio Activo ---
+fn "active_site_selective_pressure"(conservation_score, functional_importance) {
+    conservation_score * functional_importance
+}
+
+// ============================================================
+// INTERFAZ PÚBLICA - SDFs ENZIMOLÓGICOS (def)
+// ============================================================
+
+// --- Sitio Activo Enzimático ---
+def "enzyme_active_site_visualization"(catalytic_residues, cofactor_position, substrate_position, intensity_threshold) {
+    // Sitio activo como bolsillo
+    let active_site = sphere([0, 0, 0], 0.08);
+    
+    // Residuos catalíticos
+    let residues = [];
+    for i in range(0, len(catalytic_residues)) {
+        let angle = i * 2.0 * pi / len(catalytic_residues);
+        let pos = [0.1 * cos(angle), 0.1 * sin(angle), 0];
+        let residue = sphere(pos, 0.02);
+        residues = append(residues, residue);
+    }
+    
+    // Cofactor (si existe)
+    let cofactor = if len(cofactor_position) > 0 {
+        sphere(cofactor_position, 0.025)
+    } else {
+        sphere([0, 0, 0], 0)
+    };
+    
+    // Sustrato
+    let substrate = sphere(substrate_position, 0.03);
+    
+    // Enlaces/interacciones
+    let interactions = [];
+    for i in range(0, len(catalytic_residues)) {
+        let angle = i * 2.0 * pi / len(catalytic_residues);
+        let residue_pos = [0.1 * cos(angle), 0.1 * sin(angle), 0];
+        let interaction = cylinder(residue_pos, substrate_position, 0.005);
+        interactions = append(interactions, interaction);
+    }
+    
+    sdf: union(union(active_site, union_array(residues)), 
+               union(union(cofactor, substrate), union_array(interactions)));
+}
+
+// --- Mecanismo de Catálisis Ácido-Base ---
+def "acid_base_catalysis_visualization"(acid_residue, base_residue, substrate, proton_transfer, intensity_threshold) {
+    // Ácido (donador de protón)
+    let acid = sphere(acid_residue, 0.02);
+    
+    // Base (aceptor de protón)
+    let base = sphere(base_residue, 0.02);
+    
+    // Sustrato
+    let substrate_sphere = sphere(substrate, 0.025);
+    
+    // Protón en transferencia
+    let proton_path = [];
+    for t in range(0, 5) {
+        let progress = t / 4.0;
+        let proton_pos = [acid_residue[0] * (1.0 - progress) + base_residue[0] * progress,
+                         acid_residue[1] * (1.0 - progress) + base_residue[1] * progress,
+                         acid_residue[2] * (1.0 - progress) + base_residue[2] * progress];
+        
+        let proton = sphere(proton_pos, 0.01);
+        proton_path = append(proton_path, proton);
+    }
+    
+    // Interacción ácido-sustrato
+    let acid_substrate = cylinder(acid_residue, substrate, 0.006);
+    
+    sdf: union(union(union(acid, base), substrate_sphere), 
+               union(union_array(proton_path), acid_substrate));
+}
+
+// --- Inhibición Competitiva ---
+def "competitive_inhibition_visualization"(active_site, substrate, inhibitor, binding_strength, intensity_threshold) {
+    // Sitio activo
+    let site = sphere(active_site, 0.06);
+    
+    // Sustrato (opcional)
+    let substrate_sphere = if random() > 0.5 {
+        sphere(substrate, 0.03)
+    } else {
+        sphere([0, 0, 0], 0)
+    };
+    
+    // Inhibidor
+    let inhibitor_sphere = sphere(inhibitor, 0.025 * binding_strength);
+    
+    // Competencia (uno u otro)
+    let competitive_exclusion = difference(site, union(substrate_sphere, inhibitor_sphere));
+    
+    // Indicador de afinidad
+    let affinity_indicator = sphere(active_site, 0.1 * binding_strength);
+    
+    sdf: union(competitive_exclusion, affinity_indicator);
+}
+
+// --- Alosterismo (Sitios Reguladores) ---
+def "allosteric_regulation_visualization"(active_site, allosteric_site, effector, communication_path, intensity_threshold) {
+    // Sitio activo
+    let catalytic_site = sphere(active_site, 0.05);
+    
+    // Sitio alostérico
+    let regulatory_site = sphere(allosteric_site, 0.04);
+    
+    // Efectador (activador/inhibidor)
+    let effector_sphere = sphere(effector, 0.02);
+    
+    // Camino de comunicación
+    let communication = [];
+    for i in range(0, len(communication_path)-1) {
+        let segment = cylinder(communication_path[i], communication_path[i+1], 0.008);
+        communication = append(communication, segment);
+    }
+    
+    // Cambio conformacional
+    let conformational_change = custom(sin(x*2.0) * sin(z*2.0) * 0.05);
+    
+    sdf: union(union(union(catalytic_site, regulatory_site), effector_sphere), 
+               union(union_array(communication), conformational_change));
+}
+
+// --- Catálisis Covalente (Intermedio) ---
+def "covalent_catalysis_visualization"(enzyme, substrate, covalent_intermediate, intensity_threshold) {
+    // Enzima
+    let enzyme_sphere = sphere(enzyme, 0.04);
+    
+    // Sustrato
+    let substrate_sphere = sphere(substrate, 0.03);
+    
+    // Intermedio covalente
+    let intermediate = sphere(covalent_intermediate, 0.035);
+    
+    // Enlace covalente formándose
+    let forming_bond = cylinder(enzyme, intermediate, 0.01);
+    
+    // Enlace roto en sustrato
+    let breaking_bond = cylinder(substrate, intermediate, 0.01 * 0.5);
+    
+    // Estado de transición
+    let transition_state = sphere([(enzyme[0] + substrate[0])/2,
+                                  (enzyme[1] + substrate[1])/2,
+                                  (enzyme[2] + substrate[2])/2], 0.02);
+    
+    sdf: union(union(union(enzyme_sphere, substrate_sphere), intermediate),
+               union(union(forming_bond, breaking_bond), transition_state));
+}
+
+// --- Promiscuidad Catalítica ---
+def "catalytic_promiscuity_visualization"(active_site, substrates, activities, intensity_threshold) {
+    // Sitio activo
+    let site = sphere(active_site, 0.06);
+    
+    // Múltiples sustratos
+    let substrate_clouds = [];
+    
+    for i in range(0, len(substrates)) {
+        let activity = activities[i] / sum_array(activities);
+        let substrate = sphere(substrates[i], 0.025 * activity);
+        substrate_clouds = append(substrate_clouds, substrate);
+        
+        // Conexión al sitio activo
+        let connection = cylinder(active_site, substrates[i], 0.005 * activity);
+        substrate_clouds = append(substrate_clouds, connection);
+    }
+    
+    // Rango de especificidad
+    let specificity_range = sphere(active_site, 0.15 * (max_array(activities) - min_array(activities)));
+    
+    sdf: union(site, union(union_array(substrate_clouds), specificity_range));
+}
+
+// ============================================================
+// EJEMPLOS DE USO CON custom(expr)
+// ============================================================
+
+/*
+// EJEMPLO 1: Sitio activo
+node "active_site_example" {
+    position: [-4, 0, 0];
+    sdf: enzyme_active_site_visualization([[0.1,0,0], [0,0.1,0], [-0.1,0,0]], [0,0,0.05], [0,0,0], 0.12);
+    material: "catalytic_center";
+}
+
+// EJEMPLO 2: Catálisis ácido-base
+node "acid_base_catalysis_example" {
+    position: [0, 0, 0];
+    sdf: acid_base_catalysis_visualization([0.1,0,0], [-0.1,0,0], [0,0,0.1], 0.5, 0.1);
+    material: "proton_transfer";
+}
+
+// EJEMPLO 3: Inhibición competitiva
+node "competitive_inhibition_example" {
+    position: [4, 0, 0];
+    sdf: competitive_inhibition_visualization([0,0,0], [0.08,0,0], [-0.08,0,0], 0.8, 0.15);
+    material: "enzyme_inhibition";
+}
+
+// EJEMPLO 4: Regulación alostérica
+node "allosteric_regulation_example" {
+    position: [-2, 3, 0];
+    sdf: allosteric_regulation_visualization([0.1,0,0], [-0.1,0,0], [-0.15,0.1,0], [[0.1,0,0], [0,0,0], [-0.1,0,0]], 0.1);
+    material: "allosteric_control";
+}
+
+// EJEMPLO 5: Catálisis covalente
+node "covalent_catalysis_example" {
+    position: [2, 3, 0];
+    sdf: covalent_catalysis_visualization([0.1,0,0], [-0.1,0,0], [0,0,0.05], 0.12);
+    material: "covalent_intermediate";
+}
+
+// EJEMPLO 6: Promiscuidad catalítica
+node "catalytic_promiscuity_example" {
+    position: [0, -3, 0];
+    sdf: catalytic_promiscuity_visualization([0,0,0], [[0.1,0,0], [0,0.1,0], [-0.1,0,0]], [0.8, 0.5, 0.3], 0.1);
+    material: "substrate_diversity";
+}
+*/
+
+// ============================================================
+// NOTAS PARA USUARIOS
+// ============================================================
+
+// 1. Las enzimas son catalizadores biológicos que aceleran reacciones millones de veces
+// 2. La cinética enzimática (Michaelis-Menten) describe velocidad vs concentración de sustrato
+// 3. La inhibición puede ser competitiva, no competitiva, acompetitiva o mixta
+// 4. Los mecanismos catalíticos incluyen catálisis ácido-base, covalente y de tensión
+// 5. La regulación alostérica permite control fino de actividad enzimática
+// 6. Las enzimas evolucionan para adquirir nuevas funciones (promiscuidad catalítica)
+
+// ============================================================
+// "Las enzimas son los ingenieros moleculares de la célula,
+//  diseñadas por la evolución para realizar química con precisión quirúrgica."
+// ============================================================

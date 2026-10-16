@@ -1,0 +1,92 @@
+// Test de Capa 3 — Química (atoms, bonds, reactions, organic, crystal, polymer)
+
+scene {
+    background: [0, 0, 0];
+}
+
+import "std_math_core.hm"
+import "std_math_algebra.hm"
+import "std_math_noise.hm"
+import "std_math_probability.hm"
+import "std_phys_quantum.hm"
+import "std_phys_condensed.hm"
+import "std_chem_atoms.hm"
+import "std_chem_bonds.hm"
+import "std_chem_reactions.hm"
+import "std_chem_organic.hm"
+import "std_chem_crystal.hm"
+import "std_chem_polymer.hm"
+
+material "chem_mat" {}
+
+// --- std_chem_atoms ---
+let bohr_r2 = bohr_level_radius(2.0, 0.529e-10);
+let ie_n2 = ionization_energy(2.0, 13.6);
+let morse_v = morse_potential(4.5, 1.8, 0.74, 1.0);
+let lj_v = lennard_jones(0.01, 0.34, 0.38);
+
+// --- std_chem_bonds ---
+let mo_bond = mo_energy_bonding(-13.6, -1.5, 0.4);
+let bond_dip = bond_dipole(3.5, 2.1, 0.154);
+let logP_val = logP_approx(6.0, 0.0, 0.0, 0.0);
+let mw_val = mol_weight(6.0, 6.0, 0.0, 0.0, 0.0);
+
+// --- std_chem_reactions ---
+let rate = reaction_rate(0.1, 0.5, 1.0, 0.3, 1.0);
+let arr_k = arrhenius(1e13, 50000.0, 8.314, 500.0);
+let conc_t = first_order_conc(1.0, 0.1, 10.0);
+let half_l = half_life_first_order(0.1);
+let pH_val = weak_acid_pH(1.8e-5, 0.1);
+
+// --- std_chem_organic ---
+let lip_score = lipinski_score(400.0, 3.0, 3.0, 7.0);
+
+// --- std_chem_crystal ---
+let bragg_ang = bragg_condition(1.0, 0.154, 0.2);
+let d_111 = d_spacing_cubic(0.36, 1.0, 1.0, 1.0);
+let fcc_sf = fcc_structure_factor(1.0, 1.0, 1.0);
+
+// --- std_chem_polymer ---
+let Rg = radius_of_gyration(0.154, 1000.0);
+let R_ee = end_to_end_rms(0.154, 1000.0);
+let flory_chi = flory_chi_critical(100.0);
+let G_rubber = rubber_modulus(1e24, 1.38e-23, 300.0);
+
+// --- SDFs de átomos ---
+instance "atom_orbital_1s"(0.529e-10, 0.3) {
+    position: [0, 0, 0];
+    material: "chem_mat";
+}
+
+// --- SDFs de bonds ---
+instance "covalent_bond"(0.154, 0.03) {
+    position: [1.5, 0, 0];
+    material: "chem_mat";
+}
+
+instance "water_molecule"(0.152, 0.12, 0.096) {
+    position: [-1.5, 0, 0];
+    material: "chem_mat";
+}
+
+// --- SDFs de cristal ---
+instance "nacl_crystal"(0.56, 0.1) {
+    position: [0, 0, 2.0];
+    material: "chem_mat";
+}
+
+instance "diamond_cubic"(0.357, 0.05) {
+    position: [0, 0, -2.0];
+    material: "chem_mat";
+}
+
+// --- SDFs de polímero ---
+instance "micelle"(0.3, 0.05) {
+    position: [0, 2.0, 0];
+    material: "chem_mat";
+}
+
+instance "vesicle"(0.4, 0.02, 0.03) {
+    position: [0, -2.0, 0];
+    material: "chem_mat";
+}

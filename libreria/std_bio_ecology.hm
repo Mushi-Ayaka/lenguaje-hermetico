@@ -1,0 +1,64 @@
+// ============================================================
+// LIBRERÍA: std_bio_ecology.hm
+// CAPA:     6.7 — Ecología de Poblaciones y Comunidades
+// VERSIÓN:  0.2
+// FUENTE:   Lotka-Volterra Avanzado, Índice de Shannon, Metapoblaciones
+// DEPS:     std_math_core.hm, std_math_probability.hm
+// FECHA:    6 de junio de 2026
+// ============================================================
+
+import "std_math_core.hm";
+import "std_math_probability.hm";
+
+// ============================================================
+// DINÁMICA DE POBLACIONES E INTERACCIONES
+// ============================================================
+
+// Modelo Depredador-Presa (Lotka-Volterra)
+// Presa: dN/dt = alpha*N - beta*N*P
+fn "lv_prey_dv"(N_prey, P_predator, alpha_growth, beta_predation) {
+    alpha_growth * N_prey - beta_predation * N_prey * P_predator
+}
+
+// Depredador: dP/dt = delta*N*P - gamma*P
+fn "lv_predator_dv"(N_prey, P_predator, delta_growth, gamma_death) {
+    delta_growth * N_prey * P_predator - gamma_death * P_predator
+}
+
+// ============================================================
+// METAPOBLACIONES (Modelo de Levins)
+// ============================================================
+
+// Cambio en proporción de parches ocupados: dp/dt = c*p*(1-p) - e*p
+fn "levins_metapopulation_dp"(p_occupied, c_col, e_ext) {
+    c_col * p_occupied * (1.0 - p_occupied) - e_ext * p_occupied
+}
+
+// Proporción de equilibrio: p* = 1 - e/c
+fn "levins_equilibrium"(c_col, e_ext) {
+    max(0.0, 1.0 - e_ext / (c_col + EPSILON))
+}
+
+// ============================================================
+// DIVERSIDAD Y ESTRUCTURA DE COMUNIDADES
+// ============================================================
+
+// Riqueza de Margalef: D = (S - 1) / ln(N)
+fn "margalef_richness"(S_species, N_individuals) {
+    (S_species - 1.0) / (log(N_individuals + EPSILON) + EPSILON)
+}
+
+// Índice de dominancia de Simpson: D = Σ(p_i^2)
+// (Acá en forma parametrizada para 3 especies)
+fn "simpson_dominance3"(p1, p2, p3) {
+    sq(p1) + sq(p2) + sq(p3)
+}
+
+// ============================================================
+// SDFs ECOLÓGICOS
+// ============================================================
+
+// Distribución en parches (Patchy landscape)
+def "patch_landscape"(patch_size, sparsity) {
+    sdf: custom(max(abs(frac(x / patch_size) - 0.5), abs(frac(z / patch_size) - 0.5)) - (0.5 - sparsity));
+}

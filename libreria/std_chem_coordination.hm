@@ -1,0 +1,522 @@
+// ============================================================
+// LIBRERÍA: std_chem_coordination.hm
+// CAPA:     Química (4.3 - Química de Coordinación)
+// VERSIÓN:  1.0
+// FUENTE:   "Coordination Chemistry" by Cotton & Wilkinson
+// DEPS:     std_math_core.hm, std_math_algebra.hm, std_bridge_quantchem.hm
+// DEPS:     std_chem_inorganic.hm, std_phys_condensed.hm
+// FECHA:    6 de junio de 2026
+// ============================================================
+
+// QUÍMICA DE COORDINACIÓN: Estudio de complejos metálicos, ligandos,
+// teoría del campo cristalino, teoría del orbital molecular, propiedades magnéticas
+
+// ============================================================
+// CONSTANTES FUNDAMENTALES
+// ============================================================
+
+let BOHR_MAGNETON_COORD = 9.2740100783e-24;    // μ_B (J/T)
+let PLANCK_COORD = 6.62607015e-34;             // h (J·s)
+let BOLTZMANN_COORD = 1.380649e-23;            // k_B (J/K)
+
+// ============================================================
+// INTERFAZ PÚBLICA - LIGANDOS Y DENTICIDAD (fn)
+// ============================================================
+
+// --- Clasificación de Ligandos ---
+fn "ligand_classification"(donor_atoms, hapticity, bite_angle) {
+    let classification = [];
+    
+    // Monodentado vs polidentado
+    if donor_atoms == 1 {
+        classification = append(classification, "monodentate");
+    } else if donor_atoms == 2 {
+        classification = append(classification, "bidentate");
+    } else if donor_atoms == 3 {
+        classification = append(classification, "tridentate");
+    } else if donor_atoms >= 4 {
+        classification = append(classification, "polydentate");
+    }
+    
+    // Hapticidad (η^n)
+    if hapticity > 1 {
+        classification = append(classification, "hapticity_" + hapticity);
+    }
+    
+    // Quelación
+    if donor_atoms > 1 {
+        classification = append(classification, "chelating");
+        classification = append(classification, "bite_angle_" + bite_angle);
+    }
+    
+    classification
+}
+
+// --- Campo de Ligando (Fuerza) ---
+fn "ligand_field_strength"(ligand_type) {
+    // Serie espectroquímica
+    let strength = 0.0;
+    
+    if ligand_type == "I-" { strength = 0.1; }
+    else if ligand_type == "Br-" { strength = 0.15; }
+    else if ligand_type == "Cl-" { strength = 0.2; }
+    else if ligand_type == "F-" { strength = 0.25; }
+    else if ligand_type == "OH-" { strength = 0.3; }
+    else if ligand_type == "H2O" { strength = 0.35; }
+    else if ligand_type == "NH3" { strength = 0.4; }
+    else if ligand_type == "en" { strength = 0.5; }
+    else if ligand_type == "NO2-" { strength = 0.6; }
+    else if ligand_type == "CN-" { strength = 0.8; }
+    else if ligand_type == "CO" { strength = 0.9; }
+    else { strength = 0.3; }
+    
+    strength
+}
+
+// --- Número de Coordinación ---
+fn "coordination_number_geometry"(coordination_number, ligand_types) {
+    if coordination_number == 2 {
+        "linear"
+    } else if coordination_number == 3 {
+        "trigonal_planar"
+    } else if coordination_number == 4 {
+        if contains(ligand_types, "strong_field") { "square_planar" }
+        else { "tetrahedral" }
+    } else if coordination_number == 5 {
+        "trigonal_bipyramidal"  // o square_pyramidal
+    } else if coordination_number == 6 {
+        "octahedral"
+    } else if coordination_number == 7 {
+        "pentagonal_bipyramidal"
+    } else if coordination_number == 8 {
+        "square_antiprismatic"
+    } else {
+        "other"
+    }
+}
+
+// ============================================================
+// INTERFAZ PÚBLICA - TEORÍA DEL CAMPO CRISTALINO (fn)
+// ============================================================
+
+// --- Desdoblamiento del Campo Cristalino (Octaédrico) ---
+fn "crystal_field_splitting_octahedral"(metal_ion, oxidation_state, ligands) {
+    // Δ_oct = 10Dq
+    let base_splitting = 0.0;
+    
+    // Depende del metal y estado de oxidación
+    if metal_ion == "Cr" && oxidation_state == 3 {
+        base_splitting = 21500.0;  // cm⁻¹
+    } else if metal_ion == "Co" && oxidation_state == 3 {
+        base_splitting = 23000.0;
+    } else if metal_ion == "Fe" && oxidation_state == 3 {
+        base_splitting = 14000.0;
+    } else if metal_ion == "Ni" && oxidation_state == 2 {
+        base_splitting = 8500.0;
+    } else {
+        base_splitting = 15000.0;
+    }
+    
+    // Factor de ligando
+    let ligand_factor = 0.0;
+    for i in range(0, len(ligands)) {
+        ligand_factor = ligand_factor + ligand_field_strength(ligands[i]);
+    }
+    ligand_factor = ligand_factor / len(ligands);
+    
+    base_splitting * ligand_factor * 2.0
+}
+
+// --- Desdoblamiento del Campo Cristalino (Tetraédrico) ---
+fn "crystal_field_splitting_tetrahedral"(metal_ion, oxidation_state, ligands) {
+    // Δ_tet = (4/9)·Δ_oct
+    let delta_oct = crystal_field_splitting_octahedral(metal_ion, oxidation_state, ligands);
+    delta_oct * 4.0 / 9.0
+}
+
+// --- Energía de Estabilización del Campo Cristalino (EECC) ---
+fn "crystal_field_stabilization_energy"(electron_count, geometry, splitting, pairing_energy) {
+    let t2g_electrons = 0;
+    let eg_electrons = 0;
+    let pairing_count = 0;
+    
+    // Configuración electrónica según geometría y campo
+    if geometry == "octahedral" {
+        if electron_count <= 3 {
+            t2g_electrons = electron_count;
+        } else if electron_count <= 6 {
+            t2g_electrons = min(6, electron_count);
+            if electron_count > 3 {
+                pairing_count = electron_count - 3;
+            }
+        } else {
+            t2g_electrons = 6;
+            eg_electrons = electron_count - 6;
+            pairing_count = electron_count - 4;
+        }
+    }
+    
+    // EECC = (0.4·n_t2g - 0.6·n_eg)·Δ_oct - n_pair·P
+    let energy = (0.4 * t2g_electrons - 0.6 * eg_electrons) * splitting - pairing_count * pairing_energy;
+    
+    energy
+}
+
+// --- Configuración de Alto Espín vs Bajo Espín ---
+fn "high_spin_low_spin_prediction"(splitting_energy, pairing_energy, electron_count) {
+    // Si Δ > P, bajo espín; si Δ < P, alto espín
+    if electron_count <= 3 || electron_count >= 8 {
+        "unique_config"  // No hay ambigüedad
+    } else {
+        if splitting_energy > pairing_energy { "low_spin" }
+        else { "high_spin" }
+    }
+}
+
+// ============================================================
+// INTERFAZ PÚBLICA - PROPIEDADES MAGNÉTICAS (fn)
+// ============================================================
+
+// --- Momento Magnético Efectivo ---
+fn "effective_magnetic_moment"(unpaired_electrons, spin_only) {
+    if spin_only {
+        // μ_eff = √(4S(S+1))·μ_B = √(n(n+2))·μ_B
+        sqrt(unpaired_electrons * (unpaired_electrons + 2.0))
+    } else {
+        // Incluye contribución orbital
+        sqrt(unpaired_electrons * (unpaired_electrons + 2.0)) * 1.05  // Factor aproximado
+    }
+}
+
+// --- Susceptibilidad Magnética ---
+fn "magnetic_susceptibility"(magnetic_moment, temperature) {
+    // Ley de Curie: χ = C/T = N_A·μ_eff²/(3k_B·T)
+    let C = AVOGADRO * magnetic_moment * magnetic_moment * BOHR_MAGNETON_COORD * BOHR_MAGNETON_COORD / 
+            (3.0 * BOLTZMANN_COORD);
+    
+    C / temperature
+}
+
+// --- Número de Electrones Desapareados ---
+fn "unpaired_electron_count"(metal_ion, oxidation_state, geometry, field_strength) {
+    let d_electrons = 0;
+    
+    // Electrones d del metal
+    let metal_d_electrons = [0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10];
+    
+    if metal_ion == "Ti" { d_electrons = metal_d_electrons[oxidation_state + 2]; }
+    else if metal_ion == "V" { d_electrons = metal_d_electrons[oxidation_state + 3]; }
+    else if metal_ion == "Cr" { d_electrons = metal_d_electrons[oxidation_state + 4]; }
+    else if metal_ion == "Mn" { d_electrons = metal_d_electrons[oxidation_state + 5]; }
+    else if metal_ion == "Fe" { d_electrons = metal_d_electrons[oxidation_state + 6]; }
+    else if metal_ion == "Co" { d_electrons = metal_d_electrons[oxidation_state + 7]; }
+    else if metal_ion == "Ni" { d_electrons = metal_d_electrons[oxidation_state + 8]; }
+    else if metal_ion == "Cu" { d_electrons = metal_d_electrons[oxidation_state + 9]; }
+    
+    // Configuración según campo
+    if d_electrons <= 3 || d_electrons >= 8 {
+        if d_electrons <= 3 { d_electrons }
+        else if d_electrons == 8 { 2.0 }
+        else if d_electrons == 9 { 1.0 }
+        else { 0.0 }
+    } else {
+        // d^4 a d^7: depende del campo
+        if field_strength == "strong" {
+            if d_electrons == 4 { 2.0 }
+            else if d_electrons == 5 { 1.0 }
+            else if d_electrons == 6 { 0.0 }
+            else { 1.0 }
+        } else {
+            if d_electrons == 4 { 4.0 }
+            else if d_electrons == 5 { 5.0 }
+            else if d_electrons == 6 { 4.0 }
+            else { 3.0 }
+        }
+    }
+}
+
+// ============================================================
+// INTERFAZ PÚBLICA - ESPECTROS ELECTRÓNICOS (fn)
+// ============================================================
+
+// --- Transiciones d-d (Tanabe-Sugano) ---
+fn "dd_transition_energies"(d_electron_count, geometry, splitting, racah_B) {
+    let transitions = [];
+    
+    if d_electron_count == 2 && geometry == "octahedral" {
+        // V(III), d²
+        transitions = append(transitions, splitting * 0.8);      // ³T₂g ← ³T₁g
+        transitions = append(transitions, splitting * 1.5);      // ³T₁g ← ³T₁g
+        transitions = append(transitions, splitting * 2.5);      // ³A₂g ← ³T₁g
+    } else if d_electron_count == 3 && geometry == "octahedral" {
+        // Cr(III), d³
+        transitions = append(transitions, splitting * 0.9);      // ⁴T₂g ← ⁴A₂g
+        transitions = append(transitions, splitting * 1.5);      // ⁴T₁g ← ⁴A₂g
+    } else if d_electron_count == 8 && geometry == "octahedral" {
+        // Ni(II), d⁸
+        transitions = append(transitions, splitting * 0.9);      // ³T₂g ← ³A₂g
+        transitions = append(transitions, splitting * 1.5);      // ³T₁g ← ³A₂g
+        transitions = append(transitions, splitting * 2.5);      // ³T₁g(P) ← ³A₂g
+    }
+    
+    transitions
+}
+
+// --- Color del Complejo ---
+fn "complex_color_prediction"(absorption_wavelength) {
+    // Complementario al absorbido
+    if absorption_wavelength < 400 {
+        "colorless"  // UV
+    } else if absorption_wavelength < 450 {
+        "yellow"  // Absorbe azul
+    } else if absorption_wavelength < 490 {
+        "orange"  // Absorbe azul-verde
+    } else if absorption_wavelength < 560 {
+        "red"  // Absorbe verde
+    } else if absorption_wavelength < 590 {
+        "purple"  // Absorbe amarillo
+    } else if absorption_wavelength < 630 {
+        "blue"  // Absorbe naranja
+    } else if absorption_wavelength < 700 {
+        "green"  // Absorbe rojo
+    } else {
+        "colorless"  // IR
+    }
+}
+
+// --- Regla de Selección (Laporte) ---
+fn "laporte_selection_rule_allowed"(initial_orbital, final_orbital, centrosymmetric) {
+    // Transiciones g→g o u→u prohibidas en centrosimétricos
+    if centrosymmetric {
+        if (initial_orbital == "t2g" && final_orbital == "eg") ||
+           (initial_orbital == "eg" && final_orbital == "t2g") {
+            false  // Prohibida (g→g)
+        } else {
+            true
+        }
+    } else {
+        true  // Relajada en no centrosimétricos
+    }
+}
+
+// ============================================================
+// INTERFAZ PÚBLICA - SDFs DE COMPLEJOS (def)
+// ============================================================
+
+// --- Complejo Octaédrico ---
+def "octahedral_complex"(metal_position, metal_radius, ligand_positions, ligand_radii, intensity_threshold) {
+    // Metal central
+    let metal = sphere(metal_position, metal_radius);
+    
+    // Ligandos y enlaces
+    let ligands_and_bonds = [];
+    
+    for i in range(0, len(ligand_positions)) {
+        // Ligando
+        let ligand = sphere(ligand_positions[i], ligand_radii[i]);
+        ligands_and_bonds = append(ligands_and_bonds, ligand);
+        
+        // Enlace metal-ligando
+        let bond = cylinder(metal_position, ligand_positions[i], 0.015);
+        ligands_and_bonds = append(ligands_and_bonds, bond);
+    }
+    
+    // Orbitales d visualizados (t2g y eg)
+    let t2g_orbitals = [];
+    let eg_orbitals = [];
+    
+    // t2g en planos (dxy, dyz, dxz)
+    for i in range(0, 3) {
+        let orbital_angle = i * 2.0 * pi / 3.0;
+        let orbital = torus(metal_position, 
+                           [cos(orbital_angle), sin(orbital_angle), 0],
+                           0.06, 0.008);
+        t2g_orbitals = append(t2g_orbitals, orbital);
+    }
+    
+    // eg en ejes (dx²-y², dz²)
+    for i in range(0, 3) {
+        let axis = [0, 0, 0];
+        axis[i] = 1.0;
+        let lobe1 = sphere([metal_position[0] + axis[0]*0.04,
+                           metal_position[1] + axis[1]*0.04,
+                           metal_position[2] + axis[2]*0.04], 0.02);
+        let lobe2 = sphere([metal_position[0] - axis[0]*0.04,
+                           metal_position[1] - axis[1]*0.04,
+                           metal_position[2] - axis[2]*0.04], 0.02);
+        eg_orbitals = append(eg_orbitals, lobe1);
+        eg_orbitals = append(eg_orbitals, lobe2);
+    }
+    
+    sdf: union(union(metal, union_array(ligands_and_bonds)), 
+               union(union_array(t2g_orbitals), union_array(eg_orbitals)));
+}
+
+// --- Complejo Tetraédrico ---
+def "tetrahedral_complex"(metal_position, metal_radius, ligand_distance, intensity_threshold) {
+    // Metal central
+    let metal = sphere(metal_position, metal_radius);
+    
+    // Vértices de tetraedro
+    let tetrahedral_vertices = [
+        [1, 1, 1],
+        [1, -1, -1],
+        [-1, 1, -1],
+        [-1, -1, 1]
+    ];
+    
+    let ligands_and_bonds = [];
+    
+    for i in range(0, 4) {
+        let direction = normalize(tetrahedral_vertices[i]);
+        let ligand_pos = [metal_position[0] + direction[0] * ligand_distance,
+                         metal_position[1] + direction[1] * ligand_distance,
+                         metal_position[2] + direction[2] * ligand_distance];
+        
+        let ligand = sphere(ligand_pos, 0.03);
+        ligands_and_bonds = append(ligands_and_bonds, ligand);
+        
+        let bond = cylinder(metal_position, ligand_pos, 0.012);
+        ligands_and_bonds = append(ligands_and_bonds, bond);
+    }
+    
+    sdf: union(metal, union_array(ligands_and_bonds));
+}
+
+// --- Complejo Cuadrado Plano ---
+def "square_planar_complex"(metal_position, metal_radius, ligand_distance, intensity_threshold) {
+    // Metal central
+    let metal = sphere(metal_position, metal_radius);
+    
+    // Ligandos en plano cuadrado
+    let ligands_and_bonds = [];
+    
+    for i in range(0, 4) {
+        let angle = i * pi / 2.0;
+        let ligand_pos = [metal_position[0] + ligand_distance * cos(angle),
+                         metal_position[1],
+                         metal_position[2] + ligand_distance * sin(angle)];
+        
+        let ligand = sphere(ligand_pos, 0.03);
+        ligands_and_bonds = append(ligands_and_bonds, ligand);
+        
+        let bond = cylinder(metal_position, ligand_pos, 0.015);
+        ligands_and_bonds = append(ligands_and_bonds, bond);
+    }
+    
+    // Orbital dx²-y² (alto en energía)
+    let dx2_y2 = torus(metal_position, [0, 1, 0], ligand_distance * 0.5, 0.01);
+    
+    sdf: union(union(metal, union_array(ligands_and_bonds)), dx2_y2);
+}
+
+// --- Campo Cristalino Octaédrico Visualizado ---
+def "crystal_field_splitting_visualization"(splitting_energy, electron_config, intensity_threshold) {
+    // Niveles de energía
+    let eg_level = 0.06;  // Arriba
+    let t2g_level = -0.02;  // Abajo
+    
+    // Líneas de niveles
+    let eg_line = cylinder([-0.2, eg_level, 0], [0.2, eg_level, 0], 0.01);
+    let t2g_line = cylinder([-0.2, t2g_level, 0], [0.2, t2g_level, 0], 0.01);
+    
+    // Electrones en t2g (hasta 6)
+    let t2g_electrons = [];
+    for i in range(0, min(electron_config[0], 6)) {
+        let spin = (i % 2 == 0) ? 1.0 : -1.0;
+        let electron = sphere([-0.15 + (i/2) * 0.1, t2g_level, spin * 0.02], 0.015);
+        t2g_electrons = append(t2g_electrons, electron);
+    }
+    
+    // Electrones en eg (hasta 4)
+    let eg_electrons = [];
+    for i in range(0, min(electron_config[1], 4)) {
+        let spin = (i % 2 == 0) ? 1.0 : -1.0;
+        let electron = sphere([-0.15 + (i/2) * 0.1, eg_level, spin * 0.02], 0.015);
+        eg_electrons = append(eg_electrons, electron);
+    }
+    
+    // Separación Δ
+    let delta_arrow = cylinder([0.25, t2g_level, 0], [0.25, eg_level, 0], 0.005);
+    
+    sdf: union(union(union(eg_line, t2g_line), union(union_array(t2g_electrons), union_array(eg_electrons))), delta_arrow);
+}
+
+// --- Quelación (Bidentado) ---
+def "chelation_bidentate_ligand"(metal_position, ligand_positions, bite_angle, intensity_threshold) {
+    // Metal central
+    let metal = sphere(metal_position, 0.04);
+    
+    // Ligando bidentado (ej: etilendiamina)
+    let donor1 = sphere(ligand_positions[0], 0.025);
+    let donor2 = sphere(ligand_positions[1], 0.025);
+    
+    // Puente del ligando
+    let bridge = cylinder(ligand_positions[0], ligand_positions[1], 0.01);
+    
+    // Enlaces metal-donador
+    let bond1 = cylinder(metal_position, ligand_positions[0], 0.012);
+    let bond2 = cylinder(metal_position, ligand_positions[1], 0.012);
+    
+    // Ángulo de mordida visualizado
+    let bite_arc = torus(metal_position, [0, 1, 0], 0.08, 0.003);
+    
+    sdf: union(union(union(metal, union(donor1, donor2)), union(bridge, union(bond1, bond2))), bite_arc);
+}
+
+// ============================================================
+// EJEMPLOS DE USO CON custom(expr)
+// ============================================================
+
+/*
+// EJEMPLO 1: Complejo octaédrico [Co(NH3)6]³⁺
+node "octahedral_complex_example" {
+    position: [-4, 0, 0];
+    sdf: octahedral_complex([0, 0, 0], 0.04, [[0.2,0,0], [-0.2,0,0], [0,0.2,0], [0,-0.2,0], [0,0,0.2], [0,0,-0.2]], [0.025, 0.025, 0.025, 0.025, 0.025, 0.025], 0.12);
+    material: "coordination_complex";
+}
+
+// EJEMPLO 2: Complejo tetraédrico [CoCl4]²⁻
+node "tetrahedral_complex_example" {
+    position: [0, 0, 0];
+    sdf: tetrahedral_complex([0, 0, 0], 0.04, 0.18, 0.15);
+    material: "tetrahedral_complex";
+}
+
+// EJEMPLO 3: Complejo cuadrado plano [Pt(NH3)4]²⁺
+node "square_planar_example" {
+    position: [4, 0, 0];
+    sdf: square_planar_complex([0, 0, 0], 0.04, 0.18, 0.12);
+    material: "square_planar";
+}
+
+// EJEMPLO 4: Campo cristalino d³ (Cr³⁺)
+node "crystal_field_example" {
+    position: [-2, 3, 0];
+    sdf: crystal_field_splitting_visualization(21500, [3, 0], 0.1);
+    material: "crystal_field";
+}
+
+// EJEMPLO 5: Quelación bidentada
+node "chelation_example" {
+    position: [2, 3, 0];
+    sdf: chelation_bidentate_ligand([0, 0, 0], [[0.15, 0.1, 0], [0.15, -0.1, 0]], 90, 0.1);
+    material: "chelate_complex";
+}
+*/
+
+// ============================================================
+// NOTAS PARA USUARIOS
+// ============================================================
+
+// 1. Los complejos de coordinación involucran metal central + ligandos
+// 2. La geometría depende del número de coordinación y tipo de ligando
+// 3. La teoría del campo cristalino explica propiedades ópticas y magnéticas
+// 4. El desdoblamiento Δ determina configuraciones de alto/bajo espín
+// 5. Los ligandos se clasifican por fuerza (serie espectroquímica)
+// 6. La quelación aumenta estabilidad (efecto quelato)
+
+// ============================================================
+// "Los complejos de coordinación son las joyas de la química inorgánica,
+//  donde los metales se visten de colores por los ligandos que los rodean."
+// ============================================================

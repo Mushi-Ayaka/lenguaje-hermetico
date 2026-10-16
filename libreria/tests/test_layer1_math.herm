@@ -1,0 +1,84 @@
+// Test de Capa 1 — Matemáticas (algebra, calculus, noise, probability, dynamics)
+
+scene {
+    background: [0, 0, 0];
+}
+
+import "std_math_core.hm"
+import "std_math_algebra.hm"
+import "std_math_calculus.hm"
+import "std_math_noise.hm"
+import "std_math_probability.hm"
+import "std_math_dynamics.hm"
+
+material "test_mat" {}
+
+// --- std_math_algebra ---
+let dot3 = v3_dot(1.0, 0.0, 0.0, 0.0, 1.0, 0.0);
+let cross_x = v3_cross_x(1.0, 0.0, 0.0, 0.0, 1.0, 0.0);
+let len3 = v3_len(3.0, 4.0, 0.0);
+let rod_x = rodrigues_x(1.0, 0.0, 0.0, 0.0, 0.0, 1.0, 1.5707);
+let disc = discriminant(1.0, -3.0, 2.0);
+let root1 = quadratic_root1(1.0, -3.0, 2.0);
+let lap2d = laplacian(0.0, 1.0, -1.0, 1.0, -1.0, 0.1);
+
+// --- std_math_calculus ---
+let d_sin_val = d_sin(0.0);
+let sin_t7 = sin_taylor7(0.5);
+let exp_t4 = exp_taylor4(1.0);
+let shm = shm_pos(1.0, 0.0, 1.0, 1.0);
+let log_grow = logistic_growth(10.0, 1000.0, 0.3, 5.0);
+let heat_1d = heat1d_mode1(100.0, 1.0, 1.0, 0.5, 0.1);
+let herm = hermite_pos(0.0, 1.0, 0.0, 0.0, 0.5);
+
+// --- std_math_noise ---
+let vn1 = vnoise1d(1.37);
+let vn2 = vnoise2d(0.5, 0.7);
+let fbm2 = fbm2d_4(0.3, 0.7);
+let fbm3 = fbm3d_4(0.1, 0.2, 0.3);
+let turb = turbulence3d_4(0.5, 0.5, 0.5);
+let checker_val = checker(1.5, 2.5, 1.0);
+
+// --- std_math_probability ---
+let gauss = normal_pdf(0.0, 0.0, 1.0);
+let cauchy = cauchy_pdf(1.0, 0.0, 1.0);
+let weibull = weibull_pdf(1.0, 2.0, 1.0);
+let entropy3_val = entropy3(0.5, 0.3, 0.2);
+let kl = kl_divergence(0.4, 0.3);
+
+// --- std_math_dynamics ---
+let lor_dx = lorenz_dx(1.0, 2.0, 10.0);
+let lor_dy = lorenz_dy(1.0, 2.0, 1.0, 28.0);
+let logmap = logistic_map(0.4, 3.7);
+let fhn_v = fhn_dv(0.5, 0.2, 1.0);
+let bin_ent = binary_entropy(0.3);
+let channel_cap = channel_capacity(10000.0, 30.0);
+
+// --- SDFs de algebra ---
+instance "ellipsoid"(0.5, 0.3, 0.4) {
+    position: [0, 0, 0];
+    material: "test_mat";
+}
+
+instance "paraboloid"(0.5, 1.0) {
+    position: [1.5, 0, 0];
+    material: "test_mat";
+}
+
+// --- SDFs de calculus ---
+instance "archimedes_spiral"(0.1, 0.02) {
+    position: [3.0, 0, 0];
+    material: "test_mat";
+}
+
+// --- SDFs de noise ---
+instance "noisy_sphere"(0.4, 2.0, 0.1) {
+    position: [-1.5, 0, 0];
+    material: "test_mat";
+}
+
+// --- SDFs de dynamics ---
+instance "chaotic_torus"(0.5, 0.1, 0.05, 3.0) {
+    position: [0, 0, -2.0];
+    material: "test_mat";
+}

@@ -1,0 +1,553 @@
+// ============================================================
+// LIBRERÍA: std_chem_inorganic.hm
+// CAPA:     Química (4.1 - Química Inorgánica)
+// VERSIÓN:  1.0
+// FUENTE:   "Inorganic Chemistry" by Shriver & Atkins
+// DEPS:     std_math_core.hm, std_math_algebra.hm, std_bridge_atomic.hm
+// DEPS:     std_bridge_quantchem.hm, std_chem_crystal.hm
+// FECHA:    6 de junio de 2026
+// ============================================================
+
+// QUÍMICA INORGÁNICA: Estudio de compuestos no orgánicos, metales,
+// minerales, compuestos de coordinación, materiales inorgánicos
+
+// ============================================================
+// CONSTANTES FUNDAMENTALES
+// ============================================================
+
+let AVOGADRO_INORG = 6.02214076e23;            // N_A (mol⁻¹)
+let FARADAY_INORG = 96485.33212;               // F (C/mol)
+let BOHR_RADIUS_INORG = 5.29177210903e-11;    // a₀ (m)
+
+// ============================================================
+// INTERFAZ PÚBLICA - ELEMENTOS Y PERIODICIDAD (fn)
+// ============================================================
+
+// --- Configuración Electrónica ---
+fn "electron_configuration"(atomic_number) {
+    // Configuración electrónica simplificada
+    let config = "";
+    let remaining = atomic_number;
+    
+    // Capas y subcapas
+    let orbitals = ["1s", "2s", "2p", "3s", "3p", "4s", "3d", "4p", "5s", "4d", "5p", "6s", "4f", "5d", "6p", "7s", "5f", "6d", "7p"];
+    let capacities = [2, 2, 6, 2, 6, 2, 10, 6, 2, 10, 6, 2, 14, 10, 6, 2, 14, 10, 6];
+    
+    let result = [];
+    for i in range(0, len(orbitals)) {
+        if remaining > 0 {
+            let electrons = min(remaining, capacities[i]);
+            result = append(result, [orbitals[i], electrons]);
+            remaining = remaining - electrons;
+        }
+    }
+    
+    result
+}
+
+// --- Radio Atómico (Tendencia Periódica) ---
+fn "atomic_radius_periodic"(period, group) {
+    // Radio ∝ n²/Z_eff
+    let n = period;  // Número cuántico principal
+    let Z_eff = group * 0.5 + period * 0.3;  // Carga efectiva aproximada
+    n * n / (Z_eff + 1e-6) * 0.1  // Escalado
+}
+
+// --- Energía de Ionización ---
+fn "ionization_energy_periodic"(atomic_number, ionization_degree) {
+    // IE ≈ (Z_eff/n)²·13.6 eV
+    let config = electron_configuration(atomic_number - ionization_degree + 1);
+    let Z_eff = atomic_number - ionization_degree * 0.3;
+    let n = len(config);
+    
+    Z_eff * Z_eff / (n * n + 1e-6) * 13.6
+}
+
+// --- Electronegatividad (Pauling) ---
+fn "pauling_electronegativity"(atomic_number) {
+    // Tendencia periódica simplificada
+    let period = floor((atomic_number - 1) / 8) + 1;
+    let group = (atomic_number - 1) % 8 + 1;
+    
+    // Aumenta hacia la derecha y hacia arriba
+    let base = 0.7 + group * 0.3 - period * 0.1;
+    max(0.7, min(4.0, base))
+}
+
+// --- Afinidad Electrónica ---
+fn "electron_affinity_periodic"(atomic_number) {
+    // EA típicamente negativa (libera energía)
+    let en = pauling_electronegativity(atomic_number);
+    -en * 0.5  // Aproximación
+}
+
+// ============================================================
+// INTERFAZ PÚBLICA - ENLACES INORGÁNICOS (fn)
+// ============================================================
+
+// --- Enlace Iónico (Red Energía) ---
+fn "ionic_lattice_energy"(cation_charge, anion_charge, cation_radius, anion_radius, madelung_constant) {
+    // U = (N_A·M·Z⁺·Z⁻·e²)/(4πε₀·r₀)·(1 - 1/n)
+    let r0 = cation_radius + anion_radius;
+    let coulomb = cation_charge * anion_charge / (r0 + 1e-6);
+    
+    madelung_constant * coulomb * 0.9  // Factor de Born simplificado
+}
+
+// --- Enlace Metálico (Modelo de Electrones Libres) ---
+fn "metallic_bond_energy"(electron_density, fermi_energy) {
+    // E = (3/5)·N·E_F para gas de electrones libres
+    0.6 * electron_density * fermi_energy
+}
+
+// --- Enlace Covalente (Solapamiento Orbital) ---
+fn "covalent_bond_strength"(overlap_integral, bond_order) {
+    // E_bond ∝ S·BO
+    overlap_integral * bond_order * 100.0  // Escalado a kJ/mol
+}
+
+// --- Carácter Iónico (Pauling) ---
+fn "percent_ionic_character"(electronegativity_diff) {
+    // % iónico = 1 - exp(-(Δχ/2)²)
+    (1.0 - exp(-electronegativity_diff * electronegativity_diff / 4.0)) * 100.0
+}
+
+// --- Longitud de Enlace (Suma de Radios) ---
+fn "bond_length_covalent"(radius1, radius2, bond_order) {
+    // r = r1 + r2 - 0.07·log(BO)
+    radius1 + radius2 - 0.07 * log(bond_order + 1e-6)
+}
+
+// ============================================================
+// INTERFAZ PÚBLICA - GEOMETRÍA MOLECULAR (fn)
+// ============================================================
+
+// --- Teoría RPECV (VSEPR) ---
+fn "vsepr_geometry"(electron_pairs, lone_pairs) {
+    // Geometría molecular según pares de electrones
+    let total_pairs = electron_pairs + lone_pairs;
+    
+    if total_pairs == 2 {
+        "linear"
+    } else if total_pairs == 3 {
+        if lone_pairs == 0 { "trigonal_planar" }
+        else if lone_pairs == 1 { "bent" }
+        else { "linear" }
+    } else if total_pairs == 4 {
+        if lone_pairs == 0 { "tetrahedral" }
+        else if lone_pairs == 1 { "trigonal_pyramidal" }
+        else if lone_pairs == 2 { "bent" }
+        else { "linear" }
+    } else if total_pairs == 5 {
+        if lone_pairs == 0 { "trigonal_bipyramidal" }
+        else if lone_pairs == 1 { "seesaw" }
+        else if lone_pairs == 2 { "t_shaped" }
+        else { "linear" }
+    } else if total_pairs == 6 {
+        if lone_pairs == 0 { "octahedral" }
+        else if lone_pairs == 1 { "square_pyramidal" }
+        else { "square_planar" }
+    } else {
+        "unknown"
+    }
+}
+
+// --- Ángulos de Enlace (VSEPR) ---
+fn "bond_angles_vsepr"(geometry) {
+    if geometry == "linear" { 180.0 }
+    else if geometry == "trigonal_planar" { 120.0 }
+    else if geometry == "tetrahedral" { 109.47 }
+    else if geometry == "trigonal_bipyramidal" { [120.0, 90.0] }
+    else if geometry == "octahedral" { 90.0 }
+    else if geometry == "bent" { [104.5, 120.0] }  // 2 o 3 pares
+    else { 109.47 }
+}
+
+// --- Distorsión por Pares Solitarios ---
+fn "lone_pair_distortion"(ideal_angle, lone_pairs, bond_pairs) {
+    // Ángulo reducido por repulsión par solitario
+    let repulsion_factor = lone_pairs * 2.5;  // Grados de reducción
+    ideal_angle - repulsion_factor
+}
+
+// ============================================================
+// INTERFAZ PÚBLICA - ESTADOS DE OXIDACIÓN (fn)
+// ============================================================
+
+// --- Estado de Oxidación Común ---
+fn "common_oxidation_states"(group, period, block) {
+    // Estados de oxidación típicos por grupo
+    if group == 1 { [1] }
+    else if group == 2 { [2] }
+    else if group >= 3 && group <= 12 {
+        // Metales de transición: múltiples estados
+        if group == 3 { [3] }
+        else if group == 4 { [4, 3] }
+        else if group == 5 { [5, 4, 3, 2] }
+        else if group == 6 { [6, 5, 4, 3, 2] }
+        else if group == 7 { [7, 6, 5, 4, 3, 2] }
+        else if group == 8 { [8, 6, 4, 3, 2] }
+        else if group == 9 { [6, 4, 3, 2] }
+        else if group == 10 { [4, 3, 2, 1] }
+        else if group == 11 { [3, 2, 1] }
+        else { [2] }
+    }
+    else if group == 13 { [3, 1] }
+    else if group == 14 { [4, 2] }
+    else if group == 15 { [5, 3, -3] }
+    else if group == 16 { [6, 4, 2, -2] }
+    else if group == 17 { [7, 5, 3, 1, -1] }
+    else if group == 18 { [0] }
+    else { [0] }
+}
+
+// --- Potencial de Reducción Estándar ---
+fn "standard_reduction_potential"(element, oxidation_state1, oxidation_state2) {
+    // E° para semirreacción (simplificado)
+    let en_diff = pauling_electronegativity(oxidation_state2) - pauling_electronegativity(oxidation_state1);
+    en_diff * 0.5  // Voltios aproximados
+}
+
+// --- Estabilidad de Estados de Oxidación ---
+fn "oxidation_state_stability"(atomic_number, oxidation_state) {
+    // Estabilidad basada en configuración electrónica
+    let config = electron_configuration(atomic_number);
+    let valence_electrons = 0;
+    
+    for i in range(len(config)-3, len(config)) {
+        valence_electrons = valence_electrons + config[i][1];
+    }
+    
+    // Estable si alcanza configuración de gas noble
+    let stability = 1.0 - abs(valence_electrons - oxidation_state - 8) / 8.0;
+    max(0.0, min(1.0, stability))
+}
+
+// ============================================================
+// INTERFAZ PÚBLICA - COMPUESTOS INORGÁNICOS (fn)
+// ============================================================
+
+// --- Óxidos (Carácter Ácido-Básico) ---
+fn "oxide_character"(metal_electronegativity, oxygen_electronegativity) {
+    let en_diff = oxygen_electronegativity - metal_electronegativity;
+    
+    if en_diff > 1.7 { "acidic" }
+    else if en_diff < 1.0 { "basic" }
+    else { "amphoteric" }
+}
+
+// --- Haluros (Estabilidad) ---
+fn "halide_stability"(cation_charge, halide_number, cation_radius) {
+    // Estabilidad ∝ (Z/r)^n para haluros metálicos
+    let charge_density = cation_charge / (cation_radius + 1e-6);
+    charge_density * halide_number * 0.1
+}
+
+// --- Sulfuros y Seleniuros ---
+fn "chalcogenide_properties"(metal, chalcogen, stoichiometry) {
+    // Propiedades de calcogenuros
+    let band_gap = (pauling_electronegativity(chalcogen) - pauling_electronegativity(metal)) * 2.0;
+    let color = if band_gap < 1.5 { "black" }
+                else if band_gap < 2.5 { "colored" }
+                else { "white" };
+    
+    [band_gap, color]
+}
+
+// --- Oxoaniones (Geometría) ---
+fn "oxoanion_geometry"(central_atom, oxygen_count, charge) {
+    // Geometría de oxoaniones
+    if oxygen_count == 3 {
+        if charge == -3 { "trigonal_pyramidal" }
+        else { "trigonal_planar" }
+    } else if oxygen_count == 4 {
+        "tetrahedral"
+    } else if oxygen_count == 6 {
+        "octahedral"
+    } else {
+        "other"
+    }
+}
+
+// ============================================================
+// INTERFAZ PÚBLICA - SDFs DE QUÍMICA INORGÁNICA (def)
+// ============================================================
+
+// --- Estructura Cristalina Sal (NaCl) ---
+def "nacl_crystal_structure"(lattice_constant, intensity_threshold) {
+    // Red NaCl: dos redes FCC interpenetradas
+    let na_ions = [];
+    let cl_ions = [];
+    
+    for i in range(0, 3) {
+        for j in range(0, 3) {
+            for k in range(0, 3) {
+                // Posiciones Na
+                let na_pos = [i * lattice_constant, j * lattice_constant, k * lattice_constant];
+                na_ions = append(na_ions, sphere(na_pos, 0.04));
+                
+                // Posiciones Cl (desplazadas)
+                let cl_pos = [(i + 0.5) * lattice_constant, (j + 0.5) * lattice_constant, k * lattice_constant];
+                cl_ions = append(cl_ions, sphere(cl_pos, 0.05));
+            }
+        }
+    }
+    
+    sdf: union(union_array(na_ions), union_array(cl_ions));
+}
+
+// --- Geometría Molecular VSEPR ---
+def "vsepr_molecular_geometry"(central_atom_position, bond_pairs, lone_pairs, intensity_threshold) {
+    let total_pairs = bond_pairs + lone_pairs;
+    let geometry = vsepr_geometry(bond_pairs, lone_pairs);
+    
+    // Átomos enlazados
+    let bonded_atoms = [];
+    let angle = 2.0 * pi / bond_pairs;
+    
+    for i in range(0, bond_pairs) {
+        let theta = i * angle;
+        let atom_pos = [central_atom_position[0] + 0.2 * cos(theta),
+                       central_atom_position[1],
+                       central_atom_position[2] + 0.2 * sin(theta)];
+        bonded_atoms = append(bonded_atoms, sphere(atom_pos, 0.04));
+    }
+    
+    // Átomo central
+    let central = sphere(central_atom_position, 0.05);
+    
+    // Pares solitarios (representados como nubes)
+    let lone_clouds = [];
+    for i in range(0, lone_pairs) {
+        let theta = i * 2.0 * pi / lone_pairs + pi / lone_pairs;
+        let cloud_pos = [central_atom_position[0] + 0.15 * cos(theta),
+                        central_atom_position[1] + 0.1,
+                        central_atom_position[2] + 0.15 * sin(theta)];
+        lone_clouds = append(lone_clouds, sphere(cloud_pos, 0.06));
+    }
+    
+    sdf: union(union(central, union_array(bonded_atoms)), union_array(lone_clouds));
+}
+
+// --- Complejo de Coordinación Octaédrico ---
+def "octahedral_coordination_complex"(central_metal, ligand_positions, intensity_threshold) {
+    // Metal central
+    let metal = sphere([0, 0, 0], 0.06);
+    
+    // Ligandos en vértices de octaedro
+    let ligands = [];
+    for i in range(0, 6) {
+        let pos = ligand_positions[i];
+        let ligand = sphere(pos, 0.04);
+        ligands = append(ligands, ligand);
+        
+        // Enlace metal-ligando
+        let bond = cylinder([0, 0, 0], pos, 0.015);
+        ligands = append(ligands, bond);
+    }
+    
+    sdf: union(metal, union_array(ligands));
+}
+
+// --- Óxido Metálico (Capa de Oxidación) ---
+def "metal_oxide_layer"(metal_atoms, oxygen_layer_position, thickness, intensity_threshold) {
+    // Capa de metal
+    let metal_layer = [];
+    for i in range(0, len(metal_atoms)) {
+        let atom = sphere([metal_atoms[i][0], metal_atoms[i][1], metal_atoms[i][2]], 0.03);
+        metal_layer = append(metal_layer, atom);
+    }
+    
+    // Capa de oxígeno
+    let oxide_layer = custom(step(-thickness/2, y - oxygen_layer_position) * 
+                            step(y - oxygen_layer_position, thickness/2) * 0.2);
+    
+    sdf: union(union_array(metal_layer), oxide_layer);
+}
+
+// --- Red Cristalina de Fluorita (CaF2) ---
+def "fluorite_crystal_structure"(lattice_constant, intensity_threshold) {
+    // Ca en posiciones FCC, F en todos los huecos tetraédricos
+    let ca_ions = [];
+    let f_ions = [];
+    
+    // Calcio (FCC)
+    for i in [0, 1] {
+        for j in [0, 1] {
+            for k in [0, 1] {
+                let pos = [i * lattice_constant, j * lattice_constant, k * lattice_constant];
+                ca_ions = append(ca_ions, sphere(pos, 0.05));
+            }
+        }
+    }
+    
+    // Flúor (huecos tetraédricos)
+    for i in [0.25, 0.75] {
+        for j in [0.25, 0.75] {
+            for k in [0.25, 0.75] {
+                let pos = [i * lattice_constant, j * lattice_constant, k * lattice_constant];
+                f_ions = append(f_ions, sphere(pos, 0.03));
+            }
+        }
+    }
+    
+    sdf: union(union_array(ca_ions), union_array(f_ions));
+}
+
+// ============================================================
+// INTERFAZ PÚBLICA - MATERIALES INORGÁNICOS (def)
+// ============================================================
+
+// --- Semiconductores Inorgánicos ---
+def "inorganic_semiconductor_structure"(compound_type, band_gap, intensity_threshold) {
+    // Estructura de semiconductor (ej: GaAs, ZnS)
+    let structure = [];
+    
+    // Red tipo zinc blenda o wurtzita
+    for i in range(0, 3) {
+        for j in range(0, 3) {
+            for k in range(0, 3) {
+                let pos = [i * 0.2, j * 0.2, k * 0.2];
+                let cation = sphere(pos, 0.03);
+                let anion = sphere([pos[0] + 0.1, pos[1] + 0.1, pos[2] + 0.1], 0.04);
+                structure = append(structure, cation);
+                structure = append(structure, anion);
+            }
+        }
+    }
+    
+    // Banda prohibida visualizada
+    let gap_visualization = custom(step(0.4, y) * step(y, 0.6) * band_gap * 0.1);
+    
+    sdf: union(union_array(structure), gap_visualization);
+}
+
+// --- Vidrio Inorgánico (Sílice) ---
+def "inorganic_glass_silica"(density, disorder_factor, intensity_threshold) {
+    // Red vítrea de SiO2 con desorden
+    let network = 0.0;
+    
+    // Silicio en nodos
+    for i in range(0, 10) {
+        let disorder = sin(i * 1.3 + disorder_factor) * 0.05;
+        let si_pos = [sin(i * 0.7) * 0.3 + disorder, 
+                     cos(i * 0.9) * 0.3, 
+                     sin(i * 1.1) * 0.3];
+        let si_atom = sphere(si_pos, 0.03);
+        network = union(network, si_atom);
+        
+        // Oxígenos puente
+        let o_pos = [si_pos[0] + 0.08, si_pos[1], si_pos[2]];
+        let o_atom = sphere(o_pos, 0.02);
+        network = union(network, o_atom);
+    }
+    
+    sdf: network;
+}
+
+// --- Material Cerámico (Al2O3) ---
+def "ceramic_alumina_structure"(grain_size, porosity, intensity_threshold) {
+    // Granos de alúmina
+    let grains = [];
+    
+    for i in range(0, 5) {
+        for j in range(0, 5) {
+            let grain_center = [i * grain_size - 2.0 * grain_size, 0, j * grain_size - 2.0 * grain_size];
+            let grain = sphere(grain_center, grain_size * 0.4);
+            grains = append(grains, grain);
+        }
+    }
+    
+    // Porosidad
+    let pores = custom(sin(x*10.0) * sin(z*10.0) * 0.1 * porosity);
+    
+    sdf: union(union_array(grains), pores);
+}
+
+// --- Catalizador Inorgánico (Superficie) ---
+def "inorganic_catalyst_surface"(active_sites, support_material, intensity_threshold) {
+    // Soporte (óxido metálico)
+    let support = box([-0.5, -0.1, -0.5], [0.5, 0, 0.5]);
+    
+    // Sitios activos (metales)
+    let sites = [];
+    for i in range(0, active_sites) {
+        let site_pos = [sin(i * 1.5) * 0.3, 0.03, cos(i * 1.5) * 0.3];
+        let active_site = sphere(site_pos, 0.02);
+        sites = append(sites, active_site);
+    }
+    
+    // Adsorbatos en sitios activos
+    let adsorbates = [];
+    for i in range(0, active_sites/2) {
+        let ads_pos = [sin(i * 3.0) * 0.25, 0.06, cos(i * 3.0) * 0.25];
+        let adsorbate = sphere(ads_pos, 0.015);
+        adsorbates = append(adsorbates, adsorbate);
+    }
+    
+    sdf: union(support, union(union_array(sites), union_array(adsorbates)));
+}
+
+// ============================================================
+// EJEMPLOS DE USO CON custom(expr)
+// ============================================================
+
+/*
+// EJEMPLO 1: Estructura NaCl
+node "nacl_crystal_example" {
+    position: [-4, 0, 0];
+    sdf: nacl_crystal_structure(0.15, 0.1);
+    material: "ionic_crystal";
+}
+
+// EJEMPLO 2: Geometría VSEPR tetraédrica
+node "vsepr_tetrahedral_example" {
+    position: [0, 0, 0];
+    sdf: vsepr_molecular_geometry([0, 0, 0], 4, 0, 0.12);
+    material: "molecular_geometry";
+}
+
+// EJEMPLO 3: Complejo octaédrico
+node "octahedral_complex_example" {
+    position: [4, 0, 0];
+    sdf: octahedral_coordination_complex("Fe", [[0.2,0,0], [-0.2,0,0], [0,0.2,0], [0,-0.2,0], [0,0,0.2], [0,0,-0.2]], 0.15);
+    material: "coordination_complex";
+}
+
+// EJEMPLO 4: Semiconductor
+node "semiconductor_example" {
+    position: [-2, 3, 0];
+    sdf: inorganic_semiconductor_structure("GaAs", 1.43, 0.18);
+    material: "semiconductor_material";
+}
+
+// EJEMPLO 5: Vidrio de sílice
+node "silica_glass_example" {
+    position: [2, 3, 0];
+    sdf: inorganic_glass_silica(2.2, 0.3, 0.1);
+    material: "amorphous_glass";
+}
+
+// EJEMPLO 6: Catalizador
+node "catalyst_surface_example" {
+    position: [0, -3, 0];
+    sdf: inorganic_catalyst_surface(8, "Pt/Al2O3", 0.12);
+    material: "catalyst_material";
+}
+*/
+
+// ============================================================
+// NOTAS PARA USUARIOS
+// ============================================================
+
+// 1. La química inorgánica estudia todos los elementos excepto la mayoría de carbono
+// 2. Las tendencias periódicas predicen propiedades de elementos
+// 3. Los enlaces iónicos, metálicos y covalentes dan lugar a estructuras variadas
+// 4. La teoría VSEPR predice geometrías moleculares
+// 5. Los estados de oxidación determinan reactividad y compuestos
+// 6. Los materiales inorgánicos (semiconductores, cerámicos, catalizadores) son tecnológicamente importantes
+
+// ============================================================
+// "La química inorgánica es la química de todos los elementos,
+//  desde el hidrógeno hasta los más pesados, en toda su diversidad."
+// ============================================================

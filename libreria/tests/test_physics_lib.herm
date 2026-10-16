@@ -1,0 +1,139 @@
+// ============================================================
+// ARCHIVO DE PRUEBA: test_physics_lib.herm
+// OBJETIVO: Validar std_phys_sdf.hm con ejemplos reales
+// FECHA: 6 de junio de 2026
+// ============================================================
+
+// Escena básica
+scene {
+    background: [0.1, 0.1, 0.15];
+    axes { X: 400, Y: 300, W: 1 }
+}
+
+// Material simple
+material "default" {}
+
+// ============================================================
+// FUNCIONES PERSONALIZADAS (como ejemplo de uso)
+// ============================================================
+
+// Función de onda simple
+fn "my_wave"(amp, freq) {
+    amp * sin(x * freq + y * freq * 1.3 + z * freq * 1.7 + w)
+}
+
+// Función radial para animaciones
+fn "my_radial"(amp, freq) {
+    amp * sin(sqrt(x*x + y*y + z*z) * freq + w)
+}
+
+// ============================================================
+// PRUEBA 1: ESFERAS CON DEFORMACIONES
+// ============================================================
+
+node "sphere_wave" {
+    position: [-3, 2, 0];
+    sdf: sphere(0.25 + my_wave(0.05, 5.0));
+    material: "default";
+}
+
+node "sphere_radial" {
+    position: [0, 2, 0];
+    sdf: sphere(0.25 + my_radial(0.04, 8.0));
+    material: "default";
+}
+
+node "sphere_pulse" {
+    position: [3, 2, 0];
+    // Pulsación simple usando w (tiempo)
+    sdf: sphere(0.25 + sin(w * 2.0) * 0.05);
+    material: "default";
+}
+
+// ============================================================
+// PRUEBA 2: GEOMETRÍAS COMPLEJAS CON CSG
+// ============================================================
+
+node "complex_shape_1" {
+    position: [-3, 0, 0];
+    sdf: union(
+        sphere(0.3),
+        subtract(
+            box([0.4, 0.4, 0.4]),
+            sphere(0.25)
+        )
+    );
+    material: "default";
+}
+
+node "complex_shape_2" {
+    position: [0, 0, 0];
+    sdf: smooth_union(
+        sphere(0.25),
+        sphere(0.25),
+        3.0
+    );
+    material: "default";
+}
+
+node "complex_shape_3" {
+    position: [3, 0, 0];
+    sdf: union(
+        cylinder(0.15, 0.6),
+        sphere(0.2)
+    );
+    material: "default";
+}
+
+// ============================================================
+// PRUEBA 3: ANIMACIONES CON PROPIEDADES
+// ============================================================
+
+node "animated_position" {
+    position: [sin(w) * 1.5, -2, 0];
+    sdf: sphere(0.2);
+    material: "default";
+}
+
+node "animated_rotation" {
+    position: [0, -2, 0];
+    rotation: [0, w * 3, 0];
+    sdf: box([0.3, 0.1, 0.3]);
+    material: "default";
+}
+
+node "animated_scale" {
+    position: [3, -2, 0];
+    scale: [1 + sin(w) * 0.2, 1, 1];
+    sdf: cylinder(0.15, 0.4);
+    material: "default";
+}
+
+// ============================================================
+// PRUEBA 4: COMBINACIÓN DE TÉCNICAS
+// ============================================================
+
+node "combined_techniques" {
+    position: [-3, -4, 0];
+    rotation: [0, w * 2, 0];
+    sdf: sphere(0.25 + my_wave(0.03, 8.0) * (0.5 + 0.5 * sin(w)));
+    material: "default";
+}
+
+node "textured_torus" {
+    position: [0, -4, 0];
+    sdf: torus(
+        0.5 + my_wave(0.02, 10.0),
+        0.1 + my_radial(0.01, 12.0)
+    );
+    material: "default";
+}
+
+node "deformed_cylinder" {
+    position: [3, -4, 0];
+    sdf: cylinder(
+        0.15 + sin(y * 8.0 + w) * 0.03,
+        0.5
+    );
+    material: "default";
+}

@@ -1,0 +1,73 @@
+// ============================================================
+// LIBRERÍA: std_chem_atoms.hm
+// CAPA:     3.1 — Estructura Atómica y Tabla Periódica
+// VERSIÓN:  0.2
+// FUENTE:   Bohr, Schrödinger, Aufbau principle
+// DEPS:     std_math_core.hm, std_phys_quantum.hm
+// FECHA:    6 de junio de 2026
+// ============================================================
+
+import "std_math_core.hm";
+import "std_phys_quantum.hm";
+
+// ============================================================
+// PROPIEDADES ATÓMICAS ESCALADAS (en unidades atómicas)
+// ============================================================
+
+// Radio de Bohr de nivel n: r_n = n² * a0
+fn "bohr_level_radius"(n, a0)      { n * n * a0 }
+// Energía de ionización de nivel n (como H): E_n = -13.6 eV / n²
+fn "ionization_energy"(n, E_ground) { -E_ground / (n * n + EPSILON) }
+// Número de electrones por capa: 2n²
+fn "electrons_in_shell"(n)          { 2.0 * n * n }
+
+// Radio atómico de Van der Waals (aproximación por período)
+fn "vdw_radius_period"(period_row)  { 1.2 + 0.2 * period_row }
+
+// Electronegatividad de Mulliken: χ = (IE + EA) / 2
+fn "electronegativity_mulliken"(IE, EA) { (IE + EA) * 0.5 }
+
+// ============================================================
+// ENERGÍAS DE ENLACE (Aproximación analítica de Morse)
+// ============================================================
+
+// Potencial de Morse: V(r) = De * (1 - e^(-a*(r-re)))²
+fn "morse_potential"(De, a_morse, r_eq, r_val) {
+    De * sq(1.0 - exp(-a_morse * (r_val - r_eq)))
+}
+// Frecuencia de vibración de Morse: ω_e = a * sqrt(2*De/μ)
+fn "morse_vib_freq"(a_morse, De, reduced_mass) { a_morse * sqrt(2.0 * De / (reduced_mass + EPSILON)) }
+
+// Potencial de Lennard-Jones: V(r) = ε[(σ/r)¹² - 2(σ/r)⁶]
+fn "lennard_jones"(epsilon, sigma, r_val) {
+    epsilon * (pow(sigma / (r_val + EPSILON), 12.0) - 2.0 * pow(sigma / (r_val + EPSILON), 6.0))
+}
+
+// ============================================================
+// SDFs ATÓMICAS
+// ============================================================
+
+// Orbital 1s (isosuperficie de probabilidad)
+def "atom_orbital_1s"(a0, iso_level) {
+    sdf: custom(prob_density_1s(sqrt(x*x + y*y + z*z), a0) - iso_level);
+}
+
+// Orbital 2s (toroidal)
+def "atom_orbital_2s"(a0, iso_level) {
+    sdf: custom(sq(orbital_2s(sqrt(x*x + y*y + z*z), a0)) - iso_level);
+}
+
+// Orbital 2pz (lóbulos polares)
+def "atom_orbital_2pz"(a0, iso_level) {
+    sdf: custom(sq(orbital_2pz(sqrt(x*x + y*y + z*z), acos(clamp(y / (sqrt(x*x + y*y + z*z) + EPSILON), -1.0, 1.0)), a0)) - iso_level);
+}
+
+// Potencial de Morse entre dos átomos (pozo de enlace)
+def "morse_bond_sdf"(De, a_morse, r_eq, V_iso) {
+    sdf: custom(morse_potential(De, a_morse, r_eq, sqrt(x*x + y*y + z*z)) - V_iso);
+}
+
+// Potencial de Lennard-Jones (superficie de repulsión)
+def "lj_surface"(eps, sigma_lj, V_iso) {
+    sdf: custom(lennard_jones(eps, sigma_lj, sqrt(x*x + y*y + z*z)) - V_iso);
+}

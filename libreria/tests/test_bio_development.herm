@@ -1,0 +1,42 @@
+// Test de std_bio_development.hm
+
+scene {
+    background: [0, 0, 0];
+}
+
+import "std_math_core.hm"
+import "std_math_calculus.hm"
+import "std_math_dynamics.hm"
+import "std_bio_development.hm"
+
+material "development" {}
+
+// Test fn puras - Patrones de Turing
+let turing_pattern = turing_pattern_amplitude(1.0, 2.0, 0.5, 0.0);
+let stripe_pat = stripe_pattern(0.5, 0.2, 0.3, 1.0);
+let spot_pat = spot_pattern(0.3, 0.3, 0.1, 0.5, 0.8);
+
+// Test fn puras - Gradientes morfogénicos
+let exp_gradient = exponential_gradient(0.5, 1.0, 2.0);
+let lin_gradient = linear_gradient(0.3, 1.0, 1.0);
+let threshold_resp = thresholded_gradient_response(0.6, 0.5, 10.0);
+
+// Test fn puras - Desarrollo embrionario
+let segment_clock = segmentation_clock(10.0, 5.0, 0.0, 12);
+let body_axis = body_axis_specification(0.3, 1.0, 1.0, 0.5);
+let pos_info = positional_information(0.4, 1.0, 0);
+
+// Test def: Embrión temprano
+instance "early_embryo_blastula"(0.3, 16, 0.5) {
+    position: [0, 0, 0];
+}
+
+// Test def: Patrón de segmentación
+instance "segmentation_pattern"(8, 0.2, 0.5) {
+    position: [1.0, 0, 0];
+}
+
+// Test def: Plegamiento tisular
+instance "tissue_folding_pattern"(3.0, 0.5, 0.5) {
+    position: [-1.0, 0, 0];
+}

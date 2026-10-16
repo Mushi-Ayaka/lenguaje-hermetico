@@ -1,0 +1,394 @@
+// ============================================================
+// LIBRERÍA: std_chem_supramolecular.hm
+// CAPA:     Química (4.4 - Química Supramolecular)
+// VERSIÓN:  1.0
+// FUENTE:   "Supramolecular Chemistry" by Steed & Atwood
+// DEPS:     std_math_core.hm, std_math_algebra.hm, std_chem_organic.hm
+// DEPS:     std_chem_coordination.hm, std_bridge_biochem.hm
+// FECHA:    6 de junio de 2026
+// ============================================================
+
+// QUÍMICA SUPRAMOLECULAR: Estudio de sistemas moleculares complejos,
+// autoensamblaje, reconocimiento molecular, máquinas moleculares, catenanos
+
+// ============================================================
+// CONSTANTES FUNDAMENTALES
+// ============================================================
+
+let BOLTZMANN_SUPRA = 1.380649e-23;            // k_B (J/K)
+let AVOGADRO_SUPRA = 6.02214076e23;            // N_A (mol⁻¹)
+let GAS_CONSTANT_SUPRA = 8.314462618;          // R (J/(mol·K))
+
+// ============================================================
+// INTERFAZ PÚBLICA - RECONOCIMIENTO MOLECULAR (fn)
+// ============================================================
+
+// --- Energía de Enlace Huésped-Hospedador ---
+fn "host_guest_binding_energy"(complementary_surfaces, hydrogen_bonds, van_der_waals, electrostatic) {
+    let E_hbond = -20.0 * hydrogen_bonds;  // kJ/mol por enlace H
+    let E_vdw = -5.0 * van_der_waals;      // Interacciones VdW
+    let E_elec = -30.0 * electrostatic;    // Interacciones electrostáticas
+    
+    E_hbond + E_vdw + E_elec + complementary_surfaces * (-10.0)
+}
+
+// --- Constante de Asociación ---
+fn "association_constant"(binding_energy, temperature) {
+    // K_a = exp(-ΔG/(RT))
+    exp(-binding_energy * 1000.0 / (GAS_CONSTANT_SUPRA * temperature))
+}
+
+// --- Selectividad de Reconocimiento ---
+fn "recognition_selectivity"(binding_energy_target, binding_energy_competitor) {
+    // ΔΔG = ΔG_target - ΔG_competitor
+    let delta_delta_G = binding_energy_target - binding_energy_competitor;
+    exp(-delta_delta_G * 1000.0 / (GAS_CONSTANT_SUPRA * 298.0))
+}
+
+// --- Complementaridad Geométrica ---
+fn "geometric_complementarity"(host_cavity_size, guest_size, flexibility) {
+    // Ajuste óptimo cuando tamaño del huésped ≈ cavidad
+    let size_match = 1.0 - abs(host_cavity_size - guest_size) / (host_cavity_size + 1e-6);
+    size_match * (1.0 + flexibility * 0.2)
+}
+
+// --- Energía de Preorganización ---
+fn "preorganization_energy"(host_conformation_free, host_conformation_bound) {
+    // Energía requerida para adoptar conformación de unión
+    host_conformation_bound - host_conformation_free
+}
+
+// ============================================================
+// INTERFAZ PÚBLICA - AUTOENSAMBLAJE (fn)
+// ============================================================
+
+// --- Criterio de Autoensamblaje ---
+fn "self_assembly_criterion"(binding_energy, entropy_cost, temperature) {
+    // ΔG = ΔH - T·ΔS
+    // Autoensamblaje espontáneo si ΔG < 0
+    binding_energy - temperature * entropy_cost
+}
+
+// --- Tasa de Autoensamblaje ---
+fn "self_assembly_rate"(concentration, association_constant, activation_energy, temperature) {
+    // Segundo orden: k·[M]²
+    let k = association_constant * exp(-activation_energy / (GAS_CONSTANT_SUPRA * temperature));
+    k * concentration * concentration
+}
+
+// --- Estabilidad de Arquitectura Autoensamblada ---
+fn "assembled_structure_stability"(cooperative_bonds, error_correction_mechanism, temperature) {
+    // Más estable con cooperatividad y corrección de errores
+    cooperative_bonds * 10.0 - temperature * 0.01 * (1.0 - error_correction_mechanism)
+}
+
+// --- Número de Cooperatividad ---
+fn "cooperativity_factor"(individual_binding_energies, total_binding_energy) {
+    // Cooperatividad positiva si E_total > ΣE_individual
+    total_binding_energy / (sum_array(individual_binding_energies) + 1e-6)
+}
+
+// --- Emisión Defectos en Autoensamblaje ---
+fn "defect_formation_rate"(temperature, binding_energy, defect_energy) {
+    exp(-(binding_energy - defect_energy) / (BOLTZMANN_SUPRA * temperature))
+}
+
+// ============================================================
+// INTERFAZ PÚBLICA - MÁQUINAS MOLECULARES (fn)
+// ============================================================
+
+// --- Eficiencia de Motor Molecular ---
+fn "molecular_motor_efficiency"(work_performed, energy_input) {
+    work_performed / (energy_input + 1e-6)
+}
+
+// --- Velocidad de Rotación (Motor) ---
+fn "molecular_motor_rotation_speed"(activation_energy, temperature, barrier_height) {
+    let k = exp(-(activation_energy + barrier_height) / (GAS_CONSTANT_SUPRA * temperature));
+    k * 1e6  // revoluciones por segundo (aproximado)
+}
+
+// --- Ciclo de Trabajo Molecular ---
+fn "molecular_machine_work_cycle"(input_signal, output_work, reset_energy) {
+    // Trabajo neto por ciclo
+    output_work - reset_energy
+}
+
+// --- Estado de Switch Molecular ---
+fn "molecular_switch_state"(energy_input, switching_threshold, current_state) {
+    if energy_input > switching_threshold {
+        1.0 - current_state  // Cambia de estado
+    } else {
+        current_state  // Mantiene estado
+    }
+}
+
+// --- Fuerza Generada por Actuador Molecular ---
+fn "molecular_actuator_force"(contraction_distance, energy_available) {
+    energy_available / (contraction_distance + 1e-6)
+}
+
+// ============================================================
+// INTERFAZ PÚBLICA - ESTRUCTURAS SUPRAMOLECULARES (fn)
+// ============================================================
+
+// --- Tamaño de Micela ---
+fn "micelle_aggregation_number"(surfactant_length, critical_packing_parameter) {
+    // Número de agregación depende del parámetro de empaquetamiento
+    let n = surfactant_length * surfactant_length / (critical_packing_parameter + 1e-6);
+    min(n, 200.0)  // Máximo típico
+}
+
+// --- Concentración Micelar Crítica (CMC) ---
+fn "critical_micelle_concentration"(hydrophobic_tail_length, headgroup_area, temperature) {
+    // CMC disminuye con longitud de cola y aumenta con área de cabeza
+    exp(-0.5 * hydrophobic_tail_length) / (headgroup_area + 1e-6) * 0.01
+}
+
+// --- Estructura de Cristal Líquido ---
+fn "liquid_crystal_phase"(molecular_aspect_ratio, concentration, temperature) {
+    let ratio = molecular_aspect_ratio;
+    
+    if ratio > 3.0 && concentration > 0.3 {
+        if temperature < 300.0 { "smectic" }
+        else if temperature < 350.0 { "nematic" }
+        else { "isotropic" }
+    } else if ratio > 2.0 && concentration > 0.2 {
+        "nematic"
+    } else {
+        "isotropic"
+    }
+}
+
+// --- Tamaño de Vesícula ---
+fn "vesicle_radius"(bilayer_thickness, membrane_tension, bending_modulus) {
+    // Radio de vesícula equilibrada
+    sqrt(bending_modulus / (membrane_tension + 1e-6))
+}
+
+// --- Estabilidad de Cápsula Molecular ---
+fn "molecular_capsule_stability"(wall_thickness, cavity_volume, guest_size) {
+    // Estable si el huésped cabe con margen
+    let fit_factor = cavity_volume / (guest_size * guest_size * guest_size + 1e-6);
+    fit_factor * wall_thickness * 10.0
+}
+
+// ============================================================
+// INTERFAZ PÚBLICA - SDFs SUPRAMOLECULARES (def)
+// ============================================================
+
+// --- Micela Esférica ---
+def "spherical_micelle_structure"(aggregation_number, surfactant_length, intensity_threshold) {
+    // Micela con cabezas polares afuera, colas hidrofóbicas adentro
+    let head_radius = 0.05;
+    let tail_length = surfactant_length * 0.02;
+    
+    // Cabezas polares en superficie
+    let heads = [];
+    for i in range(0, aggregation_number) {
+        let theta = acos(1.0 - 2.0 * i / aggregation_number);
+        let phi = sqrt(aggregation_number * pi) * theta;
+        
+        let x = (tail_length + head_radius) * sin(theta) * cos(phi);
+        let y = (tail_length + head_radius) * sin(theta) * sin(phi);
+        let z = (tail_length + head_radius) * cos(theta);
+        
+        let head = sphere([x, y, z], head_radius);
+        heads = append(heads, head);
+    }
+    
+    // Núcleo hidrofóbico
+    let hydrophobic_core = sphere([0, 0, 0], tail_length);
+    
+    sdf: union(hydrophobic_core, union_array(heads));
+}
+
+// --- Vesícula (Liposoma) ---
+def "vesicle_liposome_structure"(outer_radius, bilayer_thickness, intensity_threshold) {
+    // Bilayer: capa externa + capa interna
+    let outer_leaflet = sphere([0, 0, 0], outer_radius);
+    let inner_leaflet = sphere([0, 0, 0], outer_radius - bilayer_thickness);
+    
+    // Cavidad acuosa
+    let aqueous_core = sphere([0, 0, 0], outer_radius - bilayer_thickness * 2.0);
+    
+    // Bilayer como diferencia
+    let bilayer = difference(outer_leaflet, inner_leaflet);
+    
+    // Cabezas polares (puntos en superficie)
+    let headgroups = [];
+    for i in range(0, 20) {
+        let angle1 = i * 2.0 * pi / 5.0;
+        let angle2 = i * pi / 4.0;
+        
+        // Superficie externa
+        let outer_pos = [outer_radius * sin(angle2) * cos(angle1),
+                        outer_radius * sin(angle2) * sin(angle1),
+                        outer_radius * cos(angle2)];
+        let outer_head = sphere(outer_pos, 0.01);
+        headgroups = append(headgroups, outer_head);
+        
+        // Superficie interna
+        let inner_r = outer_radius - bilayer_thickness;
+        let inner_pos = [inner_r * sin(angle2) * cos(angle1),
+                        inner_r * sin(angle2) * sin(angle1),
+                        inner_r * cos(angle2)];
+        let inner_head = sphere(inner_pos, 0.01);
+        headgroups = append(headgroups, inner_head);
+    }
+    
+    sdf: union(bilayer, union_array(headgroups));
+}
+
+// --- Catenano (Anillos Entrelazados) ---
+def "catenane_interlocked_rings"(ring_radius, ring_thickness, twist_angle, intensity_threshold) {
+    // Dos anillos entrelazados
+    let ring1 = torus([0, 0, 0], [0, 1, 0], ring_radius, ring_thickness);
+    
+    let rotated_center = [ring_radius * sin(twist_angle), 0, ring_radius * cos(twist_angle)];
+    let ring2 = torus(rotated_center, [sin(twist_angle), 0, cos(twist_angle)], ring_radius, ring_thickness);
+    
+    // Puntos de entrelazamiento
+    let interlock_points = [];
+    for i in range(0, 4) {
+        let angle = i * pi / 2.0;
+        let point = sphere([ring_radius * cos(angle), ring_thickness * sin(angle * 2), ring_radius * sin(angle)], 
+                          ring_thickness * 0.5);
+        interlock_points = append(interlock_points, point);
+    }
+    
+    sdf: union(union(ring1, ring2), union_array(interlock_points));
+}
+
+// --- Rotaxano (Anillo en Eje) ---
+def "rotaxane_structure"(axle_length, ring_radius, ring_thickness, stopper_radius, intensity_threshold) {
+    // Eje molecular
+    let axle = cylinder([-axle_length/2, 0, 0], [axle_length/2, 0, 0], 0.02);
+    
+    // Anillo macrocíclico en el eje
+    let macrocycle = torus([0, 0, 0], [0, 1, 0], ring_radius, ring_thickness);
+    
+    // Topes (stopper) en los extremos
+    let stopper1 = sphere([-axle_length/2, 0, 0], stopper_radius);
+    let stopper2 = sphere([axle_length/2, 0, 0], stopper_radius);
+    
+    // Posición del anillo (puede deslizarse)
+    let ring_position = sin(w * 0.5) * axle_length * 0.3;
+    let macrocycle_moved = torus([ring_position, 0, 0], [0, 1, 0], ring_radius, ring_thickness);
+    
+    sdf: union(union(axle, macrocycle_moved), union(stopper1, stopper2));
+}
+
+// --- Receptor de Huésped (Cavitando) ---
+def "host_receptor_cavitand"(cavity_size, rim_functionalities, intensity_threshold) {
+    // Cavidad receptora
+    let cavity = sphere([0, 0, 0], cavity_size);
+    
+    // Paredes del receptor
+    let walls = difference(cavity, sphere([0, 0, 0], cavity_size * 0.7));
+    
+    // Funcionalidades en el borde
+    let rim_groups = [];
+    for i in range(0, 8) {
+        let angle = i * pi / 4.0;
+        let pos = [cavity_size * cos(angle), cavity_size * 0.5, cavity_size * sin(angle)];
+        let group = sphere(pos, 0.02);
+        rim_groups = append(rim_groups, group);
+    }
+    
+    // Huésped dentro (si lo hay)
+    let guest = sphere([0, 0, 0], cavity_size * 0.5);
+    
+    sdf: union(union(walls, union_array(rim_groups)), guest);
+}
+
+// --- Autoensamblaje Hexagonal ---
+def "hexagonal_self_assembly"(tile_size, interaction_strength, defect_probability, intensity_threshold) {
+    // Red hexagonal autoensamblada
+    let tiles = [];
+    
+    for i in range(-2, 3) {
+        for j in range(-2, 3) {
+            let x = i * tile_size * 1.5;
+            let z = j * tile_size * sqrt(3.0) + (i % 2) * tile_size * sqrt(3.0) / 2.0;
+            
+            // Defectos aleatorios
+            let is_defect = sin(i * 1.5 + j * 2.3 + w * 0.1) > (1.0 - defect_probability * 2.0);
+            
+            if !is_defect {
+                let tile = cylinder([x, 0, z], [x, 0.02, z], tile_size * 0.4);
+                tiles = append(tiles, tile);
+            }
+        }
+    }
+    
+    // Interacciones entre tiles
+    let interactions = custom(sin(x*3.0) * sin(z*3.0) * interaction_strength * 0.05);
+    
+    sdf: union(union_array(tiles), interactions);
+}
+
+// ============================================================
+// EJEMPLOS DE USO CON custom(expr)
+// ============================================================
+
+/*
+// EJEMPLO 1: Micela esférica
+node "micelle_example" {
+    position: [-4, 0, 0];
+    sdf: spherical_micelle_structure(60, 2.0, 0.1);
+    material: "supramolecular_assembly";
+}
+
+// EJEMPLO 2: Vesícula liposomal
+node "vesicle_example" {
+    position: [0, 0, 0];
+    sdf: vesicle_liposome_structure(0.3, 0.05, 0.15);
+    material: "lipid_bilayer";
+}
+
+// EJEMPLO 3: Catenano
+node "catenane_example" {
+    position: [4, 0, 0];
+    sdf: catenane_interlocked_rings(0.12, 0.02, pi/4, 0.12);
+    material: "mechanically_interlocked";
+}
+
+// EJEMPLO 4: Rotaxano
+node "rotaxane_example" {
+    position: [-2, 3, 0];
+    sdf: rotaxane_structure(0.4, 0.08, 0.02, 0.05, 0.1);
+    material: "molecular_machine";
+}
+
+// EJEMPLO 5: Receptor cavitando
+node "cavitand_example" {
+    position: [2, 3, 0];
+    sdf: host_receptor_cavitand(0.15, ["H_bond", "H_bond", "H_bond", "H_bond"], 0.12);
+    material: "host_guest";
+}
+
+// EJEMPLO 6: Autoensamblaje hexagonal
+node "hexagonal_assembly_example" {
+    position: [0, -3, 0];
+    sdf: hexagonal_self_assembly(0.1, 1.0, 0.05, 0.1);
+    material: "self_assembled_monolayer";
+}
+*/
+
+// ============================================================
+// NOTAS PARA USUARIOS
+// ============================================================
+
+// 1. La química supramolecular estudia ensamblajes moleculares complejos
+// 2. El reconocimiento molecular es clave: complementaridad + preorganización
+// 3. El autoensamblaje ocurre espontáneamente cuando ΔG < 0
+// 4. Las máquinas moleculales convierten energía en trabajo mecánico
+// 5. Estructuras como micelas, vesículas y cristales líquidos son supramoleculares
+// 6. Los MEIs (catenanos, rotaxanos) tienen topología no trivial
+
+// ============================================================
+// "La química supramolecular va más allá de la molécula:
+//  el 'super' indica un nivel de organización superior."
+// — Jean-Marie Lehn
+// ============================================================

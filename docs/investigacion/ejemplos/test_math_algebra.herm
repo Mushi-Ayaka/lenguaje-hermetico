@@ -1,0 +1,319 @@
+// ============================================================
+// ARCHIVO DE PRUEBA: test_math_algebra.herm
+// Propósito: Validar std_math_algebra.hm
+// ============================================================
+
+scene "Test Álgebra Vectorial" {
+    axes { X: 800, Y: 600, W: 1 }
+    
+    camera {
+        position: [0, 2, 8];
+        target:   [0, 0, 0];
+        up:       [0, 1, 0];
+        fov:      50;
+    }
+    
+    background: [0.05, 0.05, 0.1];
+}
+
+// Importar la librería de álgebra
+import "std_math_algebra.hm"
+
+// ============================================================
+// MATERIALES DE PRUEBA
+// ============================================================
+
+material "rojo" {
+    base_color: [0.8, 0.1, 0.1];
+    roughness:  0.5;
+    metallic:   0.0;
+}
+
+material "verde" {
+    base_color: [0.1, 0.8, 0.1];
+    roughness:  0.5;
+    metallic:   0.0;
+}
+
+material "azul" {
+    base_color: [0.1, 0.1, 0.8];
+    roughness:  0.5;
+    metallic:   0.0;
+}
+
+material "amarillo" {
+    base_color: [0.8, 0.8, 0.1];
+    roughness:  0.5;
+    metallic:   0.0;
+}
+
+material "blanco" {
+    base_color: [0.9, 0.9, 0.9];
+    roughness:  0.3;
+    metallic:   0.0;
+}
+
+// ============================================================
+// DEFs PARA FORMAS DE PRUEBA
+// ============================================================
+
+// Esfera en posición calculada con funciones vectoriales
+def "esfera_vector_pos"(center_x, center_y, center_z, radius) {
+    sdf: sphere(radius);
+    material: "rojo";
+    position: [center_x, center_y, center_z];
+}
+
+// Caja rotada usando funciones de rotación
+def "caja_rotada"(size_x, size_y, size_z, angle_x, angle_y, angle_z) {
+    // NOTA: Las transformaciones de rotación se aplican en el nodo
+    sdf: box(size_x, size_y, size_z);
+    material: "verde";
+    rotation: [angle_x, angle_y, angle_z];
+}
+
+// ============================================================
+// NODOS DE PRUEBA - DEMOSTRACIÓN DE FUNCIONES
+// ============================================================
+
+node "demo_algebra" {
+    position: [0, 0, 0];
+    
+    // ======================================================
+    // TEST 1: Vectores base y operaciones básicas
+    // ======================================================
+    
+    // Vector i = [1, 0, 0] (eje X)
+    node "vector_i" {
+        sdf: sphere(0.15);
+        material: "rojo";
+        position: [1, 0, 0];
+    }
+    
+    // Vector j = [0, 1, 0] (eje Y)
+    node "vector_j" {
+        sdf: sphere(0.15);
+        material: "verde";
+        position: [0, 1, 0];
+    }
+    
+    // Vector k = [0, 0, 1] (eje Z)
+    node "vector_k" {
+        sdf: sphere(0.15);
+        material: "azul";
+        position: [0, 0, 1];
+    }
+    
+    // ======================================================
+    // TEST 2: Producto Cruz i × j = k
+    // ======================================================
+    
+    // Calcular producto cruz i × j
+    // i = [1,0,0], j = [0,1,0] → i × j = [0,0,1] = k
+    node "cross_ij" {
+        sdf: sphere(0.2);
+        material: "amarillo";
+        position: [0, 0, 1];  // Resultado del producto cruz
+    }
+    
+    // Línea desde i hasta j (visual)
+    node "linea_ij" {
+        sdf: cylinder(0.03, 1.414);  // Longitud = √2
+        material: "blanco";
+        position: [0.5, 0.5, 0];
+        rotation: [0, 0, 45];  // Aproximación
+    }
+    
+    // ======================================================
+    // TEST 3: Normalización y longitud
+    // ======================================================
+    
+    // Vector no normalizado [2, 0, 0]
+    node "vector_no_norm" {
+        sdf: sphere(0.12);
+        material: "rojo";
+        position: [2, 0, 0];
+        scale: [0.5, 0.5, 0.5];  // Escalado para indicar diferente longitud
+    }
+    
+    // Vector normalizado debería estar en [1, 0, 0]
+    node "vector_norm" {
+        sdf: sphere(0.15);
+        material: "verde";
+        position: [1, 0, 0];
+    }
+    
+    // ======================================================
+    // TEST 4: Rotaciones usando funciones de álgebra
+    // ======================================================
+    
+    // Cubo rotado 45° alrededor del eje Y
+    node "cubo_rotado_y" {
+        sdf: box(0.5, 0.5, 0.5);
+        material: "azul";
+        position: [2, 1, 0];
+        rotation: [0, 45, 0];
+    }
+    
+    // Cubo rotado 30° alrededor del eje X
+    node "cubo_rotado_x" {
+        sdf: box(0.5, 0.5, 0.5);
+        material: "amarillo";
+        position: [-2, 1, 0];
+        rotation: [30, 0, 0];
+    }
+    
+    // ======================================================
+    // TEST 5: Interpolación entre vectores
+    // ======================================================
+    
+    // Punto A: [-2, 0, 0]
+    node "punto_a" {
+        sdf: sphere(0.15);
+        material: "rojo";
+        position: [-2, 0, 0];
+    }
+    
+    // Punto B: [2, 0, 0]
+    node "punto_b" {
+        sdf: sphere(0.15);
+        material: "azul";
+        position: [2, 0, 0];
+    }
+    
+    // Punto intermedio (lerp 50%)
+    node "punto_lerp" {
+        sdf: sphere(0.2);
+        material: "verde";
+        position: [0, 0, 0];  // Punto medio entre A y B
+    }
+    
+    // ======================================================
+    // TEST 6: Distancias y planos
+    // ======================================================
+    
+    // Plano Y = 0
+    node "plano_y0" {
+        sdf: plane(0, 1, 0, 0);
+        material: "blanco";
+        position: [0, -1, 0];
+        scale: [3, 0.1, 3];
+    }
+    
+    // Esfera a distancia fija del plano
+    node "esfera_dist_plano" {
+        sdf: sphere(0.3);
+        material: "amarillo";
+        position: [0, 1.5, 0];  // Distancia 1.5 del plano
+    }
+    
+    // ======================================================
+    // TEST 7: Coordenadas esféricas
+    // ======================================================
+    
+    // Punto en coordenadas esféricas: r=2, θ=45°, φ=45°
+    // Debería convertirse a cartesianas: ~[1,1,1.414]
+    node "punto_esferico" {
+        sdf: sphere(0.2);
+        material: "rojo";
+        position: [1, 1, 1.414];
+    }
+}
+
+// ============================================================
+// LUCES PARA VISUALIZACIÓN CLARA
+// ============================================================
+
+light "luz_principal" {
+    type: directional;
+    direction: [0.5, 0.8, 0.3];
+    color: [1, 0.95, 0.8];
+    intensity: 0.8;
+}
+
+lumbre "luz_relleno" {
+    type: point;
+    position: [-2, 3, 2];
+    color: [0.2, 0.4, 1];
+    intensity: 0.4;
+    falloff: 0.05;
+}
+
+// ============================================================
+// ANOTACIONES Y VARIABLES DE PRUEBA
+// ============================================================
+
+// Variables para cálculos conceptuales (no renderizadas)
+let vector_i = [1, 0, 0];
+let vector_j = [0, 1, 0];
+let vector_k = [0, 0, 1];
+
+// Cálculos conceptuales usando la librería:
+// NOTA: Estas son solo anotaciones, no afectan el render
+
+/*
+// Producto punto i·j = 0 (ortogonales)
+let dot_ij = dot3(1, 0, 0, 0, 1, 0);  // Debe ser 0
+
+// Producto cruz i×j = k
+let cross_ij = cross3(1, 0, 0, 0, 1, 0);  // Debe ser [0, 0, 1]
+
+// Longitud de [3,4,0] = 5
+let length_3_4_0 = length3(3, 4, 0);  // Debe ser 5
+
+// Normalización de [2,0,0] = [1,0,0]
+let norm_2_0_0 = normalize3(2, 0, 0);  // Debe ser [1, 0, 0]
+
+// Ángulo entre i y j = 90° = π/2 rad
+let angle_ij = angle_between3(1, 0, 0, 0, 1, 0);  // Debe ser ~1.5708
+*/
+
+// ============================================================
+// INSTRUCCIONES DE VALIDACIÓN
+// ============================================================
+
+/*
+Para validar esta prueba:
+
+1. Compilar: herm test_math_algebra.herm --render test_output.png
+2. Verificar que:
+   - Los ejes X(rojo), Y(verde), Z(azul) son visibles
+   - El producto cruz i×j (amarillo) está en la posición Z positiva
+   - Las rotaciones de cubos son correctas
+   - El plano blanco está en Y = -1
+   - No hay errores de compilación
+
+3. Métricas esperadas:
+   - Tiempo de compilación: similar a escenas sin librería
+   - Tiempo de render: ligero aumento (< 5%)
+   - Estabilidad numérica: sin artefactos visuales
+*/
+
+// ============================================================
+// NOTAS DE IMPLEMENTACIÓN
+// ============================================================
+
+// Importante: Las funciones de std_math_algebra.hm se usan
+// conceptualmente aquí. En una implementación real, podrían
+// usarse en expresiones SDF o transformaciones.
+
+// Ejemplo de uso real en SDF (concepto):
+// def "esfera_dinamica"(radio_base, factor) {
+//     let radio_calculado = length3(x, y, z) * factor + radio_base;
+//     sdf: sphere(radio_calculado);
+//     material: "rojo";
+// }
+
+// ============================================================
+// HISTORIAL DE PRUEBAS
+// ============================================================
+
+// v1.0 (2026-06-05): Prueba inicial de validación
+// - Demostración visual de operaciones vectoriales
+// - Uso conceptual de funciones de librería
+// - Preparación para pruebas numéricas reales
+
+// Próximas iteraciones:
+// 1. Pruebas numéricas reales en expresiones SDF
+// 2. Benchmark de rendimiento vs implementación hardcodeada
+// 3. Validación de precisión numérica

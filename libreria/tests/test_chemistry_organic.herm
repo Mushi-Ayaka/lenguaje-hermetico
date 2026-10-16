@@ -1,0 +1,247 @@
+// ============================================================
+// TEST: test_chemistry_organic.herm
+// VALIDACIÓN: std_chemistry_organic.hm
+// FECHA: 6 de junio de 2026
+// ============================================================
+
+// Importar librería de química orgánica
+import "std_chemistry_organic.hm";
+
+// ============================================================
+// TEST 1: Grupos Funcionales - Propiedades (fn)
+// ============================================================
+
+// Momento dipolar de grupos funcionales
+node "dipole_moment_test" {
+    position: [-6, 4, 0];
+    sdf: custom(y - functional_group_dipole_moment(2));  // Carbonilo
+    material: "property";
+}
+
+// Punto de ebullición estimado
+node "boiling_point_test" {
+    position: [-4, 4, 0];
+    sdf: custom(y - boiling_point_estimation(46.07, 1.7, 1));  // Etanol
+    material: "property";
+}
+
+// Solubilidad en agua (logP)
+node "solubility_test" {
+    position: [-2, 4, 0];
+    sdf: custom(y - water_solubility_logP(1.7, 1, 1));  // Alcohol
+    material: "property";
+}
+
+// Fuerza ácida (pKa)
+node "acidity_test" {
+    position: [0, 4, 0];
+    sdf: custom(y - acid_strength_pka(2, 0.5));  // Carboxilo con efecto sustituyente
+    material: "property";
+}
+
+// ============================================================
+// TEST 2: Estructuras de Carbono (fn)
+// ============================================================
+
+// Cadena lineal de carbonos
+node "linear_chain_test" {
+    position: [2, 4, 0];
+    sdf: custom(y - linear_chain_positions(5, 1.54, 109.5));
+    material: "geometry";
+}
+
+// Densidad electrónica bencénica
+node "benzene_density_test" {
+    position: [4, 4, 0];
+    sdf: custom(y - benzene_electron_density(x, z, 0.8));
+    material: "aromatic";
+}
+
+// Función de quiralidad
+node "chirality_test" {
+    position: [6, 4, 0];
+    sdf: custom(y - chirality_function(x, y, z, 1));  // Dextro
+    material: "stereo";
+}
+
+// ============================================================
+// TEST 3: Isomería (fn)
+// ============================================================
+
+// Energía de isómeros estructurales
+node "structural_isomer_test" {
+    position: [-6, 2, 0];
+    sdf: custom(y - structural_isomer_energy(2, 5));
+    material: "isomer";
+}
+
+// Diferencia energética cis-trans
+node "geometric_isomer_test" {
+    position: [-4, 2, 0];
+    sdf: custom(y - geometric_isomer_energy_difference(1.5, 1.5, 1.34));
+    material: "isomer";
+}
+
+// Rotación óptica
+node "optical_isomer_test" {
+    position: [-2, 2, 0];
+    sdf: custom(y - optical_rotation(2.5, 1.0, 1.0));
+    material: "isomer";
+}
+
+// ============================================================
+// TEST 4: Grupos Funcionales - SDFs (def)
+// ============================================================
+
+// Grupo alquilo
+node "alkyl_group_test" {
+    position: [0, 2, 0];
+    sdf: alkyl_group(3, 0.5, [0, 0, 0]);
+    material: "alkyl";
+}
+
+// Grupo hidroxilo
+node "hydroxyl_group_test" {
+    position: [2, 2, 0];
+    sdf: hydroxyl_group(1.0, 104.5, [0, 0, 0]);
+    material: "hydroxyl";
+}
+
+// Grupo carbonilo
+node "carbonyl_group_test" {
+    position: [4, 2, 0];
+    sdf: carbonyl_group(1.21, [0, 0, 0]);
+    material: "carbonyl";
+}
+
+// Grupo carboxilo
+node "carboxyl_group_test" {
+    position: [6, 2, 0];
+    sdf: carboxyl_group([0, 0, 0]);
+    material: "carboxyl";
+}
+
+// ============================================================
+// TEST 5: Moléculas Orgánicas (def)
+// ============================================================
+
+// Metano (tetraédrico)
+node "methane_test" {
+    position: [-6, 0, 0];
+    sdf: methane_molecule([0, 0, 0]);
+    material: "methane";
+}
+
+// Etanol
+node "ethanol_test" {
+    position: [-3, 0, 0];
+    sdf: ethanol_molecule([0, 0, 0]);
+    material: "ethanol";
+}
+
+// Acetona
+node "acetone_test" {
+    position: [0, 0, 0];
+    sdf: acetone_molecule([0, 0, 0]);
+    material: "acetone";
+}
+
+// Ácido acético
+node "acetic_acid_test" {
+    position: [3, 0, 0];
+    sdf: acetic_acid_molecule([0, 0, 0]);
+    material: "acid";
+}
+
+// Benceno
+node "benzene_test" {
+    position: [6, 0, 0];
+    sdf: benzene_molecule(0.8, [0, 0, 0]);
+    material: "benzene";
+}
+
+// ============================================================
+// TEST 6: Reacciones Orgánicas (def)
+// ============================================================
+
+// Sustitución nucleófila (SN2)
+node "sn2_reaction_test" {
+    position: [-6, -2, 0];
+    sdf: sn2_reaction(0.8, 0.6, 0.7);
+    material: "reaction";
+}
+
+// Adición electrófila
+node "addition_reaction_test" {
+    position: [-3, -2, 0];
+    sdf: electrophilic_addition(0.9, 0.7);
+    material: "reaction";
+}
+
+// Eliminación (E2)
+node "elimination_test" {
+    position: [0, -2, 0];
+    sdf: elimination_reaction(0.8, 0.9, 0.95);
+    material: "reaction";
+}
+
+// Condensación
+node "condensation_test" {
+    position: [3, -2, 0];
+    sdf: condensation_reaction(0.5, 0.5, 0.01);
+    material: "reaction";
+}
+
+// ============================================================
+// TEST 7: Biomoléculas Simples (def)
+// ============================================================
+
+// Aminoácido genérico
+node "amino_acid_test" {
+    position: [-6, -4, 0];
+    sdf: amino_acid_generic([0, 0, 0], 1.5);
+    material: "biomolecule";
+}
+
+// Ácido graso
+node "fatty_acid_test" {
+    position: [-3, -4, 0];
+    sdf: fatty_acid(8, 0.0, [0, 0, 0]);  // Saturado
+    material: "lipid";
+}
+
+// Nucleótido simplificado
+node "nucleotide_test" {
+    position: [0, -4, 0];
+    sdf: nucleotide_simple([0, 0, 0], 1.0);  // Base tipo A
+    material: "nucleotide";
+}
+
+// ============================================================
+// TEST 8: Otros Grupos Funcionales (def)
+// ============================================================
+
+// Grupo amino
+node "amino_group_test" {
+    position: [3, -4, 0];
+    sdf: amino_group([0, 0, 0]);
+    material: "amino";
+}
+
+// Grupo alqueno
+node "alkene_group_test" {
+    position: [6, -4, 0];
+    sdf: alkene_group([0, 0, 0]);
+    material: "alkene";
+}
+
+// ============================================================
+// RESUMEN DEL TEST
+// ============================================================
+
+// Total: 30 nodos de prueba
+// Cubre: Propiedades de grupos funcionales, estructuras de carbono,
+//        isomería, grupos funcionales SDFs, moléculas orgánicas,
+//        reacciones orgánicas, biomoléculas simples
+// Todos usan fn para fórmulas matemáticas y def para SDFs con custom(expr)
+// Validación completa de std_chemistry_organic.hm

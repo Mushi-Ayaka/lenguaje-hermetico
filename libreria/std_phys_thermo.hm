@@ -1,0 +1,104 @@
+// ============================================================
+// LIBRERÍA: std_phys_thermo.hm
+// CAPA:     2.7 — Termodinámica de Sistemas Fuera del Equilibrio
+// VERSIÓN:  0.2
+// FUENTE:   Fourier, Clausius, Onsager, Prigogine
+// DEPS:     std_math_core.hm, std_phys_sdf.hm, std_phys_statmech.hm
+// FECHA:    6 de junio de 2026
+// ============================================================
+
+import "std_math_core.hm";
+import "std_phys_sdf.hm";
+import "std_phys_statmech.hm";
+
+// ============================================================
+// LEYES DE LA TERMODINÁMICA
+// ============================================================
+
+// Ley cero: Si T1 = T2 y T2 = T3 → equilibrio
+fn "thermal_equilibrium"(T1, T2)  { abs(T1 - T2) }
+
+// Primera ley: ΔU = Q - W
+fn "internal_energy_change"(Q_heat, W_work)  { Q_heat - W_work }
+
+// Segunda ley: dS ≥ δQ/T (variación de entropía)
+fn "entropy_change"(Q_heat, T_temp)  { Q_heat / (T_temp + EPSILON) }
+
+// Tercera ley: S → 0 cuando T → 0
+fn "entropy_near_absolute_zero"(T_temp, S0)  { S0 * tanh_approx(T_temp) }
+
+// ============================================================
+// CONDUCCIÓN Y TRANSPORTE DE CALOR
+// ============================================================
+
+// Ley de Fourier: q = -κ∇T (flujo de calor)
+fn "heat_flux"(kappa, dT_dx)  { -kappa * dT_dx }
+
+// Difusividad térmica: α = κ/(ρ Cp)
+fn "thermal_diffusivity"(kappa, rho, Cp)  { kappa / (rho * Cp + EPSILON) }
+
+// Ecuación de calor 1D (solución analítica Fourier): T(x,t)
+fn "heat_eq_1d"(T_init, T_bc, kappa, rho, Cp, L, x_val, t_val)  {
+    lerp(T_bc, T_init,
+         exp(-PI * PI * thermal_diffusivity(kappa, rho, Cp) * t_val / (L * L + EPSILON)) *
+         sin(PI * x_val / (L + EPSILON)))
+}
+
+// Convección natural (ley de Newton de enfriamiento)
+fn "newton_cooling"(T_obj, T_ambient, h_conv, A_area)  { h_conv * A_area * (T_obj - T_ambient) }
+
+// Radiación (Stefan-Boltzmann): P = εσA(T⁴ - T_amb⁴)
+fn "radiation_power"(emissivity, A_area, T_obj, T_amb)  {
+    emissivity * STEFAN_BOLTZMANN * A_area * (pow(T_obj, 4.0) - pow(T_amb, 4.0))
+}
+
+// ============================================================
+// TERMODINÁMICA DE CICLOS
+// ============================================================
+
+// Eficiencia de Carnot: η = 1 - T_cold/T_hot
+fn "carnot_efficiency"(T_cold, T_hot)  { 1.0 - T_cold / (T_hot + EPSILON) }
+
+// Trabajo del ciclo de Carnot: W = η * Q_hot
+fn "carnot_work"(T_cold, T_hot, Q_hot)  { carnot_efficiency(T_cold, T_hot) * Q_hot }
+
+// ============================================================
+// FENÓMENOS DISIPATIVOS (Prigogine)
+// ============================================================
+
+// Producción de entropía (disipación): σ = J·X (flujo × fuerza termodinámica)
+fn "entropy_production"(flux, thermo_force)  { flux * thermo_force }
+
+// Coeficiente de Onsager (relación cruzada)
+fn "onsager_flux"(L11, L12, X1, X2)  { L11 * X1 + L12 * X2 }
+
+// Estructura disipativa (patrón de Prigogine): oscilación de concentración
+fn "dissipative_osc"(c0, amp, omega, gamma, t_val)  {
+    c0 + amp * exp(-gamma * t_val) * cos(omega * t_val)
+}
+
+// ============================================================
+// ECUACIONES DE ESTADO
+// ============================================================
+
+// Gas ideal: PV = nRT → P = nRT/V
+fn "ideal_gas_pressure"(n_mol, T_temp, V_vol)  { n_mol * BOLTZMANN * T_temp / (V_vol + EPSILON) }
+
+// Gas de Van der Waals: (P + a/V²)(V - b) = RT
+fn "van_der_waals_P"(T_temp, V_mol, a_vdw, b_vdw)  {
+    BOLTZMANN * T_temp / (V_mol - b_vdw + EPSILON) - a_vdw / (V_mol * V_mol + EPSILON)
+}
+
+// ============================================================
+// SDFs TERMODINÁMICAS
+// ============================================================
+
+// Gradiente de temperatura como campo escalar
+def "temperature_gradient_field"(T_hot, T_cold, kappa, L) {
+    sdf: custom(heat_eq_1d(T_hot, T_cold, kappa, 1.0, 1000.0, L, x, w) - (T_hot + T_cold) * 0.5);
+}
+
+// Pluma de calor (convección ascendente)
+def "heat_plume"(base_temp, ambient_temp, plume_radius) {
+    sdf: custom(sqrt(x*x + z*z) - plume_radius * sat(newton_cooling(base_temp, ambient_temp, 0.01, 1.0) / (base_temp + EPSILON)));
+}

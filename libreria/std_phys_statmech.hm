@@ -1,0 +1,95 @@
+// ============================================================
+// LIBRERÍA: std_phys_statmech.hm
+// CAPA:     2.6 — Mecánica Estadística
+// VERSIÓN:  0.2
+// FUENTE:   Boltzmann, Gibbs, Maxwell — mecánica estadística
+// DEPS:     std_math_core.hm, std_phys_sdf.hm
+// FECHA:    6 de junio de 2026
+// ============================================================
+
+import "std_math_core.hm";
+import "std_phys_sdf.hm";
+
+// ============================================================
+// ENSAMBLES ESTADÍSTICOS
+// ============================================================
+
+// Factor de Boltzmann: e^(-E/kT)
+fn "boltzmann_factor"(E, T_temp) { exp(-E / (BOLTZMANN * T_temp + EPSILON)) }
+
+// Función de partición Z (suma de estados)
+fn "partition_2state"(E1, E2, T_temp) { boltzmann_factor(E1, T_temp) + boltzmann_factor(E2, T_temp) }
+
+// Probabilidad de estado en ensamble canónico: P(E) = e^(-E/kT) / Z
+fn "canonical_prob"(E, Z_val, T_temp) { boltzmann_factor(E, T_temp) / (Z_val + EPSILON) }
+
+// Energía promedio: <E> = -d/dβ ln(Z)
+fn "mean_energy_2state"(E1, E2, T_temp) {
+    (E1 * boltzmann_factor(E1, T_temp) + E2 * boltzmann_factor(E2, T_temp)) /
+    (partition_2state(E1, E2, T_temp) + EPSILON)
+}
+
+// Capacidad calorífica (aproximada desde derivada numérica): C_V = d<E>/dT
+fn "heat_capacity_2state"(E1, E2, T_temp) {
+    sq((E1 - E2) / (BOLTZMANN * T_temp + EPSILON)) *
+    boltzmann_factor(E1, T_temp) * boltzmann_factor(E2, T_temp) /
+    sq(partition_2state(E1, E2, T_temp) + EPSILON)
+}
+
+// ============================================================
+// DISTRIBUCIONES DE VELOCIDADES
+// ============================================================
+
+// Velocidad más probable: v_p = sqrt(2kT/m)
+fn "maxwell_peak_speed"(mass, T_temp) { sqrt(2.0 * BOLTZMANN * T_temp / (mass + EPSILON)) }
+
+// Velocidad media: <v> = sqrt(8kT/πm)
+fn "maxwell_mean_speed"(mass, T_temp) { sqrt(8.0 * BOLTZMANN * T_temp / (PI * mass + EPSILON)) }
+
+// Velocidad cuadrática media (RMS): v_rms = sqrt(3kT/m)
+fn "maxwell_rms_speed"(mass, T_temp) { sqrt(3.0 * BOLTZMANN * T_temp / (mass + EPSILON)) }
+
+// ============================================================
+// TERMODINÁMICA ESTADÍSTICA
+// ============================================================
+
+// Entropía de Boltzmann: S = kB * ln(Ω)
+fn "boltzmann_entropy"(omega_states) { BOLTZMANN * log(abs(omega_states) + EPSILON) }
+
+// Energía libre de Helmholtz: F = -kT * ln(Z)
+fn "helmholtz_free_energy"(Z_val, T_temp) { -BOLTZMANN * T_temp * log(abs(Z_val) + EPSILON) }
+
+// Entropía de Gibbs: S = -kB * Σ p_i * ln(p_i)
+fn "gibbs_entropy2"(p1, p2) {
+    -BOLTZMANN * (select(step(EPSILON, p1), p1 * log(p1 + EPSILON), 0.0) +
+                  select(step(EPSILON, p2), p2 * log(p2 + EPSILON), 0.0))
+}
+
+// ============================================================
+// FLUCTUACIONES Y TRANSICIONES DE FASE
+// ============================================================
+
+// Fluctuación relativa: δE/<E> ≈ 1/sqrt(N)
+fn "relative_fluctuation"(N_particles) { 1.0 / sqrt(N_particles + EPSILON) }
+
+// Parámetro de orden de Ising (campo medio): m = tanh(βJm + βh)
+fn "ising_order_param"(J_coupling, h_field, T_temp, m_prev) {
+    tanh_approx((J_coupling * m_prev + h_field) / (BOLTZMANN * T_temp + EPSILON))
+}
+
+// Temperatura crítica de Ising 2D: kTc = 2J/ln(1+√2)
+fn "ising_critical_temp"(J_coupling) { 2.0 * J_coupling / (log(1.0 + SQRT2) + EPSILON) }
+
+// ============================================================
+// SDFs ESTADÍSTICO-MECÁNICAS
+// ============================================================
+
+// Densidad de probabilidad de Maxwell-Boltzmann como campo escalar
+def "maxwell_boltzmann_field"(mass_param, T_param, iso_level) {
+    sdf: custom(maxwell_boltzmann_speed(sqrt(x*x + y*y + z*z), mass_param, T_param) - iso_level);
+}
+
+// Campo de temperatura de ensamble canónico
+def "thermal_field_surface"(E1, E2, T_iso) {
+    sdf: custom(mean_energy_2state(E1, E2, sqrt(x*x + y*y + z*z)) - T_iso);
+}

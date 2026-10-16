@@ -1,0 +1,204 @@
+// ============================================================
+// ARCHIVO DE PRUEBA: test_physics_correct.herm
+// OBJETIVO: Validar std_phys_sdf.hm con sintaxis correcta
+// FECHA: 6 de junio de 2026
+// ============================================================
+
+// NOTA: Este archivo demuestra el uso CORRECTO de:
+// 1. Primivas nativas del compilador
+// 2. Operadores CSG nativos  
+// 3. Funciones 'fn' para deformaciones
+// 4. Propiedades de nodo: position, rotation, scale
+
+// Definir materiales básicos
+material "default" {
+    base_color: [0.8, 0.8, 0.8];
+    roughness: 0.5;
+}
+
+material "shiny" {
+    base_color: [0.9, 0.9, 0.9];
+    roughness: 0.2;
+    metallic: 0.8;
+}
+
+material "metal" {
+    base_color: [0.7, 0.7, 0.7];
+    roughness: 0.1;
+    metallic: 1.0;
+}
+
+material "plastic" {
+    base_color: [0.8, 0.3, 0.3];
+    roughness: 0.4;
+    metallic: 0.0;
+}
+
+material "glass" {
+    base_color: [0.9, 0.9, 1.0];
+    roughness: 0.0;
+    metallic: 0.0;
+    refraction: 1.5;
+}
+
+material "rubber" {
+    base_color: [0.1, 0.1, 0.1];
+    roughness: 0.8;
+    metallic: 0.0;
+}
+
+material "silver" {
+    base_color: [0.95, 0.95, 0.95];
+    roughness: 0.1;
+    metallic: 1.0;
+}
+
+material "gold" {
+    base_color: [1.0, 0.8, 0.0];
+    roughness: 0.2;
+    metallic: 1.0;
+}
+
+material "chrome" {
+    base_color: [0.9, 0.9, 0.9];
+    roughness: 0.05;
+    metallic: 1.0;
+}
+
+material "copper" {
+    base_color: [0.8, 0.5, 0.2];
+    roughness: 0.3;
+    metallic: 1.0;
+}
+
+material "brass" {
+    base_color: [0.9, 0.8, 0.4];
+    roughness: 0.4;
+    metallic: 1.0;
+}
+
+// ============================================================
+// PRUEBA 1: PRIMITIVAS NATIVAS BÁSICAS
+// ============================================================
+
+node "basic_sphere" {
+    position: [-2, 2, 0];
+    sdf: sphere(0.3);
+    material: "default";
+}
+
+node "basic_box" {
+    position: [0, 2, 0];
+    sdf: box([0.4, 0.4, 0.4]);
+    material: "shiny";
+}
+
+node "basic_cylinder" {
+    position: [2, 2, 0];
+    sdf: cylinder(0.2, 0.6);
+    material: "metal";
+}
+
+// ============================================================
+// PRUEBA 2: OPERADORES CSG NATIVOS
+// ============================================================
+
+node "csg_test_union" {
+    position: [-2, 0, 0];
+    sdf: union(
+        sphere(0.25),
+        box([0.3, 0.3, 0.3])
+    );
+    material: "plastic";
+}
+
+node "csg_test_subtract" {
+    position: [0, 0, 0];
+    sdf: subtract(
+        sphere(0.35),
+        box([0.25, 0.25, 0.25])
+    );
+    material: "glass";
+}
+
+node "csg_test_smooth" {
+    position: [2, 0, 0];
+    sdf: smooth_union(
+        sphere(0.25),
+        sphere(0.25),
+        2.0
+    );
+    material: "rubber";
+}
+
+// ============================================================
+// PRUEBA 3: ANIMACIONES CON PROPIEDADES DE NODO
+// ============================================================
+
+node "animated_position" {
+    // Posición animada con sin(w)
+    position: [sin(w) * 0.8, -2, 0];
+    sdf: sphere(0.2);
+    material: "default";
+}
+
+node "animated_rotation" {
+    // Rotación animada
+    position: [0, -2, 0];
+    rotation: [0, w * 2, 0];
+    sdf: box([0.3, 0.1, 0.3]);
+    material: "silver";
+}
+
+node "animated_scale" {
+    // Escala animada
+    position: [2, -2, 0];
+    scale: [1 + sin(w) * 0.3, 1, 1];
+    sdf: cylinder(0.15, 0.4);
+    material: "gold";
+}
+
+// ============================================================
+// PRUEBA 4: FUNCIONES 'fn' PARA DEFORMACIONES
+// ============================================================
+
+// Primero definimos algunas funciones simples
+fn "simple_wave"(amp) {
+    amp * sin(x * 5.0 + y * 3.0 + z * 7.0 + w)
+}
+
+fn "radial_pulse"(amp, freq) {
+    amp * sin(sqrt(x*x + y*y + z*z) * freq + w)
+}
+
+node "deformed_by_fn_wave" {
+    position: [-2, -4, 0];
+    // Usar función fn para deformar radio
+    sdf: sphere(0.25 + simple_wave(0.05));
+    material: "chrome";
+}
+
+node "deformed_by_fn_radial" {
+    position: [0, -4, 0];
+    // Otra deformación con fn
+    sdf: cylinder(0.15 + radial_pulse(0.03, 8.0), 0.5);
+    material: "copper";
+}
+
+node "combined_deformation" {
+    position: [2, -4, 0];
+    // Combinar múltiples deformaciones
+    sdf: torus(0.4 + simple_wave(0.02), 0.1 + radial_pulse(0.01, 5.0));
+    material: "brass";
+}
+
+// ============================================================
+// VALIDACIÓN FINAL
+// ============================================================
+
+// Archivo de prueba CORRECTO para física creado
+// 12 nodos validando sintaxis Hermética correcta
+// Primitivas: sphere, box, cylinder, torus
+// Operadores: union, subtract, smooth_union
+// Animaciones: position, rotation, scale con variable w
+// Funciones fn: deformaciones matemáticas puras

@@ -5,8 +5,12 @@ Lenguaje de descripción de escenas 3D/4D basado en **campos de distancia firmad
 ## Pipeline
 
 ```
-.herm ──→ herm.exe ──→ .rih (JSON) ──→ operador_tb ──→ .tb ──→ render.exe ──→ .png
-                 └──→ --render flag ──→ render directo ──→ .png (vía stb_image_write)
+.herm ──→ herm.exe ──→ .ont + .obs ──→ motor-grafico (runtime Vulkan)
+                 ├──→ .rih (JSON) / .rib (binario)   [IR intermedio]
+                 ├──→ --render flag ──→ render directo ──→ .png (vía stb_image_write)
+                 └──→ --ont flag ──→ formato ontológico binario (.ont) + metadata (.obs)
+
+(legacy) .herm ──→ herm.exe ──→ .rih ──→ operador_tb ──→ .tb ──→ render.exe ──→ .png
 ```
 
 ## Componentes
@@ -16,15 +20,24 @@ Lenguaje de descripción de escenas 3D/4D basado en **campos de distancia firmad
 | Módulo | Propósito |
 |--------|-----------|
 | `herm_lexer` | Tokeniza archivos `.herm` (soporta keywords bilingües español/inglés) |
-| `herm_parser` | Análisis sintáctico: nodos SDF, materiales, luces, def/instance, let, animación |
+| `herm_parser` | Análisis sintáctico: nodos SDF, materiales, luces, def/instance, let, import, fn |
 | `herm_ast` | Árbol de sintaxis abstracta: primitivas, operaciones, escena, materiales, luces |
-| `herm_resolver` | Resuelve referencias: def→instance, let→expansión textual, materiales |
-| `herm_rih` | Emisor de RIH (Representación Hermética Intermedia) en JSON |
+| `herm_resolver` | Resuelve referencias: def→instance, let/fn→expansión textual, materiales |
+| `herm_rih` | Emisor de RIH (Representación Hermética Intermedia) en JSON/binario |
+| `herm_ont` | Emisor del formato ontológico binario `.ont` (BVH + bytecode SDF + materiales) |
+| `herm_obs` | Emisor de metadata `.obs` (cámara, luces, timeline, background) |
+| `herm_compile` | API de compilación para el motor (`compileToRih`/`compileFromString`) |
 | `herm_eval` | Evaluador de expresiones SDF con contexto x,y,z,w,t |
 | `herm_render` | Renderizador directo: ray marching + Blinn-Phong multi-light |
-| `main.cpp` | CLI: `herm input.herm [-o output.rih] [--render output.png]` |
+| `main.cpp` | CLI: `herm input.herm [-o out] [--ont] [--render output.png]` |
 
-### Backend independiente (`operador_tb/`)
+### Librerías (`libreria/`)
+
+55 librerías estándar (`std_*.hm`) del árbol ontológico (matemáticas → física → química → biología → geociencias → astrofísica) + `materiales.hm`. Ver `libreria/README.md` y `docs/11-protocolo-librerias.md`.
+
+### Backend independiente (`operador_tb/`) — LEGACY
+
+Pipeline antiguo `.rih → .tb → render.exe`. Sin mantenimiento; el consumo activo lo hace `motor-grafico` vía `.ont`.
 
 | Módulo | Propósito |
 |--------|-----------|

@@ -1,0 +1,118 @@
+// ============================================================
+// LIBRERÍA: std_geo_terrain.hm
+// CAPA:     4.1 — Geología, Erosión y Modelado de Terreno
+// VERSIÓN:  0.2
+// FUENTE:   Procedural terrain, hydraulic erosion, sediment transport
+// DEPS:     std_math_core.hm, std_math_noise.hm
+// FECHA:    6 de junio de 2026
+// ============================================================
+
+import "std_math_core.hm";
+import "std_math_noise.hm";
+
+// ============================================================
+// MODELOS DE TERRENO PROCEDURAL
+// ============================================================
+
+// Terreno FBM con 6 octavas (escala real en km)
+fn "terrain_height"(x_km, z_km, sc_val, H_max) {
+    H_max * fbm3d_6(x_km * sc_val, 0.0, z_km * sc_val)
+}
+
+// Terreno ridged (crestas montañosas)
+fn "ridged_fbm"(x_val, z_val, sc_val) {
+    (1.0 - abs(vnoise2d(x_val * sc_val, z_val * sc_val) * 2.0 - 1.0)) * 0.5 +
+    (1.0 - abs(vnoise2d(x_val * sc_val * 2.0, z_val * sc_val * 2.0) * 2.0 - 1.0)) * 0.25 +
+    (1.0 - abs(vnoise2d(x_val * sc_val * 4.0, z_val * sc_val * 4.0) * 2.0 - 1.0)) * 0.125
+}
+
+// Terreno Billowy (nubes/piedras redondeadas)
+fn "billowy_fbm"(x_val, z_val, sc_val) {
+    abs(vnoise2d(x_val * sc_val, z_val * sc_val)) * 0.5 +
+    abs(vnoise2d(x_val * sc_val * 2.0, z_val * sc_val * 2.0)) * 0.25 +
+    abs(vnoise2d(x_val * sc_val * 4.0, z_val * sc_val * 4.0)) * 0.125
+}
+
+// ============================================================
+// EROSIÓN HIDRÁULICA (Simplificada)
+// ============================================================
+
+// Gradiente de pendiente en X y Z (para calcular flujo de agua)
+fn "slope_x"(h_prev, h_next, delta) { (h_next - h_prev) / (2.0 * delta + EPSILON) }
+fn "slope_z"(h_prev, h_next, delta) { (h_next - h_prev) / (2.0 * delta + EPSILON) }
+
+// Velocidad del flujo de agua (proporcional a la pendiente)
+fn "flow_speed"(slope_x_val, slope_z_val) { sqrt(sq(slope_x_val) + sq(slope_z_val)) }
+
+// Capacidad de sedimento: Q_c = k_c * speed
+fn "sediment_capacity"(k_c, speed) { k_c * speed }
+
+// Erosión/deposición neta: ΔH = -K_e * (Q - Q_c) * Δt
+fn "erosion_rate"(K_e, Q_actual, Q_capacity) { -K_e * (Q_actual - Q_capacity) }
+
+// Erosión por temperatura (meteorización térmica)
+fn "thermal_weathering"(T_amplitude, rock_hardness) { T_amplitude / (rock_hardness + EPSILON) }
+
+// ============================================================
+// CAPAS GEOLÓGICAS
+// ============================================================
+
+// Capa sedimentaria con buzamiento
+fn "sediment_layer"(depth, thickness, dip_angle, dip_dir) {
+    depth - thickness * sat(cos(dip_angle) + 0.5 * sin(dip_angle) * x)
+}
+
+// Anticlinorio (pliegue positivo)
+fn "anticline"(x_val, z_val, amplitude, wavelength, axis_x) {
+    amplitude * cos(PI * (x_val - axis_x) / (wavelength + EPSILON)) *
+    exp(-sq((x_val - axis_x) * 2.0 / wavelength))
+}
+
+// Sinclinorio (pliegue negativo)
+fn "syncline"(x_val, z_val, amplitude, wavelength, axis_x) {
+    -anticline(x_val, z_val, amplitude, wavelength, axis_x)
+}
+
+// ============================================================
+// VOLCANES Y TECTÓNICA
+// ============================================================
+
+// Perfil de volcán (cono compuesto)
+fn "volcano_profile"(r_base, h_max, r_crater) {
+    h_max * (1.0 - sat(sqrt(x*x + z*z) / r_base)) - 
+    h_max * 0.3 * (1.0 - sat(sqrt(x*x + z*z) / r_crater))
+}
+
+// Caldera (depresión cimera)
+fn "caldera_depth"(r_caldera, h_caldera) {
+    h_caldera * sat(1.0 - sqrt(x*x + z*z) / (r_caldera + EPSILON))
+}
+
+// ============================================================
+// SDFs GEOLÓGICOS
+// ============================================================
+
+// Terreno montañoso (isosuperficie del campo de altura)
+def "mountain_terrain"(terrain_scale, max_height) {
+    sdf: custom(y - terrain_height(x, z, terrain_scale, max_height));
+}
+
+// Crestas montañosas (ridged)
+def "ridged_terrain"(terrain_scale, max_height) {
+    sdf: custom(y - max_height * ridged_fbm(x, z, terrain_scale));
+}
+
+// Volcán compuesto
+def "composite_volcano"(r_base, h_max, r_crater) {
+    sdf: custom(y - volcano_profile(r_base, h_max, r_crater) + caldera_depth(r_crater, h_max * 0.2));
+}
+
+// Cueva kárstica (substracción de volumen)
+def "karst_cave"(cave_scale, iso_threshold) {
+    sdf: custom(fbm3d_6(x * cave_scale, y * cave_scale, z * cave_scale) - iso_threshold);
+}
+
+// Estratos geológicos horizontales
+def "geological_strata"(strata_thickness, wave_amplitude, wave_frequency) {
+    sdf: custom(abs(frac((y + wave_amplitude * sin(wave_frequency * x) * sin(wave_frequency * z)) / strata_thickness) - 0.5) - 0.1);
+}

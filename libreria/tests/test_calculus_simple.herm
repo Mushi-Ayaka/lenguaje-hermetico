@@ -1,0 +1,23 @@
+// Prueba simple de std_math_calculus.hm
+
+scene {
+    background: [0, 0, 0];
+}
+
+import "std_math_calculus.hm"
+
+material "default" {}
+
+// Test básico de derivadas
+let deriv_sin = dsin(0);  // cos(0) = 1
+let deriv_exp = dexp(0);  // exp(0) = 1
+
+// Test básico de EDO
+let crecimiento = ode_exp_growth(100, 0.1, 2);
+
+// Crear nodo simple
+node "test_sphere" {
+    position: [0, 0, 0];
+    sdf: sphere(0.3 + deriv_sin * 0.1);
+    material: "default";
+}

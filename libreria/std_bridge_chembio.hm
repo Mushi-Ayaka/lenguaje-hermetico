@@ -1,0 +1,435 @@
+// ============================================================
+// LIBRERÍA: std_bridge_chembio.hm
+// CAPA:     Intermediario Química-Biología (5.4 - Biología Química)
+// VERSIÓN:  1.0
+// FUENTE:   "Chemical Biology" by Schreiber, Kapoor & Wess
+// DEPS:     std_math_core.hm, std_math_algebra.hm, std_chem_organic.hm
+// DEPS:     std_bridge_biochem.hm, std_bridge_molbio.hm
+// FECHA:    6 de junio de 2026
+// ============================================================
+
+// BIOLOGÍA QUÍMICA: Aplicación de herramientas químicas a problemas biológicos,
+// sondas moleculares, moduladores de proteínas, química combinatoria
+
+// ============================================================
+// CONSTANTES FUNDAMENTALES
+// ============================================================
+
+let BOLTZMANN_CHEMBIO = 1.380649e-23;          // k_B (J/K)
+let AVOGADRO_CHEMBIO = 6.02214076e23;          // N_A (mol⁻¹)
+let GAS_CONSTANT_CHEMBIO = 8.314462618;        // R (J/(mol·K))
+
+// ============================================================
+// INTERFAZ PÚBLICA - SONDAS MOLECULARES (fn)
+// ============================================================
+
+// --- Eficiencia de Sonda Fluorescente ---
+fn "fluorescent_probe_efficiency"(quantum_yield, extinction_coefficient, brightness) {
+    // Brillo = Φ·ε
+    quantum_yield * extinction_coefficient * brightness
+}
+
+// --- Ratio de Señal/Fondo ---
+fn "signal_to_background_ratio"(fluorescence_bound, fluorescence_free, binding_constant) {
+    (fluorescence_bound - fluorescence_free) / (fluorescence_free + 1e-6) * binding_constant
+}
+
+// --- Fotoblanqueo (Fotostabilidad) ---
+fn "photobleaching_rate"(excitation_intensity, photosensitizer_concentration, oxygen_level) {
+    excitation_intensity * photosensitizer_concentration * oxygen_level * 1e-3
+}
+
+// --- Desplazamiento Espectral (Stokes Shift) ---
+fn "stokes_shift"(absorption_wavelength, emission_wavelength) {
+    emission_wavelength - absorption_wavelength
+}
+
+// --- Transferencia de Energía (FRET) ---
+fn "fret_efficiency"(donor_emission, acceptor_absorption, distance, forster_radius) {
+    // E = R₀⁶/(R₀⁶ + r⁶)
+    pow(forster_radius, 6.0) / (pow(forster_radius, 6.0) + pow(distance, 6.0) + 1e-6)
+}
+
+// ============================================================
+// INTERFAZ PÚBLICA - INHIBIDORES Y MODULADORES (fn)
+// ============================================================
+
+// --- Inhibición Competitiva ---
+fn "competitive_inhibition_ic50"(ki, substrate_concentration, km) {
+    // IC50 = Ki·(1 + [S]/Km)
+    ki * (1.0 + substrate_concentration / (km + 1e-6))
+}
+
+// --- Inhibición No Competitiva ---
+fn "noncompetitive_inhibition_ic50"(ki) {
+    // IC50 = Ki
+    ki
+}
+
+// --- Índice de Selectividad ---
+fn "selectivity_index"(ic50_target, ic50_offtarget) {
+    ic50_offtarget / (ic50_target + 1e-6)
+}
+
+// --- Ventana Terapéutica ---
+fn "therapeutic_window"(toxic_dose, effective_dose) {
+    toxic_dose / (effective_dose + 1e-6)
+}
+
+// --- Factor de Ligando (Ligand Efficiency) ---
+fn "ligand_efficiency"(binding_energy, heavy_atom_count) {
+    // LE = ΔG/(N_heavy·RT) = -log(IC50)/(N_heavy·RT)
+    -log(ic50_target + 1e-6) / (heavy_atom_count * GAS_CONSTANT_CHEMBIO * 298.0 / 1000.0)
+}
+
+// --- Lipophilic Ligand Efficiency ---
+fn "lipophilic_ligand_efficiency"(pic50, logP) {
+    // LLE = pIC50 - logP
+    pic50 - logP
+}
+
+// ============================================================
+// INTERFAZ PÚBLICA - QUÍMICA COMBINATORIA (fn)
+// ============================================================
+
+// --- Tamaño de Librería Combinatoria ---
+fn "combinatorial_library_size"(building_blocks_per_position, number_of_positions) {
+    pow(building_blocks_per_position, number_of_positions)
+}
+
+// --- Diversidad Molecular ---
+fn "molecular_diversity"(fingerprint_vectors, similarity_threshold) {
+    // Diversidad molecular (versión algebraica simplificada)
+    // Para 2 compuestos
+    let similarity = tanimoto_similarity(fingerprint_vectors[0], fingerprint_vectors[1]);
+    (1 - step(similarity_threshold, similarity)) * 0.5 + 0.5
+}
+
+// --- Cobertura del Espacio Químico ---
+fn "chemical_space_coverage"(library_compounds, reference_space, radius) {
+    // Cobertura del espacio químico (versión algebraica simplificada)
+    // Para 1 compuesto en librería, 2 puntos en espacio de referencia
+    let dist1 = sqrt(pow(reference_space[0][0] - library_compounds[0][0], 2) + 
+                     pow(reference_space[0][1] - library_compounds[0][1], 2));
+    let dist2 = sqrt(pow(reference_space[1][0] - library_compounds[0][0], 2) + 
+                     pow(reference_space[1][1] - library_compounds[0][1], 2));
+    
+    let covered1 = 1 - step(radius, dist1);
+    let covered2 = 1 - step(radius, dist2);
+    
+    (covered1 + covered2) * 0.5
+}
+
+// --- Similitud de Tanimoto ---
+fn "tanimoto_similarity"(fingerprint1, fingerprint2) {
+    // Similitud de Tanimoto (versión algebraica para 2 bits)
+    let intersection = step(0.5, fingerprint1[0]) * step(0.5, fingerprint2[0]) +
+                      step(0.5, fingerprint1[1]) * step(0.5, fingerprint2[1]);
+    let union = step(0.5, fingerprint1[0]) + step(0.5, fingerprint2[0]) +
+                step(0.5, fingerprint1[1]) + step(0.5, fingerprint2[1]) - intersection;
+    
+    intersection / (union + 1e-6)
+}
+
+// ============================================================
+// INTERFAZ PÚBLICA - ACTIVIDAD BIOLÓGICA (fn)
+// ============================================================
+
+// --- Relación Estructura-Actividad (QSAR) ---
+fn "qsar_prediction"(descriptors, coefficients, intercept) {
+    // QSAR (versión algebraica para 2 descriptores)
+    intercept + coefficients[0] * descriptors[0] + coefficients[1] * descriptors[1]
+}
+
+// --- Regla de los 5 de Lipinski ---
+fn "lipinski_rule_of_five"(molecular_weight, logP, h_bond_donors, h_bond_acceptors) {
+    // Reglas de Lipinski (versión algebraica)
+    step(500, molecular_weight) + step(5, logP) + step(5, h_bond_donors) + step(10, h_bond_acceptors)
+}
+
+// --- Fracción Sp3 (Carbonos saturados) ---
+fn "sp3_fraction"(sp3_carbons, total_carbons) {
+    sp3_carbons / (total_carbons + 1e-6)
+}
+
+// --- Complejidad Molecular ---
+fn "molecular_complexity"(ring_count, stereocenters, bond_count, heavy_atoms) {
+    // Score de complejidad
+    ring_count * 2.0 + stereocenters * 3.0 + bond_count / heavy_atoms * 0.5
+}
+
+// --- Puntaje de Fármaco (Drug-likeness) ---
+fn "druglikeness_score"(mw, logP, hbd, hba, rotatable_bonds, aromatic_rings) {
+    // Score de fármaco (versión algebraica)
+    let score = 1.0;
+    let penalty_mw = step(500, mw) * 0.2;
+    let penalty_logP_high = step(5, logP) * 0.15;
+    let penalty_logP_low = step(-1, -logP) * 0.15;
+    let penalty_hbd = step(5, hbd) * 0.1;
+    let penalty_hba = step(10, hba) * 0.1;
+    let penalty_rot = step(10, rotatable_bonds) * 0.1;
+    let penalty_aromatic = step(4, aromatic_rings) * 0.1;
+    
+    max(0.0, score - penalty_mw - penalty_logP_high - penalty_logP_low - 
+               penalty_hbd - penalty_hba - penalty_rot - penalty_aromatic)
+}
+
+// ============================================================
+// INTERFAZ PÚBLICA - ETIQUETADO Y CONJUGACIÓN (fn)
+// ============================================================
+
+// --- Eficiencia de Conjugación ---
+fn "conjugation_efficiency"(reactant_concentration, product_concentration, time) {
+    product_concentration / (reactant_concentration + 1e-6)
+}
+
+// --- Relación Flúor-Proteína (F/P Ratio) ---
+fn "fluorophore_protein_ratio"(fluorophore_concentration, protein_concentration) {
+    fluorophore_concentration / (protein_concentration + 1e-6)
+}
+
+// --- Grado de Sustitución ---
+fn "degree_of_substitution"(modified_sites, total_sites) {
+    modified_sites / (total_sites + 1e-6)
+}
+
+// --- Efecto de Etiquetado en Actividad ---
+fn "labeling_activity_retention"(unlabeled_activity, labeled_activity) {
+    labeled_activity / (unlabeled_activity + 1e-6)
+}
+
+// ============================================================
+// INTERFAZ PÚBLICA - SDFs DE BIOLOGÍA QUÍMICA (def)
+// ============================================================
+
+// --- Sonda Fluorescente ---
+def "fluorescent_probe_visualization"(probe_size, emission_wavelength, intensity_threshold) {
+    // Núcleo de la sonda
+    let probe_core = sphere([0, 0, 0], probe_size);
+    
+    // Anillo aromático fluoróforo (6 átomos fijos)
+    let atom1 = sphere([probe_size * 1.2 * cos(0.0), 0, probe_size * 1.2 * sin(0.0)], probe_size * 0.3);
+    let atom2 = sphere([probe_size * 1.2 * cos(1.0472), 0, probe_size * 1.2 * sin(1.0472)], probe_size * 0.3);
+    let atom3 = sphere([probe_size * 1.2 * cos(2.0944), 0, probe_size * 1.2 * sin(2.0944)], probe_size * 0.3);
+    let atom4 = sphere([probe_size * 1.2 * cos(3.1416), 0, probe_size * 1.2 * sin(3.1416)], probe_size * 0.3);
+    let atom5 = sphere([probe_size * 1.2 * cos(4.1888), 0, probe_size * 1.2 * sin(4.1888)], probe_size * 0.3);
+    let atom6 = sphere([probe_size * 1.2 * cos(5.2360), 0, probe_size * 1.2 * sin(5.2360)], probe_size * 0.3);
+    
+    // Nube de electrones π (emisión)
+    let emission_cloud = sphere([0, 0, 0], probe_size * 2.0) * 
+                        (sin(w * emission_wavelength * 0.01) * 0.5 + 0.5);
+    
+    // Grupo funcional de unión
+    let binding_group = sphere([probe_size * 2.5, 0, 0], probe_size * 0.5);
+    
+    sdf: union(union(union(union(union(union(union(probe_core, atom1), atom2), atom3), atom4), atom5), atom6), 
+               union(emission_cloud, binding_group));
+}
+
+// --- FRET Par (Donador-Aceptor) ---
+def "fret_pair_visualization"(donor_position, acceptor_position, distance, forster_radius, intensity_threshold) {
+    // Donador
+    let donor = sphere(donor_position, 0.05);
+    
+    // Aceptor
+    let acceptor = sphere(acceptor_position, 0.05);
+    
+    // Eficiencia de FRET
+    let efficiency = fret_efficiency(0.5, 0.5, distance, forster_radius);
+    
+    // Transferencia de energía (línea)
+    let energy_transfer = cylinder(donor_position, acceptor_position, 0.01 * efficiency);
+    
+    // Emisión del donador (atenuada por FRET)
+    let donor_emission = sphere(donor_position, 0.08 * (1.0 - efficiency));
+    
+    // Emisión del aceptor (sensibilizada por FRET)
+    let acceptor_emission = sphere(acceptor_position, 0.08 * efficiency);
+    
+    sdf: union(union(union(donor, acceptor), energy_transfer), 
+               union(donor_emission, acceptor_emission));
+}
+
+// --- Inhibidor de Proteína ---
+def "protein_inhibitor_visualization"(binding_site, inhibitor_structure, affinity, intensity_threshold) {
+    // Sitio de unión (bolsillo)
+    let binding_pocket = custom(-x*x - y*y - z*z + 0.1 * (sin(x*10) + sin(z*10)) * 0.02 + 0.08);
+    
+    // Inhibidor en sitio
+    let inhibitor = [];
+    for i in range(0, len(inhibitor_structure)) {
+        let atom = sphere(inhibitor_structure[i], 0.03);
+        inhibitor = append(inhibitor, atom);
+    }
+    
+    // Interacciones (puentes de hidrógeno)
+    let interactions = [];
+    for i in range(0, 3) {
+        let h_bond = cylinder(inhibitor_structure[i], 
+                             [inhibitor_structure[i][0] + 0.1, 
+                              inhibitor_structure[i][1] + 0.1, 
+                              inhibitor_structure[i][2]], 
+                             0.005);
+        interactions = append(interactions, h_bond);
+    }
+    
+    // Fuerza de unión visualizada
+    let binding_strength = sphere([0, 0, 0], 0.15 * affinity);
+    
+    sdf: union(union(binding_pocket, union_array(inhibitor)), 
+               union(union_array(interactions), binding_strength));
+}
+
+// --- Librería Combinatoria (Representación) ---
+def "combinatorial_library_visualization"(diversity_points, scaffold_position, building_blocks, intensity_threshold) {
+    // Escala de scaffold central
+    let scaffold = sphere(scaffold_position, 0.05);
+    
+    // Puntos de diversidad
+    let diversity_sites = [];
+    for i in range(0, diversity_points) {
+        let angle = i * 2.0 * pi / diversity_points;
+        let pos = [scaffold_position[0] + 0.15 * cos(angle),
+                  scaffold_position[1],
+                  scaffold_position[2] + 0.15 * sin(angle)];
+        let site = sphere(pos, 0.03);
+        diversity_sites = append(diversity_sites, site);
+        
+        // Bloques de construcción en cada punto
+        for j in range(0, building_blocks) {
+            let sub_angle = j * 2.0 * pi / building_blocks + angle;
+            let block_pos = [pos[0] + 0.08 * cos(sub_angle),
+                           pos[1] + j * 0.02,
+                           pos[2] + 0.08 * sin(sub_angle)];
+            let block = sphere(block_pos, 0.01);
+            diversity_sites = append(diversity_sites, block);
+        }
+    }
+    
+    // Espacio químico cubierto
+    let chemical_space = sphere(scaffold_position, 0.25);
+    
+    sdf: union(union(scaffold, union_array(diversity_sites)), chemical_space);
+}
+
+// --- Etiquetado de Proteína ---
+def "protein_labeling_visualization"(protein_surface, labeling_sites, fluorophores, intensity_threshold) {
+    // Superficie de proteína
+    let protein = sphere([0, 0, 0], protein_surface);
+    
+    // Sitios de etiquetado
+    let labeled_sites = [];
+    for i in range(0, len(labeling_sites)) {
+        let site = sphere(labeling_sites[i], 0.02);
+        labeled_sites = append(labeled_sites, site);
+    }
+    
+    // Fluoróforos conjugados
+    let labels = [];
+    for i in range(0, len(fluorophores)) {
+        let label = sphere(fluorophores[i], 0.025);
+        // Emisión
+        let emission = sphere(fluorophores[i], 0.04 * (sin(w * 2.0) * 0.5 + 0.5));
+        labels = append(labels, label);
+        labels = append(labels, emission);
+    }
+    
+    // Enlaces de conjugación
+    let linkers = [];
+    for i in range(0, min(len(labeling_sites), len(fluorophores))) {
+        let linker = cylinder(labeling_sites[i], fluorophores[i], 0.005);
+        linkers = append(linkers, linker);
+    }
+    
+    sdf: union(union(protein, union_array(labeled_sites)), 
+               union(union_array(labels), union_array(linkers)));
+}
+
+// --- Modulador Alostérico ---
+def "allosteric_modulator_visualization"(orthosteric_site, allosteric_site, modulator_structure, intensity_threshold) {
+    // Sitio ortostérico (activo)
+    let ortho_site = sphere(orthosteric_site, 0.06);
+    
+    // Sitio alostérico (regulador)
+    let allo_site = sphere(allosteric_site, 0.05);
+    
+    // Modulador alostérico
+    let modulator = [];
+    for i in range(0, len(modulator_structure)) {
+        let atom = sphere(modulator_structure[i], 0.025);
+        modulator = append(modulator, atom);
+    }
+    
+    // Comunicación entre sitios
+    let communication_path = cylinder(orthosteric_site, allosteric_site, 0.01);
+    
+    // Cambio conformacional
+    let conformational_change = custom(sin(x*3.0) * sin(z*3.0) * 0.05);
+    
+    sdf: union(union(union(ortho_site, allo_site), union_array(modulator)), 
+               union(communication_path, conformational_change));
+}
+
+// ============================================================
+// EJEMPLOS DE USO CON custom(expr)
+// ============================================================
+
+/*
+// EJEMPLO 1: Sonda fluorescente
+node "fluorescent_probe_example" {
+    position: [-4, 0, 0];
+    sdf: fluorescent_probe_visualization(0.05, 520, 0.15);
+    material: "chemical_biology_probe";
+}
+
+// EJEMPLO 2: Par FRET
+node "fret_pair_example" {
+    position: [0, 0, 0];
+    sdf: fret_pair_visualization([0, 0, 0], [0.1, 0, 0], 0.1, 0.05, 0.12);
+    material: "fret_system";
+}
+
+// EJEMPLO 3: Inhibidor de proteína
+node "protein_inhibitor_example" {
+    position: [4, 0, 0];
+    sdf: protein_inhibitor_visualization([0, 0, 0], [[0.05,0,0], [0,0.05,0], [-0.05,0,0]], 0.8, 0.1);
+    material: "small_molecule_inhibitor";
+}
+
+// EJEMPLO 4: Librería combinatoria
+node "combinatorial_library_example" {
+    position: [-2, 3, 0];
+    sdf: combinatorial_library_visualization(3, [0, 0, 0], 5, 0.12);
+    material: "diversity_oriented_synthesis";
+}
+
+// EJEMPLO 5: Etiquetado de proteína
+node "protein_labeling_example" {
+    position: [2, 3, 0];
+    sdf: protein_labeling_visualization(0.15, [[0.1,0.1,0], [-0.1,0.1,0]], [[0.15,0.15,0], [-0.15,0.15,0]], 0.1);
+    material: "bioconjugation";
+}
+
+// EJEMPLO 6: Modulador alostérico
+node "allosteric_modulator_example" {
+    position: [0, -3, 0];
+    sdf: allosteric_modulator_visualization([0.1, 0, 0], [-0.1, 0, 0], [[-0.08,0.02,0], [-0.12,0.02,0]], 0.12);
+    material: "allosteric_regulation";
+}
+*/
+
+// ============================================================
+// NOTAS PARA USUARIOS
+// ============================================================
+
+// 1. La biología química aplica herramientas químicas a sistemas biológicos
+// 2. Las sondas moleculares permiten visualizar procesos celulares
+// 3. Los inhibidores y moduladores controlan actividad de proteínas
+// 4. La química combinatoria genera diversidad molecular sistemáticamente
+// 5. El QSAR predice actividad basándose en estructura molecular
+// 6. Las reglas de fármaco guían el diseño de moléculas bioactivas
+
+// ============================================================
+// "La biología química es el puente donde las moléculas diseñadas
+//  encuentran su objetivo en la complejidad de los sistemas vivos."
+// ============================================================

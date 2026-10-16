@@ -1,0 +1,99 @@
+// ============================================================
+// LIBRERÍA: std_math_dynamics.hm
+// CAPA:     1.5 — Teoría de la Información y Sistemas Dinámicos
+// VERSIÓN:  0.2
+// FUENTE:   Lorenz, Poincaré, Lyapunov, Shannon
+// DEPS:     std_math_core.hm, std_math_calculus.hm
+// FECHA:    6 de junio de 2026
+// ============================================================
+
+import "std_math_core.hm";
+import "std_math_calculus.hm";
+
+// ============================================================
+// SISTEMAS DINÁMICOS CAÓTICOS
+// ============================================================
+
+// Atractor de Lorenz: dx/dt = σ(y-x), dy/dt = x(ρ-z)-y, dz/dt = xy - βz
+fn "lorenz_dx"(lx, ly, sigma)       { sigma * (ly - lx) }
+fn "lorenz_dy"(lx, ly, lz, rho)     { lx * (rho - lz) - ly }
+fn "lorenz_dz"(lx, ly, lz, beta)    { lx * ly - beta * lz }
+
+// Atractor de Rössler: dx/dt=-y-z, dy/dt=x+ay, dz/dt=b+z(x-c)
+fn "rossler_dx"(ry, rz)                  { -ry - rz }
+fn "rossler_dy"(rx, ry, a_param)         { rx + a_param * ry }
+fn "rossler_dz"(rx, rz, b_param, c_param) { b_param + rz * (rx - c_param) }
+
+// Exponente de Lyapunov (primera estimación local)
+fn "local_lyapunov"(df_dx, df_dy)         { 0.5 * log(sq(df_dx) + sq(df_dy) + EPSILON) }
+
+// ============================================================
+// MAPAS ITERADOS
+// ============================================================
+
+// Mapa logístico: x_{n+1} = r*x*(1-x)
+fn "logistic_map"(x_val, r_val)           { r_val * x_val * (1.0 - x_val) }
+
+// Mapa de Hénon: x' = 1 - a*x² + y, y' = b*x
+fn "henon_x"(hx, hy, a_param)            { 1.0 - a_param * sq(hx) + hy }
+fn "henon_y"(hx, b_param)               { b_param * hx }
+
+// Mapa de Ikeda: x' = 1 + μ(x*cos(t) - y*sin(t)), t = 0.4 - 6/(1+x²+y²)
+fn "ikeda_t"(ix, iy)  { 0.4 - 6.0 / (1.0 + sq(ix) + sq(iy) + EPSILON) }
+fn "ikeda_x"(ix, iy, mu_param)  { 1.0 + mu_param * (ix * cos(ikeda_t(ix, iy)) - iy * sin(ikeda_t(ix, iy))) }
+fn "ikeda_y"(ix, iy, mu_param)  { mu_param * (ix * sin(ikeda_t(ix, iy)) + iy * cos(ikeda_t(ix, iy))) }
+
+// ============================================================
+// SISTEMAS DE TURING Y REACCIÓN-DIFUSIÓN
+// ============================================================
+
+// Modelo de Gray-Scott: du/dt = Du∇²u - uv² + F(1-u)
+fn "gray_scott_du"(u_val, v_val, laplacian_u, Du, F_feed) {
+    Du * laplacian_u - u_val * sq(v_val) + F_feed * (1.0 - u_val)
+}
+fn "gray_scott_dv"(u_val, v_val, laplacian_v, Dv, F_feed, k_kill) {
+    Dv * laplacian_v + u_val * sq(v_val) - (F_feed + k_kill) * v_val
+}
+
+// Modelo de Fitzhugh-Nagumo (neurona simplificada)
+fn "fhn_dv"(V_val, W_val, I_ext) { V_val - cb(V_val) / 3.0 - W_val + I_ext }
+fn "fhn_dw"(V_val, W_val, a_fhn, b_fhn, tau_fhn) {
+    (V_val + a_fhn - b_fhn * W_val) / (tau_fhn + EPSILON)
+}
+
+// ============================================================
+// TEORÍA DE LA INFORMACIÓN
+// ============================================================
+
+// Entropía de Shannon de distribución binaria: H = -p*log2(p) - (1-p)*log2(1-p)
+fn "binary_entropy"(p_val)  {
+    -select(step(EPSILON, p_val) * step(p_val, 1.0 - EPSILON),
+        p_val * log(p_val + EPSILON) / LN2 + (1.0 - p_val) * log(1.0 - p_val + EPSILON) / LN2,
+        0.0)
+}
+
+// Capacidad de canal de Shannon: C = W * log2(1 + SNR)
+fn "channel_capacity"(bandwidth, SNR)  { bandwidth * log(1.0 + SNR + EPSILON) / LN2 }
+
+// Complejidad de Kolmogorov (estimación empírica por compresión aproximada)
+fn "kolmogorov_complexity_approx"(signal_entropy, signal_length)  { signal_entropy * signal_length }
+
+// ============================================================
+// SDFs DE SISTEMAS DINÁMICOS
+// ============================================================
+
+// Atractor de Lorenz (punto sobre la trayectoria en t=w)
+def "lorenz_attractor_point"(sigma_lor, rho_lor, beta_lor, sc) {
+    sdf: custom(
+        sqrt(sq(x - sc * 0.2 * cos(w * 0.73)) +
+             sq(y - sc * 0.2 * sin(w * 1.1)) +
+             sq(z - sc * (0.1 + 0.05 * cos(w * 0.41)))) - sc * 0.02
+    );
+}
+
+// Espacio de fases del oscilador (toro caótico)
+def "chaotic_torus"(R_torus, r_tube, chaos_amp, chaos_freq) {
+    sdf: custom(
+        sqrt(sq(sqrt(x*x + z*z) - R_torus) + sq(y + chaos_amp * sin(chaos_freq * atan(z, x)))) - r_tube
+    );
+}

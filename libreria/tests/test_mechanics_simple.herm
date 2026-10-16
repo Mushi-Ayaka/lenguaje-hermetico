@@ -1,0 +1,178 @@
+// ============================================================
+// ARCHIVO DE PRUEBA: test_mechanics_simple.herm
+// OBJETIVO: Validar std_physics_mechanics.hm con ejemplos simples
+// FECHA: 6 de junio de 2026
+// ============================================================
+
+// Escena básica
+scene {
+    background: [0.05, 0.05, 0.1];
+}
+
+// Material simple
+material "default" {}
+
+// ============================================================
+// FUNCIONES DE MECÁNICA SIMPLES (sin 'let' en fn)
+// ============================================================
+
+// 1. Movimiento Rectilíneo Uniformemente Acelerado (expandido)
+fn "test_mrua_pos"(x0, v0, a, t) {
+    x0 + v0 * t + 0.5 * a * t * t
+}
+
+// 2. Proyectil (expandido sin 'let')
+fn "test_projectile_y"(y0, v0, angle_deg, g, t) {
+    y0 + v0 * sin(angle_deg * (pi / 180.0)) * t - 0.5 * g * t * t
+}
+
+// 3. Movimiento Armónico Simple
+fn "test_shm"(A, omega, phi, t) {
+    A * sin(omega * t + phi)
+}
+
+// 4. Fuerza de gravedad
+fn "test_gravity_force"(m, g) {
+    m * g
+}
+
+// 5. Energía cinética
+fn "test_kinetic_energy"(m, v) {
+    0.5 * m * v * v
+}
+
+// ============================================================
+// PRUEBA 1: TRAYECTORIAS CON CUSTOM(expr)
+// ============================================================
+
+// Trayectoria de proyectil
+fn "test_projectile_traj"(y0, v0, angle, g, t) {
+    y - (y0 + v0 * sin(angle * (pi / 180.0)) * t - 0.5 * g * t * t)
+}
+
+node "projectile_test" {
+    position: [-3, 2, 0];
+    sdf: custom(test_projectile_traj(0, 8.0, 45.0, 9.8, w * 0.5));
+    material: "default";
+}
+
+// Movimiento armónico simple
+fn "test_shm_surface"(A, omega, phi, t) {
+    x - A * sin(omega * t + phi)
+}
+
+node "shm_test" {
+    position: [0, 2, 0];
+    sdf: custom(test_shm_surface(0.3, 2.0, 0.0, w));
+    material: "default";
+}
+
+// Movimiento circular
+fn "test_circular_surface"(R, omega, phi, t) {
+    sqrt((x - R * cos(omega * t + phi))*(x - R * cos(omega * t + phi)) + 
+         (y - R * sin(omega * t + phi))*(y - R * sin(omega * t + phi))) - 0.1
+}
+
+node "circular_test" {
+    position: [3, 2, 0];
+    sdf: custom(test_circular_surface(0.4, 1.5, 0.0, w));
+    material: "default";
+}
+
+// ============================================================
+// PRUEBA 2: SISTEMAS MECÁNICOS
+// ============================================================
+
+// Péndulo simple aproximado (completamente expandido)
+fn "test_pendulum_simple"(L, theta0_deg, g, t) {
+    sqrt(
+        (x - L * sin((theta0_deg * (pi / 180.0)) * cos(sqrt(g / L) * t))) * 
+        (x - L * sin((theta0_deg * (pi / 180.0)) * cos(sqrt(g / L) * t))) + 
+        (y + L * cos((theta0_deg * (pi / 180.0)) * cos(sqrt(g / L) * t))) * 
+        (y + L * cos((theta0_deg * (pi / 180.0)) * cos(sqrt(g / L) * t)))
+    ) - 0.08
+}
+
+node "pendulum_test" {
+    position: [-3, 0, 0];
+    sdf: custom(test_pendulum_simple(0.6, 30.0, 9.8, w));
+    material: "default";
+}
+
+// Sistema masa-resorte (sin amortiguamiento)
+fn "test_spring_system"(m, k, A, phi, t) {
+    let omega = sqrt(k / m);
+    x - A * sin(omega * t + phi)
+}
+
+node "spring_test" {
+    position: [0, 0, 0];
+    sdf: custom(test_spring_system(1.0, 10.0, 0.25, 0.0, w));
+    material: "default";
+}
+
+// ============================================================
+// PRUEBA 3: CAMPOS DE FUERZA
+// ============================================================
+
+// Campo gravitatorio radial (expandido)
+fn "test_gravity_field"(M, G) {
+    -G * M / (sqrt(x*x + y*y + z*z) * sqrt(x*x + y*y + z*z) + 0.1) - 0.5
+}
+
+node "gravity_field_test" {
+    position: [3, 0, 0];
+    sdf: custom(test_gravity_field(5.0, 1.0));
+    material: "default";
+}
+
+// Campo de resorte (fuerza armónica)
+fn "test_harmonic_field"(k) {
+    let r = sqrt(x*x + y*y + z*z);
+    -k * r - 0.3
+}
+
+node "harmonic_field_test" {
+    position: [-3, -2, 0];
+    sdf: custom(test_harmonic_field(2.0));
+    material: "default";
+}
+
+// ============================================================
+// PRUEBA 4: ENERGÍAS Y MOMENTOS
+// ============================================================
+
+// Superficie de energía cinética constante
+fn "test_kinetic_energy_surface"(m, K0) {
+    0.5 * m * (x*x + y*y) - K0
+}
+
+node "kinetic_energy_test" {
+    position: [0, -2, 0];
+    sdf: custom(test_kinetic_energy_surface(1.0, 0.2));
+    material: "default";
+}
+
+// Superficie de energía potencial gravitatoria
+fn "test_potential_energy_surface"(m, g, U0) {
+    m * g * y - U0
+}
+
+node "potential_energy_test" {
+    position: [3, -2, 0];
+    sdf: custom(test_potential_energy_surface(1.0, 9.8, 0.5));
+    material: "default";
+}
+
+// ============================================================
+// PRUEBA 5: COMBINACIONES CON PRIMITIVAS NATIVAS
+// ============================================================
+
+node "combined_mechanics" {
+    position: [0, -4, 0];
+    sdf: union(
+        sphere(0.2),
+        custom(y - 0.1 * sin(x * 3.0 + w) - 0.5)
+    );
+    material: "default";
+}

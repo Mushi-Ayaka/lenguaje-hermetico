@@ -1,0 +1,430 @@
+// ============================================================
+// LIBRERÍA: std_physics_optics.hm
+// CAPA:     Física (2.3 - Óptica Geométrica)
+// VERSIÓN:  1.0
+// FUENTE:   Hecht "Optics", Born & Wolf "Principles of Optics"
+// FUENTE:   Leyes de Snell, ecuaciones de lentes, formación de imágenes
+// DEPS:     std_math_core.hm, std_math_algebra.hm, std_math_calculus.hm
+// DEPS:     std_phys_sdf.hm, std_physics_mechanics.hm
+// FECHA:    6 de junio de 2026
+// ============================================================
+
+// ÓPTICA GEOMÉTRICA: Estudio de la propagación de la luz como rayos
+// Usando custom(expr) para implementar superficies ópticas, leyes de reflexión/refracción,
+// ecuaciones de lentes y formación de imágenes
+
+// ============================================================
+// CONSTANTES ÓPTICAS FUNDAMENTALES
+// ============================================================
+
+let SPEED_OF_LIGHT_VACUUM = 299792458.0;  // m/s (escalado para simulaciones)
+let SPEED_OF_LIGHT = SPEED_OF_LIGHT_VACUUM / 1e8;  // Escalado para unidades visuales
+
+// Índices de refracción comunes (a λ = 589 nm, 20°C)
+let IOR_AIR = 1.000293;          // Aire (seco, 0°C, 1 atm)
+let IOR_WATER = 1.333;           // Agua (20°C)
+let IOR_GLASS_CROWN = 1.52;      // Vidrio crown común
+let IOR_GLASS_FLINT = 1.62;      // Vidrio flint
+let IOR_DIAMOND = 2.417;         // Diamante
+let IOR_PLEXIGLAS = 1.49;        // Acrílico/Plexiglás
+let IOR_POLYCARBONATE = 1.58;    // Policarbonato
+
+// Longitudes de onda visibles (nm, escaladas)
+let WAVELENGTH_RED = 700.0;      // Rojo
+let WAVELENGTH_GREEN = 550.0;    // Verde
+let WAVELENGTH_BLUE = 450.0;     // Azul
+
+// Constantes de dispersión (fórmula de Sellmeier/simplificada)
+let DISPERSION_COEFF_A = 1.0;    // Coeficiente A para dispersión
+let DISPERSION_COEFF_B = 0.003;  // Coeficiente B para dispersión
+
+// ============================================================
+// INTERFAZ PÚBLICA - LEYES FUNDAMENTALES (fn)
+// ============================================================
+
+// --- Ley de Snell (Refracción) ---
+// n₁·sin(θ₁) = n₂·sin(θ₂)
+// Params: n1, n2, theta1 (ángulo de incidencia en radianes)
+// Retorna: theta2 (ángulo de refracción) o π/2 para reflexión total
+fn "snell_law"(n1, n2, theta1) {
+    // Verificar reflexión total directamente
+    step(1.0, (n1 / n2) * sin(theta1)) * pi * 0.5 +  
+    (1 - step(1.0, (n1 / n2) * sin(theta1))) * asin(min(max((n1 / n2) * sin(theta1), -1.0), 1.0))
+}
+
+// --- Ángulo Crítico (Reflexión Total Interna) ---
+// θ_c = arcsin(n₂/n₁) donde n₁ > n₂
+fn "critical_angle"(n1, n2) {
+    asin(n2 / n1)
+}
+
+// --- Ley de Reflexión (Ángulo de incidencia = ángulo de reflexión) ---
+fn "reflection_angle"(theta_i) {
+    theta_i  // θ_r = θ_i
+}
+
+// --- Distancia Focal de Lente Delgada (Ecuación del fabricante de lentes) ---
+// 1/f = (n-1)·(1/R₁ - 1/R₂) para lente delgada en aire
+// Params: indice_refraccion, radio1, radio2 (positivo para convexo, negativo para cóncavo)
+fn "thin_lens_focal_length"(n, R1, R2) {
+    1.0 / ((n - 1.0) * (1.0/R1 - 1.0/R2))
+}
+
+// --- Ecuación de Lentes Delgadas ---
+// 1/f = 1/s + 1/s' donde s = distancia objeto, s' = distancia imagen
+fn "thin_lens_equation"(f, s) {
+    1.0 / (1.0/f - 1.0/s)  // Retorna s' (distancia imagen)
+}
+
+// --- Aumento Lateral (Magnificación) ---
+// M = -s'/s = h'/h
+fn "lateral_magnification"(s, s_prime) {
+    -s_prime / s
+}
+
+// --- Poder de Lente (Dioptrías) ---
+// P = 1/f (donde f en metros)
+fn "lens_power_diopters"(f_meters) {
+    1.0 / f_meters
+}
+
+// ============================================================
+// INTERFAZ PÚBLICA - SUPERFICIES ÓPTICAS (fn para custom)
+// ============================================================
+
+// --- Superficie Esférica (Sagitta) ---
+// Sag = R - √(R² - r²) para superficie esférica
+// Params: radio_curvatura, radio_apertura
+fn "spherical_surface_sagitta"(R, r) {
+    R - sqrt(R*R - r*r)
+}
+
+// --- Superficie Parabólica ---
+// Sag = r²/(2R) para parábola (sin aberración esférica para rayos paralelos)
+fn "parabolic_surface_sagitta"(R, r) {
+    r*r / (2.0 * R)
+}
+
+// --- Superficie Hiperbólica ---
+// Para lentes hiperbólicas (corrección de aberraciones)
+fn "hyperbolic_surface_sagitta"(R, k, r) {
+    R - sqrt(R*R - (1.0 + k) * r*r)
+}
+
+// --- Superficie Asférica (Término general) ---
+// Sag = (r²/R)/(1 + √(1 - (1+k)·(r²/R²))) + Σ αᵢ·r²ⁱ
+fn "aspheric_surface_sagitta"(R, k, r, coeffs) {
+    // Términos asféricos (hasta 4to orden por simplicidad)
+    // Nota: coeffs es un placeholder para futura implementación
+    (r*r) / (R * (1.0 + sqrt(1.0 - (1.0 + k) * (r*r)/(R*R))))
+}
+
+// --- Superficie Cilíndrica (para lentes astigmáticas) ---
+fn "cylindrical_surface_sagitta"(R, x, z) {
+    // Solo curva en dirección x (ejemplo)
+    x*x / (2.0 * R)
+}
+
+// ============================================================
+// INTERFAZ PÚBLICA - SDFs DE SUPERFICIES ÓPTICAS (def)
+// ============================================================
+
+// --- Superficie Esférica Óptica ---
+// Params: radio_curvatura, altura_vertex
+def "optical_spherical_surface"(R, vertex_height) {
+    sdf: custom(y - (spherical_surface_sagitta(R, sqrt(x*x + z*z)) + vertex_height));
+}
+
+// --- Superficie Parabólica Óptica ---
+// Para espejos parabólicos (sin aberración esférica)
+def "optical_parabolic_surface"(R, vertex_height) {
+    sdf: custom(y - (parabolic_surface_sagitta(R, sqrt(x*x + z*z)) + vertex_height));
+}
+
+// --- Lente Biconvexa Esférica ---
+// Params: radio1, radio2, grosor_centro, indice_refraccion
+def "biconvex_spherical_lens"(R1, R2, center_thickness, n) {
+    let sag1 = spherical_surface_sagitta(R1, sqrt(x*x + z*z));
+    let sag2 = spherical_surface_sagitta(R2, sqrt(x*x + z*z));
+    
+    sdf: intersect(
+        custom(y - sag1),
+        custom(y + sag2 - center_thickness)
+    );
+}
+
+// --- Lente Plano-Convexa ---
+def "plano_convex_lens"(R, center_thickness, n) {
+    let sag = spherical_surface_sagitta(R, sqrt(x*x + z*z));
+    
+    sdf: intersect(
+        custom(y - sag),
+        custom(y - center_thickness)
+    );
+}
+
+// --- Espejo Cóncavo Esférico ---
+def "spherical_concave_mirror"(R, vertex_height, aperture_radius) {
+    let r = sqrt(x*x + z*z);
+    let sag = spherical_surface_sagitta(R, r);
+    
+    sdf: custom(y - sag - vertex_height);
+}
+
+// --- Espejo Parabólico ---
+def "parabolic_mirror"(focal_length, vertex_height, aperture_radius) {
+    let r = sqrt(x*x + z*z);
+    let sag = r*r / (4.0 * focal_length);  // Para espejo parabólico: f = R/2
+    
+    sdf: custom(y - sag - vertex_height);
+}
+
+// ============================================================
+// INTERFAZ PÚBLICA - SISTEMAS ÓPTICOS (def)
+// ============================================================
+
+// --- Sistema de Dos Lentes Delgadas ---
+// Params: focal1, focal2, separacion
+def "two_thin_lens_system"(f1, f2, separation) {
+    // Superficies simplificadas como planos curvos
+    let surface1 = spherical_surface_sagitta(f1 * 2.0, sqrt(x*x + z*z));
+    let surface2 = spherical_surface_sagitta(f2 * 2.0, sqrt((x - separation)*(x - separation) + z*z));
+    
+    sdf: union(
+        custom(y - surface1),
+        custom(y - surface2)
+    );
+}
+
+// --- Telescopio Refractor Simple (Objetivo + Ocular) ---
+def "simple_refractor_telescope"(f_objective, f_eyepiece, tube_length) {
+    let obj_surface = spherical_surface_sagitta(f_objective * 2.0, sqrt(x*x + z*z));
+    let eye_surface = spherical_surface_sagitta(f_eyepiece * 2.0, sqrt((x - tube_length)*(x - tube_length) + z*z));
+    
+    sdf: union(
+        custom(y - obj_surface),
+        custom(y - eye_surface)
+    );
+}
+
+// --- Microscopio Simple (Objetivo + Ocular) ---
+def "simple_microscope"(f_objective, f_eyepiece, tube_length) {
+    // Similar al telescopio pero con diferentes distancias focales
+    let obj_surface = spherical_surface_sagitta(f_objective * 0.5, sqrt(x*x + z*z));
+    let eye_surface = spherical_surface_sagitta(f_eyepiece * 2.0, sqrt((x - tube_length)*(x - tube_length) + z*z));
+    
+    sdf: union(
+        custom(y - obj_surface),
+        custom(y - eye_surface)
+    );
+}
+
+// --- Sistema de Lentes Acromáticas (Doblete) ---
+// Lente acromática: crown + flint para corregir aberración cromática
+def "achromatic_doublet"(R1, R2, R3, center_thickness, n_crown, n_flint) {
+    // Superficie 1: convexa (crown)
+    let sag1 = spherical_surface_sagitta(R1, sqrt(x*x + z*z));
+    
+    // Superficie 2: cóncava (interface crown-flint)
+    let sag2 = spherical_surface_sagitta(R2, sqrt(x*x + z*z));
+    
+    // Superficie 3: convexa (flint)
+    let sag3 = spherical_surface_sagitta(R3, sqrt(x*x + z*z));
+    
+    sdf: union(
+        intersect(
+            custom(y - sag1),
+            custom(y - sag2 - center_thickness * 0.5)
+        ),
+        intersect(
+            custom(y - sag2 - center_thickness * 0.5),
+            custom(y - sag3 - center_thickness)
+        )
+    );
+}
+
+// ============================================================
+// INTERFAZ PÚBLICA - ABERRACIONES ÓPTICAS (fn)
+// ============================================================
+
+// --- Aberración Esférica (Wavefront Error) ---
+// W = A·r⁴ (término de cuarto orden)
+// Params: coeficiente_aberración, radio
+fn "spherical_aberration_wavefront"(A, r) {
+    A * r*r*r*r
+}
+
+// --- Aberración de Coma ---
+// W = B·r³·cos(θ) (término de tercer orden)
+// Params: coeficiente_coma, radio, angulo_azimutal
+fn "coma_aberration_wavefront"(B, r, theta) {
+    B * r*r*r * cos(theta)
+}
+
+// --- Astigmatismo ---
+// W = C·r²·cos²(θ) (término de segundo orden)
+fn "astigmatism_wavefront"(C, r, theta) {
+    C * r*r * cos(theta) * cos(theta)
+}
+
+// --- Curvatura de Campo ---
+// W = D·r² (término de segundo orden)
+fn "field_curvature_wavefront"(D, r) {
+    D * r*r
+}
+
+// --- Distorsión ---
+// W = E·r³·cos(θ) o E·r³·cos³(θ) para distorsión de barril/cojín
+fn "distortion_wavefront"(E, r, theta, distortion_type) {
+    E * r*r*r * cos(theta * distortion_type)
+}
+
+// --- Aberración Cromática (Dispersión Longitudinal) ---
+// Δf = f·(n - 1)/V donde V = número de Abbe
+// Params: focal_length, indice_refraccion, numero_abbe, longitud_onda
+fn "chromatic_aberration_focal_shift"(f, n, V, wavelength) {
+    // Simplificación: cambio focal proporcional a 1/λ
+    f * (n - 1.0) / V * (550.0 / wavelength)
+}
+
+// ============================================================
+// INTERFAZ PÚBLICA - SDFs CON ABERRACIONES (def)
+// ============================================================
+
+// --- Lente con Aberración Esférica ---
+def "lens_with_spherical_aberration"(R, center_thickness, n, aberration_coeff) {
+    let r = sqrt(x*x + z*z);
+    let sag = spherical_surface_sagitta(R, r);
+    let aberration = spherical_aberration_wavefront(aberration_coeff, r);
+    
+    sdf: custom(y - (sag + aberration) - center_thickness * 0.5);
+}
+
+// --- Superficie con Astigmatismo ---
+def "surface_with_astigmatism"(R, vertex_height, astig_coeff) {
+    let r = sqrt(x*x + z*z);
+    let theta = atan2(z, x);
+    let sag = spherical_surface_sagitta(R, r);
+    let astig = astigmatism_wavefront(astig_coeff, r, theta);
+    
+    sdf: custom(y - (sag + astig) - vertex_height);
+}
+
+// --- Lente con Aberración Cromática (Visualización) ---
+def "lens_with_chromatic_aberration"(R, center_thickness, n_red, n_green, n_blue) {
+    let r = sqrt(x*x + z*z);
+    let sag_base = spherical_surface_sagitta(R, r);
+    
+    // Diferentes sag para diferentes longitudes de onda
+    let sag_red = sag_base * (n_red - 1.0) / (n_green - 1.0);
+    let sag_blue = sag_base * (n_blue - 1.0) / (n_green - 1.0);
+    
+    // Promedio ponderado (simplificación)
+    sdf: custom(y - (sag_red * 0.3 + sag_base * 0.4 + sag_blue * 0.3) - center_thickness * 0.5);
+}
+
+// ============================================================
+// INTERFAZ PÚBLICA - FENÓMENOS DE INTERFERENCIA Y DIFRACCIÓN (fn)
+// ============================================================
+
+// --- Interferencia de Dos Fuentes (Young) ---
+// I = 4I₀·cos²(π·d·sinθ/λ)
+// Params: intensidad_base, separacion_fuentes, longitud_onda, distancia_pantalla
+fn "double_slit_interference"(I0, d, lambda, L) {
+    4.0 * I0 * cos(pi * d * sin(atan2(x, L)) / lambda) * cos(pi * d * sin(atan2(x, L)) / lambda)
+}
+
+// --- Difracción de Fraunhofer (Rendija Simple) ---
+// I = I₀·sinc²(π·a·sinθ/λ) donde sinc(x) = sin(x)/x
+fn "single_slit_diffraction"(I0, a, lambda, L) {
+    let beta_local = pi * a * sin(atan2(x, L)) / lambda;
+    I0 * (sin(beta_local) / (beta_local + 1e-6)) * (sin(beta_local) / (beta_local + 1e-6))
+}
+
+// --- Patrón de Difracción de Red de Difracción ---
+// I = I₀·sinc²(π·a·sinθ/λ)·[sin(N·π·d·sinθ/λ)/sin(π·d·sinθ/λ)]²
+fn "diffraction_grating_pattern"(I0, a, d, N, lambda, L) {
+    let theta_local = atan2(x, L);
+    let beta_local = pi * a * sin(theta_local) / lambda;
+    let alpha_local = pi * d * sin(theta_local) / lambda;
+    
+    let single_slit_local = (sin(beta_local) / (beta_local + 1e-6)) * (sin(beta_local) / (beta_local + 1e-6));
+    let grating_term_local = (sin(N * alpha_local) / (sin(alpha_local) + 1e-6)) * (sin(N * alpha_local) / (sin(alpha_local) + 1e-6));
+    
+    I0 * single_slit_local * grating_term_local
+}
+
+// --- Anillos de Newton (Interferencia en lámina delgada) ---
+// Para luz reflejada: Δ = 2nt + λ/2 = mλ (máximos)
+// Radio del m-ésimo anillo brillante: r = √(m·λ·R/n)
+fn "newtons_rings_intensity"(R, n, lambda, t) {
+    let r = sqrt(x*x + z*z);
+    let path_difference = 2.0 * n * t + lambda * 0.5;
+    let phase = 2.0 * pi * path_difference / lambda;
+    
+    0.5 + 0.5 * cos(phase)
+}
+
+// ============================================================
+// INTERFAZ PÚBLICA - POLARIZACIÓN (fn)
+// ============================================================
+
+// --- Ley de Malus ---
+// I = I₀·cos²(θ)
+// Params: intensidad_incidente, angulo_entre_polarizadores
+fn "malus_law"(I0, theta) {
+    I0 * cos(theta) * cos(theta)
+}
+
+// --- Ángulo de Brewster ---
+// tan θ_B = n₂/n₁
+fn "brewster_angle"(n1, n2) {
+    atan(n2 / n1)
+}
+
+// --- Diferencia de Fase en Lámina de Retardo (Waveplate) ---
+// Δφ = 2π·Δn·t/λ
+fn "waveplate_phase_retardation"(delta_n, thickness, lambda) {
+    2.0 * pi * delta_n * thickness / lambda
+}
+
+// ============================================================
+// EJEMPLOS DE USO CON custom(expr)
+// ============================================================
+
+/*
+// EJEMPLO 1: Lente biconvexa con aberración esférica
+node "spherical_lens_with_aberration" {
+    position: [-3, 0, 0];
+    sdf: lens_with_spherical_aberration(2.0, 0.3, 1.5, 0.02);
+    material: "glass";
+}
+
+// EJEMPLO 2: Espejo parabólico
+node "parabolic_mirror_example" {
+    position: [0, 0, 0];
+    sdf: parabolic_mirror(1.5, 0.0, 0.8);
+    material: "mirror";
+}
+
+// EJEMPLO 3: Sistema de dos lentes (telescopio)
+node "two_lens_system_example" {
+    position: [3, 0, 0];
+    sdf: two_thin_lens_system(2.0, 0.5, 2.5);
+    material: "glass";
+}
+
+// EJEMPLO 4: Patrón de interferencia de doble rendija
+node "double_slit_pattern" {
+    position: [0, 2, 0];
+    sdf: custom(y - double_slit_interference(1.0, 0.1, 0.00055, 1.0));
+    material: "emissive";
+}
+
+// EJEMPLO 5: Lente acromática (corrección cromática)
+node "achromatic_lens_example" {
+    position: [0, -2, 0];
+    sdf: achromatic_doublet(2.0, -1.5, -2.5, 0.4, 1.52, 1.62);
+    material: "glass";
+}
+*/

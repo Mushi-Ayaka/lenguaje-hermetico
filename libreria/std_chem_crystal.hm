@@ -1,0 +1,103 @@
+// ============================================================
+// LIBRERÍA: std_chem_crystal.hm
+// CAPA:     3.5 — Cristalografía y Estado Sólido Molecular
+// VERSIÓN:  0.2
+// FUENTE:   Bragg, Bravais, International Tables of Crystallography
+// DEPS:     std_math_core.hm, std_math_algebra.hm, std_phys_condensed.hm
+// FECHA:    6 de junio de 2026
+// ============================================================
+
+import "std_math_core.hm";
+import "std_math_algebra.hm";
+import "std_phys_condensed.hm";
+
+// ============================================================
+// REDES DE BRAVAIS (Vectores de red primitivos)
+// ============================================================
+
+// Red cúbica simple (SC): parámetro a
+fn "sc_lattice_x"(ix, a_lat) { ix * a_lat }
+fn "sc_lattice_y"(iy, a_lat) { iy * a_lat }
+fn "sc_lattice_z"(iz, a_lat) { iz * a_lat }
+
+// Red hexagonal: a1 = a*(1,0,0), a2 = a*(1/2, √3/2, 0), a3 = c*(0,0,1)
+fn "hex_lattice_x"(n1, n2, a_lat) { a_lat * (n1 + 0.5 * n2) }
+fn "hex_lattice_y"(n2, a_lat)     { a_lat * SQRT3 * 0.5 * n2 }
+fn "hex_lattice_z"(n3, c_lat)     { c_lat * n3 }
+
+// ============================================================
+// LEY DE BRAGG Y DIFRACCIÓN
+// ============================================================
+
+// Ley de Bragg: nλ = 2d sin(θ)  → condición de reflexión
+fn "bragg_condition"(n_order, lambda, d_spacing) {
+    asin(clamp(n_order * lambda / (2.0 * d_spacing + EPSILON), -1.0, 1.0))
+}
+
+// Espaciado de planos (hkl) para red cúbica: d = a / sqrt(h²+k²+l²)
+fn "d_spacing_cubic"(a_lat, h_miller, k_miller, l_miller) {
+    a_lat / sqrt(sq(h_miller) + sq(k_miller) + sq(l_miller) + EPSILON)
+}
+
+// Intensidad del factor de estructura (simplificada, todos los átomos iguales)
+// Para red FCC: F = f * [1 + exp(iπ(h+k)) + exp(iπ(h+l)) + exp(iπ(k+l))]
+// Extinción FCC: h,k,l todos pares o todos impares
+fn "fcc_structure_factor"(h_miller, k_miller, l_miller) {
+    abs(
+        1.0 + cos(PI * (h_miller + k_miller)) +
+        cos(PI * (h_miller + l_miller)) +
+        cos(PI * (k_miller + l_miller))
+    )
+}
+
+// ============================================================
+// SDFs CRISTALOGRÁFICAS
+// ============================================================
+
+// Celda unitaria cúbica simple
+def "simple_cubic_cell"(a_lat) {
+    sdf: custom(max(max(abs(x) - a_lat*0.5, abs(y) - a_lat*0.5), abs(z) - a_lat*0.5));
+}
+
+// Celda hexagonal
+def "hexagonal_cell"(a_lat, c_lat) {
+    sdf: custom(
+        max(
+            max(abs(x) - a_lat, abs(y) - a_lat * SQRT3 * 0.5),
+            abs(z) - c_lat * 0.5
+        )
+    );
+}
+
+// Iones en red NaCl (alternados en eje x)
+def "nacl_crystal"(a_lat, r_ion) {
+    sdf: custom(
+        min(
+            sqrt(sq(x - a_lat * round(x / a_lat)) + sq(y - a_lat * round(y / a_lat)) + sq(z - a_lat * round(z / a_lat))) - r_ion,
+            sqrt(sq(x - a_lat * (round(x / a_lat) + 0.5)) + sq(y - a_lat * (round(y / a_lat) + 0.5)) + sq(z - a_lat * (round(z / a_lat) + 0.5))) - r_ion * 0.7
+        )
+    );
+}
+
+// Zeolita (red porosa 3D — aproximación como superposición de esferas)
+def "zeolite_pore"(a_lat, r_pore) {
+    sdf: custom(
+        -min(
+            min(abs(frac(x / a_lat) - 0.5) - r_pore,
+                abs(frac(y / a_lat) - 0.5) - r_pore),
+            abs(frac(z / a_lat) - 0.5) - r_pore
+        )
+    );
+}
+
+// Fibra de diamante (cadena zigzag tetraédrica)
+def "diamond_cubic"(a_lat, r_atom) {
+    sdf: custom(
+        min(
+            sqrt(sq(x - a_lat * round(x / a_lat)) + sq(y - a_lat * round(y / a_lat)) + sq(z - a_lat * round(z / a_lat))) - r_atom,
+            sqrt(sq(x - a_lat * (round(x / a_lat) + 0.25)) +
+                 sq(y - a_lat * (round(y / a_lat) + 0.25)) +
+                 sq(z - a_lat * (round(z / a_lat) + 0.25))) - r_atom
+        )
+    );
+}

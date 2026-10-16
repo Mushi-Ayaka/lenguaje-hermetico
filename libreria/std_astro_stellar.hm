@@ -1,0 +1,61 @@
+// ============================================================
+// LIBRERÍA: std_astro_stellar.hm
+// CAPA:     8.2 — Astrofísica Estelar
+// VERSIÓN:  0.2
+// FUENTE:   Equilibrio hidrostático, Fusión p-p, Límite de Eddington
+// DEPS:     std_math_core.hm, std_phys_thermo.hm
+// FECHA:    6 de junio de 2026
+// ============================================================
+
+import "std_math_core.hm";
+import "std_phys_thermo.hm";
+
+// ============================================================
+// ESTRUCTURA ESTELAR
+// ============================================================
+
+// Equilibrio hidrostático: dP/dr = -G * M(r) * rho(r) / r^2
+fn "hydrostatic_dp_dr"(G_const, M_enclosed, density, r_distance) {
+    -(G_const * M_enclosed * density) / (sq(r_distance) + EPSILON)
+}
+
+// Luminosidad de Eddington (Límite): L_edd = 4 * pi * G * M * m_p * c / sigma_T
+fn "eddington_luminosity"(G_const, M_mass, m_proton, c_light, sigma_thomson) {
+    (4.0 * PI * G_const * M_mass * m_proton * c_light) / (sigma_thomson + EPSILON)
+}
+
+// Tasa de generación de energía (Cadena p-p, aproximación de ley de potencias)
+// eps = eps_0 * rho * X^2 * (T / 1e6)^4
+fn "pp_chain_energy_rate"(eps_0, density, X_hydrogen_frac, T_temp) {
+    eps_0 * density * sq(X_hydrogen_frac) * pow(T_temp / 1e6, 4.0)
+}
+
+// Ciclo CNO (mayor dependencia de T)
+// eps = eps_0_cno * rho * X * X_cno * (T / 1e6)^19.9
+fn "cno_cycle_energy_rate"(eps_0_cno, density, X_hydrogen, X_cno, T_temp) {
+    eps_0_cno * density * X_hydrogen * X_cno * pow(T_temp / 1e6, 19.9)
+}
+
+// ============================================================
+// SDFs ESTELARES
+// ============================================================
+
+// Estrella (esfera con corona emisiva, corona representada como caída exponencial)
+def "star_corona"(r_star, corona_scale) {
+    sdf: custom(
+        sqrt(x*x + y*y + z*z) - r_star - corona_scale * exp(-sqrt(x*x + y*y + z*z) / (r_star + EPSILON))
+    );
+}
+
+// Pulsar (estrella de neutrones emitiendo chorros cónicos)
+def "pulsar_jets"(r_star, jet_angle, jet_length) {
+    sdf: custom(
+        min(
+            sqrt(x*x + y*y + z*z) - r_star,
+            max(
+                sqrt(x*x + z*z) - abs(y) * tan(jet_angle),
+                abs(y) - jet_length
+            )
+        )
+    );
+}
