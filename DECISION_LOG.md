@@ -131,18 +131,18 @@
 - DL-08.b — ¿Va todo en un solo `.sem` o separado por tipo (`.sem`, `.meta`, `.bake_index`)? Recomendación: un solo `.sem` con secciones.
 - DL-08.c — ¿El `.sem` es obligatorio o opcional? Recomendación: opcional. Si no existe, el motor funciona degradado (sin optimizaciones).
 
-### DL-09 — Cómo resolver la RAM bomb del resolver.
+### DL-09 — RAM bomb del resolver.
 
-**Estado:** PENDIENTE
-**Contexto:** 31 `let` con funciones de 6 librerías → 1.5 GB RAM. Causa: sustitución textual sin memoización ni CSE.
+**Estado:** DECIDIDO (A+B+C en orden)
+**Motivo:** La explosión es exponencial por sustitución textual sin memoria. Los tres fixes son ortogonales y necesarios.
+**Consecuencia:**
 
-**Opciones:**
-- **A) Memoización de `fn`.** Cache de `(fn_name, arg_text)` → `expanded_text`.
-- **B) CSE.** Detección de subexpresiones idénticas en el árbol expandido.
-- **C) Constant folding real.** Evaluar en compilación cuando todos los argumentos son constantes.
-- **D) Límite de profundidad más agresivo.** No arregla el problema, solo lo retrasa.
+- **Fase A — Constant folding real.** En `Resolver::toExpr`, evaluar la expresión si todos los argumentos son constantes. `let RADIO = 1.0; let ALTURA = RADIO * 1.5;` → `let ALTURA = 1.5`.
+- **Fase B — Memoización de `fn`.** Cache de `(fn_name, arg_text)` → `expanded_text` en `expandExpression`.
+- **Fase C — CSE (common subexpression elimination).** Detección de subexpresiones idénticas en el árbol expandido. Reemplazo por referencias.
 
-**Recomendación:** A + B + C. Los tres son ortogonales y los tres son necesarios para que el resolver escale.
+Se implementan en ese orden. Cada uno reduce el trabajo del siguiente.
+**Criterio de aceptación:** el test de 6 librerías + 31 let corre en < 100 MB.
 
 ### DL-10 — Rol de `MLIR-CampoTensorial`.
 
@@ -180,28 +180,44 @@
 
 **Recomendación:** B. El ABI actual no soporta DL-03 (tensor = partícula). Hay que rediseñarlo.
 
-### DL-13 — Ruta del lenguaje a un `if` controlado.
+### DL-13 — if como expresión.
 
-**Estado:** PENDIENTE
-**Contexto:** El lenguaje no tiene control de flujo. Se evalúo si añadir `if` para condicionales. La pureza lo permite si es `if` como expresión, no como statement.
+**Estado:** RECHAZADO
+**Motivo:** if puro es azúcar sobre mix/step/smoothstep. if perezoso rompería DR-03 (pureza y totalidad). No hay término medio útil. El lenguaje se mantiene sin if.
+**Consecuencia:**
 
-**Opciones:**
-- **A) No añadir.** Todo se hace con `min`/`max`/`clamp`/`step`/`smoothstep`.
-- **B) Añadir `if` como expresión.** `if cond then a else b` → `mix(a, b, cond)`. Sigue siendo puro.
-- **C) Añadir `match` para casos múltiples.** Más general.
+- No se añade if al parser.
+- No se añaden comparadores (<, >, ==, &&, ||) como sintaxis.
+- Las comparaciones se hacen con funciones puras existentes: step, smoothstep, abs, clamp, min, max.
+- Las 17 librerías se reescriben usando esas funciones.
+- Cero cambios al lenguaje.
 
-**Recomendación:** B. `if` como expresión puro no rompe nada y hace las librerías más legibles.
+### DL-13b — Comparadores como sintaxis.
+
+**Estado:** RECHAZADO
+**Motivo:** Consecuencia de DL-13. Sin if, los comparadores son azúcar sobre step/abs. No aportan capacidad.
+**Consecuencia:**
+
+- El programador escribe `step(0, v)` en lugar de `v > 0`.
+- El programador escribe `1 - step(eps, abs(x - 5))` en lugar de `x == 5`.
+- No hay `&&` ni `||`. Se usa min/max para combinar booleanos (0/1).
 
 ### DL-14 — `fn` con cuerpo multi-statement.
 
-**Estado:** PENDIENTE
-**Contexto:** 17 librerías fallan porque el parser solo acepta una expresión por cuerpo de `fn`.
+**Estado:** DECIDIDO (opción B)
+**Motivo:** Mantener pureza y totalidad. No se revoca DR-03.
+**Consecuencia:**
 
-**Opciones:**
-- **A) Extender el parser.** Permitir `let` internos. El último statement es el valor de retorno.
-- **B) Reescribir las 17 librerías.** Convertir cada una a una sola expresión.
-
-**Recomendación:** A. Reescribir 17 librerías es trabajo manual, y la extensión del parser es pequeña.
+- El parser acepta let internos en el cuerpo de fn.
+- La última expresión del cuerpo es el valor de retorno.
+- No se acepta for interno (DR-03 vigente).
+- No se acepta if interno (DL-13 rechazado).
+- Las asignaciones a variables fuera del cuerpo siguen prohibidas.
+- Las 17 librerías se reescriben manualmente:
+  - Los for se convierten a def/instance o se esperan a comprensiones declarativas (DL pendiente).
+  - Los if se convierten a mix/step/smoothstep.
+  - Los let internos se mantienen tal cual (ahora soportados).
+- Se añade un TODO en el DECISION_LOG para diseñar comprensiones declarativas en una fase futura (→ DL-21).
 
 ## DL-15 — `.bake` como cuarto formato
 
@@ -343,6 +359,78 @@ Para esos casos, se usa SDF en runtime. Pero son minoría.
 - DL-19.a — Formato del `.mgame`: ZIP con manifest. Simple y suficiente.
 - DL-19.b — El wrapper delgado se genera desde el editor, no requiere toolchain externa.
 - DL-19.c — El `player.exe` es un binario separado del `visor.exe`, no una variante con flag.
+
+## DL-20 — Editor de nodos como frontend visual.
+
+**Estado:** DECIDIDO
+**Motivo:** El programador necesita comodidad. El lenguaje debe mantenerse puro. La solución es no tocar el lenguaje y ofrecer un editor de nodos visual como capa de UX.
+**Consecuencia:**
+
+- El editor de nodos es la interfaz principal para el programador.
+- El programador conecta nodos visuales: if, for, select, etc.
+- El editor traduce los nodos a .herm puro (con mix/step/smoothstep/def/instance).
+- El .herm producido es el que compila herm.exe. Sin capas intermedias textuales.
+- No se construye un frontend textual (nada de TypeScript→JS, nada de CoffeeScript→JS). Solo nodos visuales.
+- El programador avanzado puede escribir .herm directo sin pasar por el editor.
+- El editor muestra ambas vistas: nodos y código generado. Para que el programador aprenda el patrón.
+
+**Lo que NO se hace:**
+
+- No se construye un lenguaje frontend textual.
+- No se añade if/for/comparadores al .herm.
+- No se crean funciones especiales (select, entre, si_no). Las funciones existentes (step, smoothstep, mix, clamp, min, max) son suficientes.
+
+**Sub-decisiones pendientes:**
+
+- DL-20.a — Diseño del editor de nodos (DAG visual, no árbol).
+- DL-20.b — Cómo se muestran los if/for en el editor cuando no existen en .herm.
+- DL-20.c — ¿El editor escribe .herm o directamente .rih?
+
+## DL-21 — Comprensiones declarativas.
+
+**Estado:** PENDIENTE
+**Contexto:** Consecuencia de DL-14. Las 17 librerías usan for para repetir. Sin for ni comprensiones, la repetición se escribe a mano (def/instance uno por uno).
+**Opciones:**
+
+- **A) Diseñar comprensiones declarativas.** Sintaxis nueva tipo grid, repeat_instance, for_each. Puro, total, analizable.
+- **B) Escribir todo a mano.** Sin comprensiones. Cada instancia escrita explícitamente.
+- **C) Posponer.** Las 17 libs se reescriben a mano hoy. Las comprensiones se diseñan cuando haya más casos de uso.
+
+**Recomendación:** C. Las 17 libs se reescriben a mano. El diseño de comprensiones requiere ver más patrones reales. Se decide en Fase 5 o posterior.
+
+---
+
+### Cómo queda el lenguaje después de estas decisiones
+
+Sin cambios. Ni una línea de sintaxis nueva. Exactamente como está hoy. El parser solo se extiende para aceptar let internos en fn (DL-14), que es una extensión del parser, no de la sintaxis visible.
+
+### Cómo quedan las librerías
+
+Se reescriben las 17 con errores de sintaxis. Los cambios son:
+
+- for → eliminado o convertido a def/instance repetidos.
+- if → mix/step/smoothstep.
+- let internos → se mantienen (ahora soportados).
+
+Las otras 38 librerías ya compilan. No se tocan.
+
+### Cómo queda el flujo del programador
+
+```
+Programador
+   ↓
+Editor de nodos visuales (DL-20)
+   ↓
+.herm puro (con mix/step/smoothstep/def/instance)
+   ↓
+herm.exe (con DL-09: fold + memo + CSE)
+   ↓
+.ont + .sem + .bake
+   ↓
+Motor
+```
+
+Sin if, sin for, sin comparadores, sin frontends textuales. El lenguaje sigue siendo 20 tokens. El editor absorbe la complejidad.
 
 ---
 

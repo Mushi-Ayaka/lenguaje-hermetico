@@ -1,5 +1,18 @@
 # Changelog
 
+## 2026-10-16 — v0.16 — Decisiones DL-09/13/13b/14/20/21: el lenguaje no cambia
+
+### Decidido (por el usuario, registrado en DECISION_LOG)
+- **DL-13 RECHAZADO** — no hay `if`. Ni como expresión ni como statement.
+- **DL-13b RECHAZADO** — no hay comparadores (`<`, `>`, `==`, `&&`, `||`) como sintaxis. Las comparaciones se hacen con `step`/`smoothstep`/`abs`/`clamp`/`min`/`max`.
+- **DL-14 DECIDIDO (opción B)** — el parser acepta `let` internos en el cuerpo de `fn`; la última expresión es el retorno. Sin `for` interno, sin `if` interno. Las 17 librerías caídas se reescriben a mano con las funciones existentes.
+- **DL-09 DECIDIDO (A+B+C en orden)** — constant folding → memoización de `fn` → CSE. Criterio de aceptación: `test_layer1_math` (6 libs + 31 let) corre en < 100 MB.
+- **DL-20 DECIDIDO** — el editor de nodos (visual, DAG) es la capa de comodidad; traduce a `.herm` puro. No se toca el lenguaje. Sub-decisiones DL-20.a/b/c pendientes.
+- **DL-21 PENDIENTE** — comprensiones declarativas (hoy: reescribir a mano; recom. posponer a Fase 5+).
+
+### Consecuencia para el lenguaje
+**Cero cambios de sintaxis.** El lenguaje queda exactamente como está (~20 tokens). La única extensión es del parser (let internos en fn, DL-14).
+
 ## 2026-10-16 — v0.15 — Fase 0 (asegurar): pipeline ONT commiteado + 55 librerías migradas
 
 ### Recuperado (commit de emergencia, trabajo sin versionar desde julio)
