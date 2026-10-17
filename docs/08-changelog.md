@@ -1,5 +1,19 @@
 # Changelog
 
+## 2026-10-16 — v0.17 — DL-14: `let` internos en cuerpo de `fn` + medición de RAM arreglada
+
+### Añadido
+- **DL-14 (parser):** el cuerpo de `fn` ahora acepta `let` internos antes de la expresión final. `AstFn.body_lets` (AST), bucle de `let`s en `parse_fn` (parser), desazúcar a sustitución textual en `expandExpression` (resolver). La última expresión del cuerpo es el valor de retorno. Sin `if`/`for` internos (DL-13/DR-03 vigentes).
+- **Verificado:** `fn "area"(b,h){ let b2=b*b; let h2=h*h; sqrt(b2+h2) }` → `.rih` con `sqrt(((3)*(3))+((4)*(4)))`, sin nombres fugados.
+
+### Arreglado (harness de tests, no forma parte de la repo)
+- **Medición de RAM:** el poll anterior dormía 200 ms ANTES de muestrear y confiaba en `$p.HasExited/Handle/ExitCode` — herm.exe tarda ~17-50 ms, así que el proceso moría antes del primer sample (`peak=0` siempre) y el objeto de PowerShell llegaba pos-mortem con `Handle`/`ExitCode` nulos (bug clásico de `Start-Process -PassThru`). Ahora: muestreo por pid con `Get-Process` a los 5 ms desde t=0, status por existencia del `.rih` + contenido de stdout/stderr (sin `ExitCode`), borrado de salidas previas antes de cada lanzo.
+- **Tiempos reales:** antes ~208 ms = sleep; ahora 17-50 ms de herm real.
+
+### Resultado (55 librerías, tras DL-14)
+- **35 PASS / 20 COMPILE_ERR** (mismo conteo que sin DL-14 — los 20 fallan ahora por `for`/`if`/keywords/`let` en nodos, es decir, por lo que DL-13/14 dicen resolver **reescribiendo las librerías a mano**; ahí se detiene la automatización por decisión del usuario).
+- **Test combinado (6 libs + 31 let):** `v_lets` = **RAM_BOMB, 12,973 ms, peak 1568 MB** — sigue pendiente DL-09 (fold+memo+CSE, objetivo < 100 MB).
+
 ## 2026-10-16 — v0.16 — Decisiones DL-09/13/13b/14/20/21: el lenguaje no cambia
 
 ### Decidido (por el usuario, registrado en DECISION_LOG)

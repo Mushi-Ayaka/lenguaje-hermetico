@@ -4,6 +4,7 @@
 #include <memory>
 #include <unordered_map>
 #include <optional>
+#include <utility>
 #include <variant>
 
 // ============================================================================
@@ -76,7 +77,8 @@ struct AstLet {
 struct AstFn {
     std::string name;
     std::vector<std::string> params;  // parameter names
-    std::string body_expr;            // raw expression text
+    std::vector<std::pair<std::string, std::string>> body_lets; // DL-14: internal lets (name, raw value text)
+    std::string body_expr;            // raw expression text (final return expression)
 };
 
 // --- Light ---

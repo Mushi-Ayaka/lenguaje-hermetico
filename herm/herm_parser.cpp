@@ -307,8 +307,12 @@ AstFn Parser::parse_fn() {
     }
     expect(TokenType::RPAR);
 
-    // Body: { expression }  — read raw text until matching }
+    // Body: internal lets (DL-14) + final expression, closed by }
     expect(TokenType::LBRACE);
+    while (peek().type == TokenType::LET) {
+        AstLet L = parse_let();
+        fn.body_lets.push_back({L.name, L.value.text});
+    }
     fn.body_expr = parse_expr().text;
     skip(TokenType::SEMI);
     expect(TokenType::RBRACE);

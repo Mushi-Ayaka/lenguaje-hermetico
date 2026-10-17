@@ -573,8 +573,18 @@ std::string Resolver::expandExpression(const std::string& text, int depth) const
                 for (size_t k = 0; k < std::min(fn->params.size(), args.size()); k++) {
                     param_subst[fn->params[k]] = "(" + args[k] + ")";
                 }
-                
+
+                // DL-14: desugar internal lets — later lets and the final body
+                // see each let's name replaced by its parenthesized value
+                std::unordered_map<std::string, std::string> let_subst;
+                for (auto& [lname, lval] : fn->body_lets) {
+                    std::string lv = substExprText(lval, param_subst);
+                    lv = substExprText(lv, let_subst);
+                    let_subst[lname] = "(" + lv + ")";
+                }
+
                 std::string expanded = substExprText(fn->body_expr, param_subst);
+                expanded = substExprText(expanded, let_subst);
                 res += "(" + expanded + ")";
                 i = j;
                 changed = true;

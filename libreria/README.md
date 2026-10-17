@@ -4,7 +4,7 @@
 **Origen:** `proyecto de IA artistica/Lenguaje Hermetico/.gitignored/libreria/` (copia local sin git, creada 2026-07-13).
 **Spec:** `docs/11-protocolo-librerias.md` (árbol ontológico de 8 capas).
 
-## Estado del test (2026-10-16, herm.exe build 2026-10-09)
+## Estado del test (2026-10-16, herm.exe con DL-14)
 
 Test: cada librería importada en una escena mínima (`import + sphere`), compilada con `herm.exe`.
 
@@ -22,17 +22,19 @@ Test: cada librería importada en una escena mínima (`import + sphere`), compil
 | 7 Geociencias (4/4) | `std_geo_atmosphere`, `landscape`, `ocean`, `terrain` |
 | 8 Astrofísica (3/3) | `std_astro_mechanics`, `stellar`, `cosmology` |
 
-### Fallan (20)
+### Fallan (20) — se reescriben a mano (pendiente, decisión del usuario)
 
-**Causa A — `fn` con cuerpo multi-statement (17):** el parser solo acepta una expresión por cuerpo de `fn` (`herm_parser.cpp` parse_fn). Usan `let` encadenados, `if/else`, `for`, asignaciones.
-`std_chem_optics`, `std_chem_inorganic`, `std_chem_supramolecular`, `std_chem_theoretical`, `std_chem_coordination`, `std_bio_genetics`, `std_bio_development`, `std_bridge_atomic`, `std_bridge_biochem`, `std_bridge_biophysics`, `std_bridge_chembio`, `std_bridge_enzymology`, `std_bridge_kinetics`, `std_bridge_molbio`, `std_bridge_physchem`, `std_bridge_quantchem`, `std_bridge_spectral`.
+Tras DL-14 (parser acepta `let` internos en `fn`), los 20 errores restantes son de sintaxis que el lenguaje **rechaza por diseño** (DL-13/DR-03) y que se arreglan reescribiendo las librerías:
 
-**Causa B — keyword como nombre de parámetro (3):** `alpha`, `position`, `volume` son tokens reservados.
-`std_bridge_electrochem` (L87), `std_bridge_genomics` (L29), `std_bridge_statmech_mol` (L36).
+- **`for` dentro de `fn`** (2): `std_bridge_quantchem`, `std_chem_theoretical` (anidados) → convertir a `def/instance` repetidos.
+- **`if`/`else`** (3): `std_bridge_biophysics`, `std_bridge_enzymology`, `std_chem_coordination` → `mix`/`step`/`smoothstep`.
+- **Keyword como identificador** (8): `alpha`, `position`, `volume`, `union`, `roughness`, `sum`, `spot_amplitude` → renombrar params/vars (`std_bridge_biochem`, `electrochem`, `genomics`, `statmech_mol`, `chembio`, `physchem`, `chem_optics`, `bio_development`).
+- **`let` dentro de cuerpo de `node`** (3): `std_bridge_atomic`, `molbio`, `spectral` → mover lets a `fn` o top-level.
+- **Otros** (4): `std_bio_genetics` (coma rara L173), `std_bridge_kinetics` (`q_ratio`), `std_chem_inorganic`/`std_chem_supramolecular` (llaves desbalanceadas → EOF).
 
 ### RAM bomb
 
-`test_layer1_math.herm` (6 libs importadas + 31 `let` que invocan sus funciones): **1.5 GB RAM en 13 s**. Causa: el resolver expande `fn`/`let` por sustitución textual sin memoización ni CSE (DL-09 / Fase 2 del plan).
+`v_lets.herm` (6 libs importadas + 31 `let` que invocan sus funciones): **peak 1568 MB, 12,973 ms** (medido 2026-10-16 con poll de 5 ms por pid). Causa: el resolver expande `fn`/`let` por sustitución textual sin memoización ni CSE (DL-09 A+B+C, pendiente, objetivo < 100 MB).
 
 ## Contenido
 
