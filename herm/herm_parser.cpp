@@ -313,6 +313,9 @@ AstFn Parser::parse_fn() {
         AstLet L = parse_let();
         fn.body_lets.push_back({L.name, L.value.text});
     }
+    if (peek().type == TokenType::RBRACE || peek().type == TokenType::END) {
+        throw ParseError("fn '" + fn.name + "' debe terminar con una expresion de retorno en " + locStr(peek()));
+    }
     fn.body_expr = parse_expr().text;
     skip(TokenType::SEMI);
     expect(TokenType::RBRACE);

@@ -1,5 +1,31 @@
 # Changelog
 
+## 2026-10-16 — v0.18 — DL-14 validado con edge cases + fixes de shadowing/sin-retorno + regresión verde
+
+### Arreglado (DL-14, encontrados por edge-case testing)
+- **Shadowing invertido** (`herm_resolver.cpp`): el cuerpo del `fn` sustituía params ANTES que lets — `fn "sh"(x){ let x=1; let x=2; x }` con `sh(9)` devolvía 9 (el param) en vez de 2 (el último let). Ahora el cuerpo aplica `let_subst` primero (scope interno gana) y `param_subst` después. Los lets siguen viendo params/lets-antiores en sus valores (el inicializador de un let no se ve a sí mismo).
+- **`fn` sin expresión final** (`herm_parser.cpp`): `fn "f"(x){ let y=x; }` aceptaba body vacío y emitía `()` silencioso. Ahora: error `fn 'f' debe terminar con una expresion de retorno`.
+
+### Añadido
+- **`libreria/tests/test_dl14_fn_lets.herm`**: test permanente DL-14 — lets encadenados, params en lets, shadowing, combinación a+b. Verificado: chain(5)=9, double_plus(3)=7, shadow(9)=2, mix(2,3)=23.
+
+### Edge cases DL-14 (verificación completa)
+| Caso | Resultado |
+|------|-----------|
+| lets encadenados (`let a=x+1; let b=a*2; let c=b-3; c`) | ✔ en orden secuencial |
+| let referencia param (`let y=x*2; y+1` con x=3) | ✔ 7 — param dentro del valor del let |
+| shadowing (`let x=1; let x=2; x` con x=9) | ✔ 2 — gana el último let (tras fix) |
+| sin expresión final (`fn{ let y=x; }`) | ✔ error explícito (tras fix) |
+| referencia circular (`let a=b; let b=a`) | limitación conocida: no cuelga (depth-limit 16), filtra `b` como identificador libre — comportamiento preexistente del resolver para nombres indefinidos, no regresión |
+| valor de let referencia otro let + param | ✔ mix(2,3)=23 |
+
+### "let en nodo" (diagnóstico pedido)
+**No es bug ni feature pendiente — es sintaxis no contemplada.** La BNF (`docs/03` §4.1: `node_block ::= "node" STRING? "{" node_body "}"`) no incluye `let` en `node_body`; `parse_node_body` no tiene case LET → error `inesperado en nodo: 'let'` correcto y preexistente (no tocado por DL-14). Las 3 libs (`std_bridge_atomic`, `molbio`, `spectral`) la usan ilegalmente → al reescribir, los lets se mueven a top-level o `fn`.
+
+### Regresión (tras fixes de shadowing/sin-retorno)
+- **55 librerías: 35 PASS / 20 FAIL** — mismo set exacto que pre-fixes, sin ninguna lib nueva rota.
+- **Motor: F0 24/24, F1 10/10, F3 16/16** — `libherm.lib` reconstruido con los fixes; `compileToRih` intacto (el camino sin fn — lets de escena — no afectado; sustitución de lets de escena va por `let_table` aparte, sin cambios).
+
 ## 2026-10-16 — v0.17 — DL-14: `let` internos en cuerpo de `fn` + medición de RAM arreglada
 
 ### Añadido

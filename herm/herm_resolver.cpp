@@ -583,8 +583,10 @@ std::string Resolver::expandExpression(const std::string& text, int depth) const
                     let_subst[lname] = "(" + lv + ")";
                 }
 
-                std::string expanded = substExprText(fn->body_expr, param_subst);
-                expanded = substExprText(expanded, let_subst);
+                // body: lets primero (shadowing: un let interno pisa al param homónimo),
+                // luego params para los nombres no cubiertos por lets
+                std::string expanded = substExprText(fn->body_expr, let_subst);
+                expanded = substExprText(expanded, param_subst);
                 res += "(" + expanded + ")";
                 i = j;
                 changed = true;

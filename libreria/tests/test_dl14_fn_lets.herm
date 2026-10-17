@@ -1,0 +1,69 @@
+// Test DL-14: let internos en cuerpo de fn
+// Cubre: lets encadenados (orden secuencial), lets que referencian params,
+// shadowing (let pisa al param homónimo), letref trivial.
+// Negativos documentados (no compilables, verificados a mano 2026-10-16):
+//   - fn sin expresión final  -> error "debe terminar con una expresion de retorno"
+//   - referencia circular (let a = b; let b = a) -> no cuelga, filtra identificador libre
+
+scene {
+    background: [0, 0, 0];
+}
+
+material "default" {}
+
+// 1. Lets encadenados: cada let ve a los anteriores
+fn "chain"(x) {
+    let a = x + 1;
+    let b = a * 2;
+    let c = b - 3;
+    c
+}
+
+// 2. Let que referencia param: param sustituido dentro del valor del let
+fn "double_plus"(x) {
+    let y = x * 2;
+    y + 1
+}
+
+// 3. Shadowing: let interno pisa al param homónico (resultado 2, no 9)
+fn "shadow"(x) {
+    let x = 1;
+    let x = 2;
+    x
+}
+
+// 4. Let cuyo valor referencia otro let + param combinados
+fn "mix"(a, b) {
+    let s = a + b;
+    let p = s * s;
+    p - a
+}
+
+let r1 = chain(5);       // ((5+1)*2)-3 = 9
+let r2 = double_plus(3); // (3*2)+1 = 7
+let r3 = shadow(9);      // 2
+let r4 = mix(2, 3);      // ((2+3)*(2+3))-2 = 23
+
+node "n1" {
+    position: [0, 0, 0];
+    sdf: sphere(r1 * 0.1);
+    material: "default";
+}
+
+node "n2" {
+    position: [1, 0, 0];
+    sdf: sphere(r2 * 0.1);
+    material: "default";
+}
+
+node "n3" {
+    position: [2, 0, 0];
+    sdf: sphere(r3 * 0.1);
+    material: "default";
+}
+
+node "n4" {
+    position: [3, 0, 0];
+    sdf: sphere(r4 * 0.01);
+    material: "default";
+}
