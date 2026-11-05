@@ -527,6 +527,30 @@ Para esos casos, se usa SDF en runtime. Pero son minoría.
 
 **Decisión pendiente (alcance del Paso 2.0):** incluir `evalExpr` en el Paso 2.0 o dejarlo como paso propio. Recomendación del agente: incluirlo — misma causa raíz que el fallback de `herm_eval`; sin él, "Paso 2.0 terminado" no significa "expresiones correctas".
 
+**Estado (2026-11-04):** IMPLEMENTADO en v0.21 (Paso 2.0a). `evalExpr` evalúa con `evalExpression`; error si depende de `x/y/z/w` o si da `inf`/`nan`.
+
+---
+
+## DL-30 — El compilador `.ont` descarta en silencio las funciones sin opcode (bloquea la paridad CPU/GPU).
+
+**Estado:** REGISTRADO, PENDIENTE DE DECISIÓN (2026-11-04). Encontrado al preparar el Paso 2.0c.
+
+**Bug:** `OntOpcode` (`render/scene.h:266-278`) solo define: `CONST, VAR_*, ADD, SUB, MUL, DIV, MOD, NEG, POW, SIN, COS, TAN, ABS, SQRT, FLOOR, CEIL, MIN, MAX, CLAMP, LERP, MIX, SAMPLE, END`. No hay opcode para `step`, `smoothstep`, `exp`, `log`, `log2`, `log10`, `acos`, `asin`, `atan`, `atan2`, `sign` ni `fract`.
+
+**Verificación (2026-11-04):** tres escenas con `sdf: sphere(...)`:
+- `sphere(1.0 + x)`, `sphere(1.0 + exp(x))` y `sphere(1.0 + step(0.5, x))` generan **bytecode idéntico** (48 instrucciones, mismas ops; el `.ont` solo difiere en bytes ajenos al bytecode). La llamada a `exp`/`step` se descarta y queda solo `VAR_X`. El compilador no avisa.
+
+**Consecuencia:** cualquier escena que use esas funciones se renderiza en GPU con un valor distinto al de CPU, sin error. La paridad exigida en el Paso 2.0c **no puede pasar** hasta que existan los opcodes (o hasta que el compilador rechace esas funciones).
+
+**Segundo desajuste:** `ONT_DIV` y `ONT_MOD` (`render/bytecode_vm.h:59-60`) devuelven 0 cuando el divisor es 0, mientras el CPU ya usa IEEE (`inf`/`nan`, v0.21). Divergencia garantizada en ese caso.
+
+**Opciones:**
+1. **Rechazo ruidoso ya** en el compilador ONT: si una expresión usa una función sin opcode, error con nombre y línea. Barato, sin cambio de formato, y convierte un render incorrecto en un fallo visible. No da paridad, pero elimina el silencio.
+2. **Extender el bytecode** con 12 opcodes nuevos (`step, smoothstep, exp, log, log2, log10, acos, asin, atan, atan2, sign, fract`) y actualizar los 5 consumidores: `bytecode_vm.h`, `ray_march_simd.h`, `glsl_gen.cpp`, `spirv_gen.cpp`, `jit_compiler.cpp`. Requiere decisión de versión del formato (¿v2? ¿campo `reserved`?) y de semántica exacta para paridad (p. ej. `mod` GLSL vs `fmod`).
+3. **Limitar el lenguaje** a las funciones que el bytecode ya soporta y retirar las 13 del CPU. Contradice 2.0b.
+
+**Recomendación del agente:** 1 ahora mismo (es un fallo ruidoso, no un cambio de arquitectura) y 2 como paso propio con su decisión de formato. Sin 1, cualquier test de paridad mide una mentira.
+
 ---
 
 ### Cómo queda el lenguaje después de estas decisiones
@@ -1057,7 +1081,7 @@ Paso 5.13 (nuevo) — Gradiente analítico.
 - **Fase 1:** cerrada — DL-07 a DL-21 decididas y registradas (v0.16–v0.18). DL-22 a DL-25 son decisiones de Fase 5, marcadas PENDIENTE a propósito.
 - **Fase 2:** es la siguiente. **No se abre hasta aprobación explícita del usuario.** Primer paso: **Paso 2.0** (13 funciones faltantes en `herm_eval.cpp` + fallback silencioso convertido en error), después DL-09 (fold + memo + CSE).
 - **Fases 3–6:** pendientes.
-- **Decisiones abiertas:** DL-23, DL-24, DL-25 (Fase 5); DL-28 (`ior`/`transmission` en `material`); DL-29 (alcance de `evalExpr` dentro del Paso 2.0).
+- **Decisiones abiertas:** DL-23, DL-24, DL-25 (Fase 5); DL-28 (`ior`/`transmission` en `material`); DL-30 (opcodes ONT / rechazo ruidoso).
 
 ---
 
