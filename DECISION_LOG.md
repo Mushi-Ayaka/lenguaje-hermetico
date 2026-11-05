@@ -496,6 +496,39 @@ Para esos casos, se usa SDF en runtime. Pero son minoría.
 
 ---
 
+## DL-28 — `ior` / `transmission` en bloques `material` (soportar o rechazar explícitamente).
+
+**Estado:** REGISTRADO, PENDIENTE DE DECISIÓN (2026-11-04). A petición expresa del usuario: debe estar registrado aunque no esté resuelto.
+
+**Contexto:** el lexer reconoce `ior` y `transmission` (`herm_lexer.cpp:45-46`, con alias españoles en 129-130). `parse_material` (`herm_parser.cpp:357-397`) no los consume, así que cualquier `material` que los use falla con `inesperado en material: 'ior'`. Afectados hoy: `archived/libreria/materiales.hm` (archivado por DL-27) y `ejemplos/bodegon.herm` L29 (sigue roto; es la causa del fallo `bodegon.rih found` de `test_os_rhi`, aunque ese test además busca una ruta antigua que ya no existe).
+
+**Por qué no lo decide el agente:** añadir campos a `material` es diseño de lenguaje. Opciones sobre la mesa:
+1. **Rechazo explícito y documentado:** mantener el error, quitar `ior` de `bodegon.herm`, y declarar que el índice de refracción se expresa con el tensor 1x8 o no se expresa. Coste cero, pero se pierde la información de vidrio/agua/diamante.
+2. **Soportarlos de verdad:** añadirlos a `AstMaterial`, emitirlos en `.rih` y consumirlos en el render. Requiere decidir antes dónde viven dentro del Plano Tensorial 1x8 (hoy `[x,y,z,w,r,g,b,a]`, sin hueco para IOR).
+3. **Azúcar sintáctico:** aceptarlos en el parser y plegarlos a posiciones del tensor ya existentes, sin campos nuevos.
+
+**Mientras no se decida:** no se toca el parser ni `bodegon.herm`. El error actual es ruidoso, que es el comportamiento correcto.
+
+---
+
+## DL-29 — `Resolver::evalExpr` devuelve `0.0f` para toda expresión no literal (fallback silencioso).
+
+**Estado:** REGISTRADO, PENDIENTE DE DECISIÓN DE ALCANCE (2026-11-04). Encontrado al medir el test combinado de RAM.
+
+**Bug:** `evalExpr` (`herm_resolver.cpp:83-92`) hace `expandExpression` + `std::stof` y, si el texto resultante no es un número puro, cae a `return 0.0f`. **No llama a `evalExpression`** (`herm_eval.cpp`). Repro verificado:
+- `density_scale: 2.5` → emite `2.5000`.
+- `density_scale: 1.0 + 1.0` → emite `0.0000`.
+- `density_scale: sqrt(4.0)` → emite `0.0000` (`sqrt` sí está implementada; el problema es que nunca se llama).
+- `density_scale: exp(1.0)` → emite `0.0000`.
+
+**Campos afectados** (todos pasan por `evalExpr`): `axes.X/Y/W`, `fov`, `aperture`, `focal_dist`, `roughness`, `metallic`, `opacity`, `intensity`, `falloff`, `density_scale`, y `k`/`spacing` de operadores repetidos. Los **vectores y colores NO** están afectados: pasan por `toExpr`, conservan el texto y se evalúan en runtime con `evalExpression`. Verificado: `position: [1.0 + 1.0, 0, w * 2.0]` emite `translate: [2.0000, 0.0000, 0.0000]`.
+
+**Por qué importa para DL-09:** el test `test_layer1_math` (6 libs + 31 let) corre hoy en 4.5 MB / 76 ms, pero sus 31 `let` **no se usan**. Al conectarlos (`density_scale: total`) el resolver descarta la expresión por este fallback: la medición baja (4.6 MB) no demuestra que DL-09 esté resuelto, demuestra que la expresión nunca se expandió. Toda métrica de expansión debe pasar por un campo que conserve la expresión (p. ej. `position`).
+
+**Decisión pendiente (alcance del Paso 2.0):** incluir `evalExpr` en el Paso 2.0 o dejarlo como paso propio. Recomendación del agente: incluirlo — misma causa raíz que el fallback de `herm_eval`; sin él, "Paso 2.0 terminado" no significa "expresiones correctas".
+
+---
+
 ### Cómo queda el lenguaje después de estas decisiones
 
 Sin cambios. Ni una línea de sintaxis nueva. Exactamente como está hoy. El parser solo se extiende para aceptar let internos en fn (DL-14), que es una extensión del parser, no de la sintaxis visible.
@@ -1024,6 +1057,7 @@ Paso 5.13 (nuevo) — Gradiente analítico.
 - **Fase 1:** cerrada — DL-07 a DL-21 decididas y registradas (v0.16–v0.18). DL-22 a DL-25 son decisiones de Fase 5, marcadas PENDIENTE a propósito.
 - **Fase 2:** es la siguiente. **No se abre hasta aprobación explícita del usuario.** Primer paso: **Paso 2.0** (13 funciones faltantes en `herm_eval.cpp` + fallback silencioso convertido en error), después DL-09 (fold + memo + CSE).
 - **Fases 3–6:** pendientes.
+- **Decisiones abiertas:** DL-23, DL-24, DL-25 (Fase 5); DL-28 (`ior`/`transmission` en `material`); DL-29 (alcance de `evalExpr` dentro del Paso 2.0).
 
 ---
 
