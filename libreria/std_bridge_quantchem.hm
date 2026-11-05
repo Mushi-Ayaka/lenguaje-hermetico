@@ -3,13 +3,15 @@
 // CAPA:     Intermediario Física-Química (3.3 - Química Cuántica)
 // VERSIÓN:  1.0
 // FUENTE:   "Modern Quantum Chemistry" by Szabo & Ostlund
-// DEPS:     std_math_core.hm, std_math_algebra.hm, std_math_calculus.hm
-// DEPS:     std_phys_qed.hm, std_phys_statmech.hm
+// DEPS:     std_math_core.hm, std_bridge_atomic.hm
 // FECHA:    6 de junio de 2026
 // ============================================================
 
 // QUÍMICA CUÁNTICA: Aplicación de mecánica cuántica a sistemas químicos,
 // estructura electrónica molecular, orbitales, enlaces químicos, reactividad
+
+import "std_math_core.hm";
+import "std_bridge_atomic.hm";
 
 // ============================================================
 // CONSTANTES FUNDAMENTALES
@@ -25,45 +27,17 @@ let ANGSTROM_TO_BOHR = 1.0 / BOHR_TO_ANGSTROM;
 // INTERFAZ PÚBLICA - ECUACIÓN DE SCHRÖDINGER MOLECULAR (fn)
 // ============================================================
 
-// --- Hamiltonian Electrónico (No relativista) ---
-// Ĥ = -½Σ_i ∇²_i - Σ_i Σ_A Z_A/|r_i - R_A| + Σ_i>j 1/|r_i - r_j| + Σ_A>B Z_A Z_B/|R_A - R_B|
-fn "molecular_hamiltonian"(electron_positions, nuclei_positions, nuclei_charges) {
-    let kinetic = 0.0;
-    let electron_nucleus = 0.0;
-    let electron_electron = 0.0;
-    let nucleus_nucleus = 0.0;
-    
-    // Energía cinética electrónica
-    for i in range(0, len(electron_positions)) {
-        // Simplificado: -½∇² ≈ p²/2
-        kinetic = kinetic + 0.5;  // Unidades atómicas
-    }
-    
-    // Interacción electrón-núcleo
-    for i in range(0, len(electron_positions)) {
-        for A in range(0, len(nuclei_positions)) {
-            let r_iA = distance(electron_positions[i], nuclei_positions[A]);
-            electron_nucleus = electron_nucleus - nuclei_charges[A] / (r_iA + 1e-6);
-        }
-    }
-    
-    // Interacción electrón-electrón
-    for i in range(0, len(electron_positions)-1) {
-        for j in range(i+1, len(electron_positions)) {
-            let r_ij = distance(electron_positions[i], electron_positions[j]);
-            electron_electron = electron_electron + 1.0 / (r_ij + 1e-6);
-        }
-    }
-    
-    // Interacción núcleo-núcleo
-    for A in range(0, len(nuclei_positions)-1) {
-        for B in range(A+1, len(nuclei_positions)) {
-            let R_AB = distance(nuclei_positions[A], nuclei_positions[B]);
-            nucleus_nucleus = nucleus_nucleus + nuclei_charges[A] * nuclei_charges[B] / (R_AB + 1e-6);
-        }
-    }
-    
-    kinetic + electron_nucleus + electron_electron + nucleus_nucleus
+// --- Hamiltonian Electrónico (No relativista, 2e⁻ + 2 núcleos) ---
+// Ĥ = T + V_en + V_ee + V_nn (unidades atómicas; T = 2 e⁻ × ½ = 1)
+fn "molecular_hamiltonian"(e1x, e1y, e1z, e2x, e2y, e2z, 
+                           n1x, n1y, n1z, z1, n2x, n2y, n2z, z2) {
+    1.0
+    - z1/(sqrt(sq(e1x - n1x) + sq(e1y - n1y) + sq(e1z - n1z)) + 1e-6)
+    - z1/(sqrt(sq(e2x - n1x) + sq(e2y - n1y) + sq(e2z - n1z)) + 1e-6)
+    - z2/(sqrt(sq(e1x - n2x) + sq(e1y - n2y) + sq(e1z - n2z)) + 1e-6)
+    - z2/(sqrt(sq(e2x - n2x) + sq(e2y - n2y) + sq(e2z - n2z)) + 1e-6)
+    + 1.0/(sqrt(sq(e1x - e2x) + sq(e1y - e2y) + sq(e1z - e2z)) + 1e-6)
+    + z1*z2/(sqrt(sq(n1x - n2x) + sq(n1y - n2y) + sq(n1z - n2z)) + 1e-6)
 }
 
 // --- Aproximación de Born-Oppenheimer ---
@@ -72,10 +46,10 @@ fn "born_oppenheimer_energy"(electronic_energy, nuclear_repulsion) {
     electronic_energy + nuclear_repulsion
 }
 
-// --- Superficie de Energía Potencial (PES) ---
-// E(R) = E_elec(R) + E_nuc(R)
-fn "potential_energy_surface"(nuclear_coordinates, electronic_energy_fn) {
-    electronic_energy_fn(nuclear_coordinates)
+// --- Superficie de Energía Potencial (PES, armónica) ---
+// E(R) ≈ ½·k·(R - R_eq)²
+fn "potential_energy_surface"(equilibrium_distance, force_constant, bond_distance) {
+    0.5 * force_constant * (bond_distance - equilibrium_distance) * (bond_distance - equilibrium_distance)
 }
 
 // ============================================================
@@ -83,44 +57,31 @@ fn "potential_energy_surface"(nuclear_coordinates, electronic_energy_fn) {
 // ============================================================
 
 // --- Orbital Molecular como Combinación Lineal de Orbitales Atómicos (LCAO) ---
-// ψ_i(r) = Σ_μ c_μi·φ_μ(r)
-fn "molecular_orbital_lcao"(position, atomic_orbitals, coefficients) {
-    let psi = 0.0;
-    
-    for i in range(0, min(len(atomic_orbitals), len(coefficients))) {
-        psi = psi + coefficients[i] * atomic_orbitals[i](position);
-    }
-    
-    psi
+// ψ(r) = c₁·φ₁(r) + c₂·φ₂(r), con φ gaussianas 1s en cada centro
+fn "molecular_orbital_lcao"(coefficient1, coefficient2, 
+                            atom1_x, atom1_y, atom1_z, atom2_x, atom2_y, atom2_z,
+                            orbital_exponent, point_x, point_y, point_z) {
+    coefficient1 * exp(-orbital_exponent * (sq(point_x - atom1_x) + sq(point_y - atom1_y) + sq(point_z - atom1_z))) +
+    coefficient2 * exp(-orbital_exponent * (sq(point_x - atom2_x) + sq(point_y - atom2_y) + sq(point_z - atom2_z)))
 }
 
-// --- Integral de Solapamiento (Overlap) ---
-// S_μν = ∫ φ_μ*(r)·φ_ν(r) d³r
-fn "overlap_integral"(orbital1, orbital2, integration_volume) {
-    // Simplificado: integral puntual
-    orbital1(0.0) * orbital2(0.0) * integration_volume
+// --- Integral de Solapamiento (Overlap, gaussianas 1s) ---
+// S = (π/2α)^{3/2}·exp(-αR²/2)
+fn "overlap_integral"(orbital_exponent, distance_between_centers) {
+    pow(pi / (2.0 * orbital_exponent), 1.5) * 
+    exp(-orbital_exponent * distance_between_centers * distance_between_centers / 2.0)
 }
 
-// --- Integral de Resonancia (Coulomb/Intercambio) ---
-// H_μν = ∫ φ_μ*(r)·Ĥ·φ_ν(r) d³r
-fn "hamiltonian_matrix_element"(orbital1, orbital2, hamiltonian_operator) {
-    // Elemento de matriz de Fock/Hamiltoniano
-    orbital1(0.0) * hamiltonian_operator(orbital2)(0.0)
+// --- Integral de Resonancia (Aproximación de Wolfsberg-Helmholtz) ---
+// H_μν ≈ K·S_μν·(H_μμ + H_νν)/2
+fn "hamiltonian_matrix_element"(overlap, diagonal_element_mu, diagonal_element_nu, k_factor) {
+    k_factor * overlap * (diagonal_element_mu + diagonal_element_nu) / 2.0
 }
 
-// --- Ecuaciones de Hartree-Fock (Roothaan-Hall) ---
-// F·C = S·C·ε
-fn "roothaan_hall_equations"(fock_matrix, overlap_matrix, orbital_energies) {
-    // FC = SCε
-    // Simplificado: solución aproximada
-    let dimension = len(fock_matrix);
-    let eigenvalues = [];
-    
-    for i in range(0, dimension) {
-        eigenvalues = append(eigenvalues, fock_matrix[i][i] / (overlap_matrix[i][i] + 1e-6));
-    }
-    
-    eigenvalues
+// --- Ecuaciones de Hartree-Fock (Roothaan-Hall, diagonal 2×2) ---
+// FC = SCε → ε_i ≈ F_ii/S_ii
+fn "roothaan_hall_equations"(f11, s11, f22, s22) {
+    [f11 / (s11 + 1e-6), f22 / (s22 + 1e-6)]
 }
 
 // ============================================================
@@ -128,78 +89,52 @@ fn "roothaan_hall_equations"(fock_matrix, overlap_matrix, orbital_energies) {
 // ============================================================
 
 // --- Densidad Electrónica ---
-// ρ(r) = Σ_i |ψ_i(r)|²
-fn "electron_density"(position, molecular_orbitals, occupations) {
-    let density = 0.0;
-    
-    for i in range(0, min(len(molecular_orbitals), len(occupations))) {
-        let psi = molecular_orbitals[i](position);
-        density = density + occupations[i] * psi * psi;
-    }
-    
-    density
+// ρ(r) = Σ_i n_i·|φ_i(r)|², con φ gaussianas 1s en cada centro
+fn "electron_density"(occupation1, occupation2,
+                      atom1_x, atom1_y, atom1_z, atom2_x, atom2_y, atom2_z,
+                      orbital_exponent, point_x, point_y, point_z) {
+    occupation1 * exp(-2.0 * orbital_exponent * (sq(point_x - atom1_x) + sq(point_y - atom1_y) + sq(point_z - atom1_z))) +
+    occupation2 * exp(-2.0 * orbital_exponent * (sq(point_x - atom2_x) + sq(point_y - atom2_y) + sq(point_z - atom2_z)))
 }
 
 // --- Densidad de Carga de Fase ---
-// Para enlaces químicos
-fn "charge_density_difference"(molecular_density, atomic_densities) {
-    let atomic_sum = 0.0;
-    
-    for i in range(0, len(atomic_densities)) {
-        atomic_sum = atomic_sum + atomic_densities[i];
-    }
-    
-    molecular_density - atomic_sum
+// Diferencia entre densidad molecular y suma de densidades atómicas (2 átomos)
+fn "charge_density_difference"(molecular_density, atomic_density1, atomic_density2) {
+    molecular_density - (atomic_density1 + atomic_density2)
 }
 
-// --- Función de Onda de Slater (Determinante) ---
-// Ψ(x₁,...,x_N) = (1/√N!)·det[ψ_i(x_j)]
-fn "slater_determinant"(electron_coordinates, molecular_orbitals) {
-    // Determinante simplificado
-    let det = 1.0;
-    let N = min(len(electron_coordinates), len(molecular_orbitals));
-    
-    for i in range(0, N) {
-        for j in range(0, N) {
-            if i == j {
-                det = det * molecular_orbitals[i](electron_coordinates[j]);
-            }
-        }
-    }
-    
-    det / sqrt(factorial(N))
+// --- Función de Onda de Slater (Determinante 2×2) ---
+// Ψ = (1/√N!)·det[ψ_i(x_j)] → det = ψ₁(x₁)ψ₂(x₂) - ψ₁(x₂)ψ₂(x₁)
+fn "slater_determinant"(psi1_at_e1, psi2_at_e1, psi1_at_e2, psi2_at_e2, normalization) {
+    (psi1_at_e1 * psi2_at_e2 - psi1_at_e2 * psi2_at_e1) / (normalization + 1e-6)
 }
 
 // --- Factor de Configuración (CI Coefficients) ---
-fn "configuration_interaction_coefficient"(determinant1, determinant2, hamiltonian) {
-    // ⟨Ψ_I|Ĥ|Ψ_J⟩
-    determinant1 * hamiltonian(determinant2)
+// ⟨Ψ_I|Ĥ|Ψ_J⟩ → c_J·H_IJ
+fn "configuration_interaction_coefficient"(determinant_amplitude, hamiltonian_coupling) {
+    determinant_amplitude * hamiltonian_coupling
 }
 
 // ============================================================
 // INTERFAZ PÚBLICA - TEORÍA DEL FUNCIONAL DE LA DENSIDAD (DFT) (fn)
 // ============================================================
 
-// --- Energía Total DFT (Kohn-Sham) ---
-// E[ρ] = T_s[ρ] + E_ext[ρ] + J[ρ] + E_xc[ρ]
-fn "dft_total_energy"(density, kinetic_energy, external_potential, hartree_energy, exchange_correlation) {
-    kinetic_energy(density) + external_potential(density) + hartree_energy(density) + exchange_correlation(density)
+// --- Energía Total DFT (Kohn-Sham, funcionales lineales en ρ) ---
+// E[ρ] ≈ ρ·(T' + V'_ext + J' + E'_xc)
+fn "dft_total_energy"(density_value, kinetic_factor, external_factor, hartree_factor, xc_factor) {
+    density_value * (kinetic_factor + external_factor + hartree_factor + xc_factor)
 }
 
-// --- Energía de Hartree (Coulomb clásico) ---
-// J[ρ] = ½∫∫ ρ(r)ρ(r')/|r-r'| d³r d³r'
-fn "hartree_energy"(density, position) {
-    // Simplificado: aproximación local
-    let rho = density(position);
-    0.5 * rho * rho
+// --- Energía de Hartree (Coulomb clásico, aproximación local) ---
+// J[ρ] ≈ ½·ρ²
+fn "hartree_energy"(density_value) {
+    0.5 * density_value * density_value
 }
 
 // --- Funcional de Intercambio-Correlación LDA ---
-// E_xc^LDA[ρ] = ∫ ρ(r)·ε_xc(ρ(r)) d³r
-fn "lda_exchange_correlation_energy"(density, position) {
-    let rho = density(position);
-    // Aproximación LDA: ε_xc(ρ) ∝ ρ^(1/3)
-    -0.7386 * pow(rho, 1.0/3.0)  // Intercambio de Dirac
+// ε_xc ≈ -0.7386·ρ^(1/3) (intercambio de Dirac)
+fn "lda_exchange_correlation_energy"(density_value) {
+    -0.7386 * pow(density_value, 1.0/3.0)
 }
 
 // --- Potencial de Kohn-Sham ---
@@ -248,7 +183,7 @@ fn "electrophilicity_index"(chemical_potential, hardness) {
 
 // --- Teoría del Estado de Transición (TST) Cuántica ---
 fn "quantum_transition_state_rate"(barrier_height, temperature, frequency_factor) {
-    // k = (k_BT/h)·exp(-ΔG‡/(k_BT))
+    // k = ν·exp(-ΔE‡/(k_BT))
     let kT = BOLTZMANN_QUANTCHEM * temperature;
     frequency_factor * exp(-barrier_height / kT)
 }
@@ -257,52 +192,29 @@ fn "quantum_transition_state_rate"(barrier_height, temperature, frequency_factor
 // INTERFAZ PÚBLICA - MÉTODOS POST-HARTREE-FOCK (fn)
 // ============================================================
 
-// --- Energía de Correlación MP2 (Møller-Plesset 2do orden) ---
-// E_corr^MP2 = Σ_ij Σ_ab |⟨ij||ab⟩|²/(ε_i+ε_j-ε_a-ε_b)
-fn "mp2_correlation_energy"(doubly_excited_integrals, orbital_energies_occupied, orbital_energies_virtual) {
-    let correlation = 0.0;
-    
-    // Sumatoria simplificada
-    for i in range(0, min(len(orbital_energies_occupied), 3)) {
-        for a in range(0, min(len(orbital_energies_virtual), 3)) {
-            let denominator = orbital_energies_occupied[i] + orbital_energies_occupied[i] - 
-                             orbital_energies_virtual[a] - orbital_energies_virtual[a];
-            correlation = correlation + doubly_excited_integrals[i][a] * doubly_excited_integrals[i][a] / 
-                         (denominator + 1e-6);
-        }
-    }
-    
-    correlation
+// --- Energía de Correlación MP2 (Møller-Plesset 2º orden, 2×2) ---
+// E_corr = Σ_ia |⟨ij||ab⟩|²/(ε_i + ε_j - ε_a - ε_b)
+fn "mp2_correlation_energy"(integral_11, integral_12, integral_21, integral_22,
+                            occ_energy1, occ_energy2, virt_energy1, virt_energy2) {
+    integral_11 * integral_11 / (2.0*occ_energy1 - 2.0*virt_energy1 + 1e-6) +
+    integral_12 * integral_12 / (2.0*occ_energy1 - 2.0*virt_energy2 + 1e-6) +
+    integral_21 * integral_21 / (2.0*occ_energy2 - 2.0*virt_energy1 + 1e-6) +
+    integral_22 * integral_22 / (2.0*occ_energy2 - 2.0*virt_energy2 + 1e-6)
 }
 
-// --- Energía de Configuración Interacción (CISD) ---
-// E_CISD = Σ_i c_i·⟨Ψ_0|Ĥ|Ψ_i⟩
-fn "cisd_energy"(reference_energy, excitation_coefficients, matrix_elements) {
-    let correction = 0.0;
-    
-    for i in range(0, min(len(excitation_coefficients), len(matrix_elements))) {
-        correction = correction + excitation_coefficients[i] * matrix_elements[i];
-    }
-    
-    reference_energy + correction
+// --- Energía de Configuración Interacción (CISD, 2 excitaciones) ---
+// E_CISD = E_ref + Σ_i c_i·⟨Ψ_0|Ĥ|Ψ_i⟩
+fn "cisd_energy"(reference_energy, coefficient1, matrix_element1, coefficient2, matrix_element2) {
+    reference_energy + coefficient1 * matrix_element1 + coefficient2 * matrix_element2
 }
 
-// --- Energía Coupled-Cluster (CCSD) ---
+// --- Energía Coupled-Cluster (CCSD, 2 amplitudes T₁ y 2 T₂) ---
 // Ψ_CC = exp(T)|Ψ_0⟩, T = T₁ + T₂
-fn "coupled_cluster_energy"(reference_energy, t1_amplitudes, t2_amplitudes) {
-    // E_CC = ⟨Ψ_0|Ĥ·exp(T)|Ψ_0⟩
-    let singles_energy = 0.0;
-    let doubles_energy = 0.0;
-    
-    for i in range(0, len(t1_amplitudes)) {
-        singles_energy = singles_energy + t1_amplitudes[i] * t1_amplitudes[i] * 0.1;
-    }
-    
-    for i in range(0, len(t2_amplitudes)) {
-        doubles_energy = doubles_energy + t2_amplitudes[i] * t2_amplitudes[i] * 0.2;
-    }
-    
-    reference_energy + singles_energy + doubles_energy
+fn "coupled_cluster_energy"(reference_energy, t1_amplitude_a, t1_amplitude_b, 
+                            t2_amplitude_a, t2_amplitude_b) {
+    reference_energy + 
+    (t1_amplitude_a*t1_amplitude_a + t1_amplitude_b*t1_amplitude_b) * 0.1 +
+    (t2_amplitude_a*t2_amplitude_a + t2_amplitude_b*t2_amplitude_b) * 0.2
 }
 
 // ============================================================
@@ -310,192 +222,121 @@ fn "coupled_cluster_energy"(reference_energy, t1_amplitudes, t2_amplitudes) {
 // ============================================================
 
 // --- Orbitales Moleculares Visualizados ---
-def "molecular_orbitals_visualization"(atomic_positions, orbital_coefficients, intensity_threshold) {
-    // Orbitales como superficies de densidad
-    let orbital_surfaces = [];
-    
-    for i in range(0, min(len(orbital_coefficients), 3)) {
-        // Superficie de contorno constante
-        let orbital_value = 0.0;
-        for j in range(0, min(len(atomic_positions), len(orbital_coefficients[i]))) {
-            let distance_to_atom = sqrt((x - atomic_positions[j][0])*(x - atomic_positions[j][0]) + 
-                                        (y - atomic_positions[j][1])*(y - atomic_positions[j][1]) + 
-                                        (z - atomic_positions[j][2])*(z - atomic_positions[j][2]));
-            orbital_value = orbital_value + orbital_coefficients[i][j] * exp(-distance_to_atom*distance_to_atom/0.1);
-        }
-        
-        let orbital_surface = custom(abs(orbital_value) - intensity_threshold);
-        orbital_surfaces = append(orbital_surfaces, orbital_surface);
-    }
-    
-    sdf: union_array(orbital_surfaces);
+// 2 orbitales LCAO sobre 2 centros (±d/2 en x): contornos |ψ| = th
+def "molecular_orbitals_visualization"(coefficient_11, coefficient_12, coefficient_21, coefficient_22,
+                                       atom_separation, intensity_threshold) {
+    sdf: union(
+        custom(abs(coefficient_11 * exp(-(sq(x + atom_separation*0.5) + y*y + z*z)/0.1)
+                 + coefficient_12 * exp(-(sq(x - atom_separation*0.5) + y*y + z*z)/0.1)) 
+               - intensity_threshold),
+        custom(abs(coefficient_21 * exp(-(sq(x + atom_separation*0.5) + y*y + z*z)/0.1)
+                 + coefficient_22 * exp(-(sq(x - atom_separation*0.5) + y*y + z*z)/0.1)) 
+               - intensity_threshold*0.8)
+    );
 }
 
 // --- Densidad Electrónica Molecular ---
-def "molecular_electron_density"(nuclei_positions, nuclei_charges, intensity_threshold) {
-    // Densidad electrónica total
-    let total_density = 0.0;
-    
-    for i in range(0, len(nuclei_positions)) {
-        let dx = x - nuclei_positions[i][0];
-        let dy = y - nuclei_positions[i][1];
-        let dz = z - nuclei_positions[i][2];
-        let r = sqrt(dx*dx + dy*dy + dz*dz);
-        
-        // Orbital tipo gaussiano alrededor de núcleo
-        let atomic_density = nuclei_charges[i] * exp(-r*r/0.05);
-        total_density = total_density + atomic_density;
-    }
-    
-    // Interferencia entre átomos (enlaces)
-    let bonding_pattern = sin(x*3.0) * cos(z*3.0) * 0.1;
-    
-    sdf: custom(total_density + bonding_pattern - intensity_threshold);
+// Suma de densidades gaussianas (2 núcleos) + patrón de enlace
+def "molecular_electron_density"(nucleus1_x, nucleus1_y, nucleus1_z, charge1,
+                                 nucleus2_x, nucleus2_y, nucleus2_z, charge2,
+                                 intensity_threshold) {
+    sdf: custom(
+        charge1 * exp(-(sq(x - nucleus1_x) + sq(y - nucleus1_y) + sq(z - nucleus1_z))/0.05)
+        + charge2 * exp(-(sq(x - nucleus2_x) + sq(y - nucleus2_y) + sq(z - nucleus2_z))/0.05)
+        + sin(x*3.0) * cos(z*3.0) * 0.1
+        - intensity_threshold);
 }
 
 // --- Superficie de Energía Potencial (PES) ---
-def "potential_energy_surface_visualization"(reaction_coordinate, energy_profile, intensity_threshold) {
-    // PES como superficie 2D
-    let rc = sqrt(x*x + z*z);  // Coordenada de reacción
-    
-    // Perfil de energía (simplificado)
-    let energy = 0.0;
-    if rc < 0.3 {
-        energy = rc * rc * 2.0;  // Reactivos
-    } else if rc < 0.6 {
-        energy = 0.18 - (rc - 0.45)*(rc - 0.45) * 5.0;  // Estado de transición
-    } else {
-        energy = (rc - 0.8)*(rc - 0.8) * 1.5;  // Productos
-    }
-    
-    sdf: custom(y - energy - intensity_threshold);
+// Perfil radial continuo: parábola por (0.3; 0.09·E_r), (0.45; E_ts), (0.6; 0.04·E_p)
+def "potential_energy_surface_visualization"(reactant_energy, ts_energy, product_energy, intensity_threshold) {
+    sdf: custom(y 
+        - (1.0 - step(0.3, sqrt(x*x + z*z))) * (x*x + z*z) * reactant_energy
+        - step(0.3, sqrt(x*x + z*z)) * (1.0 - step(0.6, sqrt(x*x + z*z))) * (ts_energy 
+            + ((0.09*reactant_energy + 0.04*product_energy - 2.0*ts_energy)/0.045) * (sqrt(x*x + z*z) - 0.45)*(sqrt(x*x + z*z) - 0.45)
+            + ((0.04*product_energy - 0.09*reactant_energy)/0.3) * (sqrt(x*x + z*z) - 0.45))
+        - step(0.6, sqrt(x*x + z*z)) * (sqrt(x*x + z*z) - 0.8)*(sqrt(x*x + z*z) - 0.8) * product_energy
+        - intensity_threshold);
 }
 
 // --- Orbitales Frontera (HOMO-LUMO) ---
-def "frontier_orbitals_visualization"(homo_density, lumo_density, intensity_threshold) {
-    // HOMO (ocupado) y LUMO (vacío)
-    let homo_surface = custom(homo_density - intensity_threshold);
-    let lumo_surface = custom(lumo_density - intensity_threshold * 0.8);
-    
-    // Representar con diferentes colores/estilos
-    sdf: union(homo_surface, lumo_surface);
+// HOMO enlazante (g₁+g₂) y LUMO antienlazante (g₁-g₂) sobre 2 centros
+def "frontier_orbitals_visualization"(orbital_exponent, atom_separation, intensity_threshold) {
+    sdf: union(
+        custom(abs(exp(-orbital_exponent*(sq(x + atom_separation*0.5) + y*y + z*z)) 
+                 + exp(-orbital_exponent*(sq(x - atom_separation*0.5) + y*y + z*z))) 
+               - intensity_threshold),
+        custom(abs(exp(-orbital_exponent*(sq(x + atom_separation*0.5) + y*y + z*z)) 
+                 - exp(-orbital_exponent*(sq(x - atom_separation*0.5) + y*y + z*z))) 
+               - intensity_threshold*0.8)
+    );
 }
 
 // --- Enlace Químico (Densidad de Enlace) ---
-def "chemical_bond_density"(atom1_position, atom2_position, bond_order, intensity_threshold) {
-    // Densidad de enlace entre dos átomos
-    let midpoint = [(atom1_position[0] + atom2_position[0])/2.0,
-                   (atom1_position[1] + atom2_position[1])/2.0,
-                   (atom1_position[2] + atom2_position[2])/2.0];
-    
-    let bond_vector = [atom2_position[0] - atom1_position[0],
-                       atom2_position[1] - atom1_position[1],
-                       atom2_position[2] - atom1_position[2]];
-    let bond_length = sqrt(bond_vector[0]*bond_vector[0] + 
-                           bond_vector[1]*bond_vector[1] + 
-                           bond_vector[2]*bond_vector[2]);
-    
-    // Densidad de enlace (máximo en medio)
-    let distance_to_midpoint = sqrt((x - midpoint[0])*(x - midpoint[0]) + 
-                                    (y - midpoint[1])*(y - midpoint[1]) + 
-                                    (z - midpoint[2])*(z - midpoint[2]));
-    let axial_distance = abs((x - atom1_position[0])*bond_vector[0] + 
-                            (y - atom1_position[1])*bond_vector[1] + 
-                            (z - atom1_position[2])*bond_vector[2]) / bond_length;
-    
-    let bond_density = exp(-distance_to_midpoint*distance_to_midpoint/0.02) * 
-                      exp(-axial_distance*axial_distance/0.1) * bond_order;
-    
-    sdf: custom(bond_density - intensity_threshold);
+// Máximo en el punto medio de un enlace alineado en x (±d/2)
+def "chemical_bond_density"(bond_length, bond_order, intensity_threshold) {
+    sdf: custom(
+        exp(-(x*x + y*y + z*z)/0.02) 
+        * exp(-(x + bond_length*0.5)*(x + bond_length*0.5)/0.1) 
+        * bond_order 
+        - intensity_threshold);
 }
 
 // --- Correlación Electrónica (Agujero de Correlación) ---
+// ρ_corr - ρ_ref² + pozo negativo centrado en el origen
 def "electron_correlation_hole"(reference_density, correlated_density, intensity_threshold) {
-    // Agujero de correlación: ρ_corr(r,r') - ρ_ref(r)ρ_ref(r')
-    let r = sqrt(x*x + y*y + z*z);
-    let correlation_hole = correlated_density - reference_density * reference_density;
-    
-    // Estructura de agujero (negativo cerca del electrón)
-    let hole_structure = -exp(-r*r/0.05) * 0.2;
-    
-    sdf: custom(correlation_hole + hole_structure - intensity_threshold);
+    sdf: custom(correlated_density - reference_density * reference_density 
+                - exp(-(x*x + y*y + z*z)/0.05) * 0.2 
+                - intensity_threshold);
 }
 
-// ============================================================
-// INTERFAZ PÚBLICA - FENÓMENOS AVANZADOS (def)
-// ============================================================
-
 // --- Excited States (Absorción Óptica) ---
-def "excited_states_absorption"(ground_state, excited_states, transition_dipoles, intensity_threshold) {
-    // Transiciones ópticas entre estados
-    let absorption_spectrum = 0.0;
-    
-    for i in range(0, min(len(excited_states), 3)) {
-        let energy_difference = excited_states[i] - ground_state;
-        let oscillator_strength = transition_dipoles[i] * transition_dipoles[i] * energy_difference;
-        
-        // Pico de absorción (Lorentziano)
-        let lorentzian = oscillator_strength / ((y - energy_difference)*(y - energy_difference) + 0.01);
-        absorption_spectrum = absorption_spectrum + lorentzian;
-    }
-    
-    sdf: custom(absorption_spectrum - intensity_threshold);
+// 3 transiciones lorentzianas en el eje y (energía)
+def "excited_states_absorption"(ground_state, excited_state1, excited_state2, excited_state3,
+                                dipole1, dipole2, dipole3, intensity_threshold) {
+    sdf: custom(
+        dipole1*dipole1*(excited_state1 - ground_state)/(sq(y - (excited_state1 - ground_state)) + 0.01)
+        + dipole2*dipole2*(excited_state2 - ground_state)/(sq(y - (excited_state2 - ground_state)) + 0.01)
+        + dipole3*dipole3*(excited_state3 - ground_state)/(sq(y - (excited_state3 - ground_state)) + 0.01)
+        - intensity_threshold);
 }
 
 // --- Transferencia de Carga (CT States) ---
 def "charge_transfer_states"(donor_density, acceptor_density, coupling, intensity_threshold) {
-    // Estado de transferencia de carga
-    let charge_separation = donor_density - acceptor_density;
-    let ct_state = sin(x*2.0) * charge_separation * coupling;
-    
-    sdf: custom(ct_state - intensity_threshold);
+    sdf: custom(sin(x*2.0) * (donor_density - acceptor_density) * coupling - intensity_threshold);
 }
 
 // --- Vibraciones Moleculares (Modos normales) ---
-def "molecular_vibrations_normal_modes"(equilibrium_geometry, vibrational_frequencies, intensity_threshold) {
-    // Modos normales de vibración
-    let vibration_pattern = 0.0;
-    
-    for i in range(0, min(len(vibrational_frequencies), 3)) {
-        let frequency = vibrational_frequencies[i];
-        let mode_amplitude = sin(x*3.0 + i*1.0) * cos(z*3.0) * sin(frequency * w) * 0.1;
-        vibration_pattern = vibration_pattern + mode_amplitude;
-    }
-    
-    // Geometría de equilibrio
-    let equilibrium = 0.0;
-    for i in range(0, len(equilibrium_geometry)) {
-        let atom = sphere(equilibrium_geometry[i], 0.05);
-        equilibrium = union(equilibrium, atom);
-    }
-    
-    sdf: union(equilibrium, custom(vibration_pattern - intensity_threshold));
+// 2 átomos oscilando + superposición de 3 modos normales temporales
+def "molecular_vibrations_normal_modes"(atom_separation, frequency1, frequency2, frequency3, intensity_threshold) {
+    sdf: union(
+        union(
+            custom(sqrt(sq(x + atom_separation*0.5) + y*y + z*z) - 0.05),
+            custom(sqrt(sq(x - atom_separation*0.5) + y*y + z*z) - 0.05)
+        ),
+        custom(sin(x*3.0) * cos(z*3.0) * sin(frequency1 * w) * 0.1
+               + sin(x*3.0 + 1.0) * cos(z*3.0) * sin(frequency2 * w) * 0.1
+               + sin(x*3.0 + 2.0) * cos(z*3.0) * sin(frequency3 * w) * 0.1
+               - intensity_threshold)
+    );
 }
 
 // --- Efecto Jahn-Teller (Distorsión) ---
-def "jahn_teller_distortion"(symmetric_geometry, distortion_strength, intensity_threshold) {
-    // Distorsión Jahn-Teller de geometría simétrica
-    let distorted_x = x + distortion_strength * sin(z*2.0) * 0.1;
-    let distorted_z = z + distortion_strength * cos(x*2.0) * 0.1;
-    
-    // Simetría rota
-    let symmetry_broken = sphere([distorted_x, y, distorted_z], 0.05);
-    
-    sdf: symmetry_broken;
+// Estado degenerado que se separa en 2 lóbulos al distorsionar
+def "jahn_teller_distortion"(distortion_strength) {
+    sdf: union(
+        custom(sqrt(x*x + y*y + sq(z - distortion_strength*0.3)) - 0.1),
+        custom(sqrt(x*x + y*y + sq(z + distortion_strength*0.3)) - 0.1)
+    );
 }
 
 // --- Efecto de Solvente (Polarización) ---
 def "solvent_polarization_effect"(solute_density, dielectric_constant, intensity_threshold) {
-    // Polarización de solvente alrededor de soluto
-    let r = sqrt(x*x + y*y + z*z);
-    
-    // Campo de reacción
-    let reaction_field = (1.0 - 1.0/dielectric_constant) * solute_density / (r*r + 1e-6);
-    
-    // Cavidad de soluto
-    let solute_cavity = sphere([0, 0, 0], 0.3);
-    
-    sdf: union(solute_cavity, custom(reaction_field - intensity_threshold));
+    sdf: union(
+        sphere(0.3),
+        custom((1.0 - 1.0/(dielectric_constant + 1e-6)) * solute_density / (x*x + y*y + z*z + 1e-6)
+               - intensity_threshold)
+    );
 }
 
 // ============================================================
@@ -506,42 +347,42 @@ def "solvent_polarization_effect"(solute_density, dielectric_constant, intensity
 // EJEMPLO 1: Orbitales moleculares
 node "molecular_orbitals_example" {
     position: [-4, 0, 0];
-    sdf: molecular_orbitals_visualization([[0,0,0], [0.3,0,0]], [[0.7,0.7], [0.7,-0.7]], 0.15);
+    sdf: molecular_orbitals_visualization(0.7, 0.7, 0.7, -0.7, 0.4, 0.15);
     material: "quantum_orbitals";
 }
 
 // EJEMPLO 2: Densidad electrónica
 node "electron_density_example" {
     position: [0, 0, 0];
-    sdf: molecular_electron_density([[0,0,0], [0.4,0,0]], [1.0, 1.0], 0.2);
+    sdf: molecular_electron_density(0.0, 0.0, 0.0, 1.0, 0.4, 0.0, 0.0, 1.0, 0.2);
     material: "electron_cloud";
 }
 
 // EJEMPLO 3: Superficie de energía potencial
 node "pes_example" {
     position: [4, 0, 0];
-    sdf: potential_energy_surface_visualization(0.0, [0.0, 0.2, 0.1, 0.0], 0.18);
+    sdf: potential_energy_surface_visualization(2.0, 0.18, 1.5, 0.18);
     material: "reaction_pathway";
 }
 
 // EJEMPLO 4: Enlace químico
 node "chemical_bond_example" {
     position: [-2, 3, 0];
-    sdf: chemical_bond_density([0,0,0], [0.5,0,0], 1.0, 0.15);
+    sdf: chemical_bond_density(0.5, 1.0, 0.15);
     material: "chemical_bond";
 }
 
 // EJEMPLO 5: Vibraciones moleculares
 node "molecular_vibrations_example" {
     position: [2, 3, 0];
-    sdf: molecular_vibrations_normal_modes([[0,0,0], [0.3,0,0]], [0.1, 0.2, 0.3], 0.12);
+    sdf: molecular_vibrations_normal_modes(0.3, 0.5, 0.8, 1.1, 0.12);
     material: "vibrational_modes";
 }
 
 // EJEMPLO 6: Estados excitados
 node "excited_states_example" {
     position: [0, -3, 0];
-    sdf: excited_states_absorption(0.0, [0.5, 1.0, 1.5], [0.3, 0.1, 0.05], 0.1);
+    sdf: excited_states_absorption(0.0, 0.5, 1.0, 1.5, 0.3, 0.1, 0.05, 0.1);
     material: "optical_transitions";
 }
 */
@@ -556,6 +397,14 @@ node "excited_states_example" {
 // 4. DFT (Teoría del Funcional de la Densidad) es el método más usado actualmente
 // 5. La correlación electrónica es crucial para propiedades precisas
 // 6. Los cálculos post-HF (MP2, CCSD, CI) mejoran la precisión a mayor costo
+// 7. Corregido 2026-10-17: `<` léxico eliminado (PES → `step`); parámetros función
+//    (no existen en el lenguaje) reemplazados por formas cerradas: hamiltoniano
+//    2e⁻+2núcleos con `sq` (14 args), LCAO/densidad gaussianas por evaluadas
+//    (punto de evaluación como parámetros), solapamiento gaussiano analítico
+//    (π/2α)^{3/2}·e^{-αR²/2}, elemento de matriz Wolfsberg-Helmholtz, determinante
+//    de Slater 2×2 (normalización como argumento; `factorial` no existe), MP2 2×2,
+//    CISD/CCSD desplegados a 2 términos; `for`/arrays/`append`/`union_array`
+//    eliminados; primitivas vectoriales → `custom`; defs sin `let`.
 
 // ============================================================
 // "La química cuántica es la aplicación de la mecánica cuántica

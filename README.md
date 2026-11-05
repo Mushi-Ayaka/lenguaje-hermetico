@@ -33,7 +33,7 @@ Lenguaje de descripción de escenas 3D/4D basado en **campos de distancia firmad
 
 ### Librerías (`libreria/`)
 
-55 librerías estándar (`std_*.hm`) del árbol ontológico (matemáticas → física → química → biología → geociencias → astrofísica) + `materiales.hm`. Ver `libreria/README.md` y `docs/11-protocolo-librerias.md`.
+55 librerías estándar (`std_*.hm`) del árbol ontológico (matemáticas → física → química → biología → geociencias → astrofísica). Las 55 compilan. `materiales.hm` está archivado en `archived/libreria/` (DL-27). Ver `libreria/README.md` y `docs/11-protocolo-librerias.md`.
 
 ### Backend independiente (`operador_tb/`) — LEGACY
 
@@ -58,9 +58,9 @@ Cabeceras que definen la estructura de datos compartida:
 | `scene.h` | Estructura de escena (0% implementado — pendiente) |
 | `sdf.h` | Tipos SDF (0% implementado — pendiente) |
 
-### Librería (`libreria/`)
+### Librería legacy (`archived/libreria/`)
 
-`materiales.hm` — ~40 materiales predefinidos categorizados:
+`materiales.hm` — catálogo pre-tensor de ~55 materiales PBR, **archivado y no compilable** (usa `ior`/`transmission`, rechazados por el parser actual). Se conserva como referencia de valores; el camino activo es definir materiales con `tensor` en la escena:
 - **Metales**: oro, plata, cobre, hierro, aluminio, latón, bronce, titanio, cromo, platino, níquel
 - **Dieléctricos**: vidrio, agua, diamante, hielo, cristal
 - **Orgánicos**: madera roble/pino/cerezo, cuero, caucho, piel, cera

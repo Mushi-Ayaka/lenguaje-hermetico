@@ -3,7 +3,7 @@
 **Capa:** Intermediario: Química-Biología (5.3 — Biología Molecular)
 **Versión:** 1.0
 **Fuente:** Watson & Crick "DNA Structure", Alberts "Molecular Biology of the Cell"
-**Dependencias:** std_math_core.hm, std_math_algebra.hm, std_math_calculus.hm, std_bridge_biochem.hm, std_chem_polymer.hm
+**Dependencias:** std_math_core.hm, std_bridge_atomic.hm
 **Fecha:** 6 de junio de 2026
 
 ## Cómo
@@ -49,3 +49,6 @@ Usada para representar y simular replicación, transcripción, traducción, regu
 
 ## Notas
 Las estructuras moleculares son representaciones geométricas simplificadas. Los parámetros cinéticos y termodinámicos están escalados para visualización. Los sistemas de regulación son abstracciones de procesos reales complejos.
+
+- Corregido 2026-10-17: `log10(x)` no existe en el lenguaje → `log(x)/ln(10)` (log unaria = log natural); 10 defs reescritos sin `let`/`fn` anidadas; `for i in range(...)` del replisoma → 4 polimerasas desplegadas en cadena; `sphere([vec],r)`, `cylinder([vec],[vec],r)`, `box([vec],[vec])` y `torus([vec],[vec],R,r)` no son válidos (las primitivas solo toman escalares centrados en origen) → cajas/cápsulas/esferas/anillos posicionados vía `custom` + `segment_distance` de std_bridge_atomic; uniones de 3-7 hijos → anidadas estrictamente binarias; `custom(mrna_base + exon_pattern)` (suma nodo SDF + expr) → cápsula con modulación radial real; helice doble: superficies implícitas helicoidales `sqrt((x−r·cosθ)²+(z−r·sinθ)²)−w` con θ=2π·(y·length·2)/pitch y columna central de pares de bases con abalorios cada 3.4Å; `fork_angle` (normalizado a 45°), `promoter_length` (crestas de la DNA) y `polymerase_count` (radio de polimerasas) ahora parametrizan la geometría.
+- Verificado 2026-10-17: compila (exit 0); probe 20 nodos / 51 customs exactos; checks: Tm(50%GC, 0.05M, 100pb)=77.15°C y 1M=98.75°C, hélice on-surface −0.04 en dos puntos de parametrización (y=0 y θ=π/2).

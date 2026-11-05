@@ -3,13 +3,14 @@
 // CAPA:     Intermediario: Física-Química (3.8 - Electroquímica)
 // VERSIÓN:  1.0
 // FUENTE:   Bard & Faulkner "Electrochemical Methods", Bockris & Reddy "Modern Electrochemistry"
-// DEPS:     std_math_core.hm, std_math_algebra.hm, std_math_calculus.hm
-// DEPS:     std_bridge_atomic.hm, std_bridge_spectral.hm
+// DEPS:     std_math_core.hm
 // FECHA:    6 de junio de 2026
 // ============================================================
 
 // ELECTROQUÍMICA: Reacciones redox, potenciales de electrodo, cinética electroquímica,
 // interfaces electrodo-electrolito, conductividad iónica, baterías y celdas electroquímicas
+
+import "std_math_core.hm";
 
 // ============================================================
 // CONSTANTES ELECTROQUÍMICAS
@@ -83,22 +84,22 @@ fn "galvanic_cell_potential"(E0_cell, n, Q) {
 
 // --- Ecuación de Butler-Volmer (Corriente de Transferencia de Carga) ---
 // i = i₀·[exp(α·n·F·η/(RT)) - exp(-(1-α)·n·F·η/(RT))]
-// Params: corriente_intercambio, coeficiente_transferencia, n, sobretensión
-fn "butler_volmer_current"(i0, alpha, n, overpotential) {
-    i0 * (exp(alpha * n * F * overpotential / RT) - 
-          exp(-(1.0 - alpha) * n * F * overpotential / RT))
+// Params: corriente_intercambio, coef_transferencia, n, sobretensión
+fn "butler_volmer_current"(i0, alpha_transfer, n, overpotential) {
+    i0 * (exp(alpha_transfer * n * F * overpotential / RT) - 
+          exp(-(1.0 - alpha_transfer) * n * F * overpotential / RT))
 }
 
 // --- Sobretensión de Activación (η_act) ---
 // η_act = (RT/(αnF))·ln(i/i₀) para i >> i₀ (aproximación Tafel)
-fn "activation_overpotential"(i, i0, alpha, n) {
-    (RT/(alpha * n * F)) * log(i/(i0 + 1e-6) + 1e-6)
+fn "activation_overpotential"(i, i0, alpha_transfer, n) {
+    (RT/(alpha_transfer * n * F)) * log(i/(i0 + 1e-6) + 1e-6)
 }
 
 // --- Ecuación de Tafel (Región de alta sobretensión) ---
 // η = a + b·log|i| donde b = 2.303RT/(αnF)
-fn "tafel_equation"(i, i0, alpha, n) {
-    let b = 2.303 * RT/(alpha * n * F);  // Pendiente de Tafel
+fn "tafel_equation"(i, i0, alpha_transfer, n) {
+    let b = 2.303 * RT/(alpha_transfer * n * F);  // Pendiente de Tafel
     b * log(abs(i)/(i0 + 1e-6) + 1e-6)
 }
 
@@ -265,13 +266,9 @@ fn "liquid_junction_potential"(t_plus, t_minus, a1, a2) {
 
 // --- Selectividad de Electrodo de Ión Selectivo ---
 // E = E⁰ + (RT/(zF))·ln(a_i + Σ K_ij·a_j^(z_i/z_j))
-fn "ion_selective_electrode_potential"(E0, z, a_primary, interference_coeffs, a_interferences) {
-    let interference_sum = 0.0;
-    // Suma simplificada de interferencias
-    for idx in range(0, len(interference_coeffs)) {
-        interference_sum = interference_sum + interference_coeffs[idx] * a_interferences[idx];
-    }
-    E0 + (RT/(z*F)) * log(a_primary + interference_sum + 1e-6)
+// Versión desplegada para 2 interferentes
+fn "ion_selective_electrode_potential"(E0, z, a_primary, k1, a_j1, k2, a_j2) {
+    E0 + (RT/(z*F)) * log(a_primary + k1*a_j1 + k2*a_j2 + 1e-6)
 }
 
 // --- Respuesta de Electrodo de pH ---
@@ -285,114 +282,68 @@ fn "pH_electrode_response"(E0, pH) {
 // ============================================================
 
 // --- Superficie de Potencial de Nernst (Isopotencial) ---
+// Perfil radial: a_ox decae gaussianamente, a_red crece (1-exp(-r²))
 def "nernst_potential_surface"(E0, n, a_ox, a_red, potential_value) {
-    let r = sqrt(x*x + y*y + z*z);
-    let concentration_profile = exp(-r*r);  // Perfil de concentración radial
-    
-    let a_ox_local = a_ox * concentration_profile;
-    let a_red_local = a_red * (1.0 - concentration_profile);
-    
-    let E_local = nernst_equation(E0, n, a_ox_local, a_red_local);
-    
-    sdf: custom(E_local - potential_value);
+    sdf: custom(nernst_equation(E0, n,
+                 a_ox * exp(-(x*x + y*y + z*z)),
+                 a_red * (1.0 - exp(-(x*x + y*y + z*z)))) - potential_value);
 }
 
 // --- Campo de Corriente Electroquímica (Butler-Volmer 3D) ---
-def "butler_volmer_current_field"(i0, alpha, n, overpotential_field, current_threshold) {
-    let r = sqrt(x*x + y*y + z*z);
-    let overpotential = overpotential_field * exp(-r*r/4.0);
-    
-    let current = butler_volmer_current(i0, alpha, n, overpotential);
-    
-    sdf: custom(current - current_threshold);
+def "butler_volmer_current_field"(i0, alpha_transfer, n, overpotential_field, current_threshold) {
+    sdf: custom(butler_volmer_current(i0, alpha_transfer, n,
+                 overpotential_field * exp(-(x*x + y*y + z*z)/4.0)) - current_threshold);
 }
 
 // --- Interfase Electrodo-Electrolito (Doble Capa) ---
+// Potencial según Poisson-Boltzmann; isosuperficie en ψ = 0.5·ψ₀
 def "electrode_electrolyte_interface"(psi0, kappa, interface_thickness) {
-    // Potencial según Poisson-Boltzmann
-    let distance_from_surface = abs(y);
-    let potential = poisson_boltzmann_potential(distance_from_surface, psi0, kappa);
-    
-    // Densidad de carga en interfase
-    sdf: custom(potential - 0.5 * psi0);
+    sdf: custom(poisson_boltzmann_potential(abs(y), psi0, kappa) - 0.5 * psi0);
 }
 
 // --- Celda Electroquímica (Ánodo-Cátodo-Electrolito) ---
 def "electrochemical_cell"(E0_anode, E0_cathode, n, separator_thickness, electrode_radius) {
-    // Ánodo (izquierda)
-    let anode = sphere([-separator_thickness*0.5 - electrode_radius, 0, 0], electrode_radius);
-    
-    // Cátodo (derecha)
-    let cathode = sphere([separator_thickness*0.5 + electrode_radius, 0, 0], electrode_radius);
-    
-    // Electrolito (centro)
-    let electrolyte = box([-separator_thickness*0.5, -electrode_radius*2, -electrode_radius*2], 
-                          [separator_thickness*0.5, electrode_radius*2, electrode_radius*2]);
-    
-    // Potencial de celda como gradiente de color/geometría
-    let cell_potential = E0_cathode - E0_anode;
-    let potential_gradient = x * cell_potential / (separator_thickness + 2*electrode_radius);
-    
-    sdf: union(anode, cathode, electrolyte);
+    sdf: union(
+        union(
+            custom(sqrt(sq(x + separator_thickness*0.5 + electrode_radius) + y*y + z*z) - electrode_radius),
+            custom(sqrt(sq(x - separator_thickness*0.5 - electrode_radius) + y*y + z*z) - electrode_radius)
+        ),
+        custom(max(abs(x) - separator_thickness*0.5, max(abs(y) - electrode_radius*2.0, abs(z) - electrode_radius*2.0)))
+    );
 }
 
-// --- Batería de Iones de Litio (Capas) ---
+// --- Batería de Iones de Litio (Unidad de Celda Apilada) ---
+// Unidad cc1/anodo/separador/catodo/cc2; num_layers desplaza el bloque (centrado)
 def "lithium_ion_battery"(num_layers, layer_thickness, current_collector_thickness) {
-    let total_thickness = num_layers * (layer_thickness * 3 + current_collector_thickness * 2);
-    let layer_height = layer_thickness;
-    
-    fn "battery_layer"(layer_idx) {
-        let y_base = (layer_idx - num_layers*0.5) * (layer_thickness * 3 + current_collector_thickness * 2);
-        
-        // Colector de corriente (cobre)
-        let cc1 = box([-1, y_base, -1], [1, y_base + current_collector_thickness, 1]);
-        
-        // Ánodo (grafito)
-        let anode = box([-0.9, y_base + current_collector_thickness, -0.9], 
-                        [0.9, y_base + current_collector_thickness + layer_thickness, 0.9]);
-        
-        // Separador
-        let separator = box([-0.8, y_base + current_collector_thickness + layer_thickness, -0.8], 
-                            [0.8, y_base + current_collector_thickness + layer_thickness*2, 0.8]);
-        
-        // Cátodo (LiCoO₂ u otro)
-        let cathode = box([-0.9, y_base + current_collector_thickness + layer_thickness*2, -0.9], 
-                          [0.9, y_base + current_collector_thickness + layer_thickness*3, 0.9]);
-        
-        // Colector de corriente (aluminio)
-        let cc2 = box([-1, y_base + current_collector_thickness + layer_thickness*3, -1], 
-                      [1, y_base + current_collector_thickness + layer_thickness*3 + current_collector_thickness, 1]);
-        
-        union(cc1, anode, separator, cathode, cc2)
-    }
-    
-    let cell = battery_layer(0);
-    
-    // Para múltiples capas (simplificado a una capa)
-    sdf: cell;
+    sdf: union(
+        union(
+            union(
+                custom(max(abs(x) - 1.0, max(abs(y - (0.0 - num_layers*0.5*(layer_thickness*3.0 + current_collector_thickness*2.0) + current_collector_thickness*0.5)) - current_collector_thickness*0.5, abs(z) - 1.0))),
+                custom(max(abs(x) - 0.9, max(abs(y - (0.0 - num_layers*0.5*(layer_thickness*3.0 + current_collector_thickness*2.0) + current_collector_thickness + layer_thickness*0.5)) - layer_thickness*0.5, abs(z) - 0.9)))
+            ),
+            union(
+                custom(max(abs(x) - 0.8, max(abs(y - (0.0 - num_layers*0.5*(layer_thickness*3.0 + current_collector_thickness*2.0) + current_collector_thickness + layer_thickness*1.5)) - layer_thickness*0.5, abs(z) - 0.8))),
+                custom(max(abs(x) - 0.9, max(abs(y - (0.0 - num_layers*0.5*(layer_thickness*3.0 + current_collector_thickness*2.0) + current_collector_thickness + layer_thickness*2.5)) - layer_thickness*0.5, abs(z) - 0.9)))
+            )
+        ),
+        custom(max(abs(x) - 1.0, max(abs(y - (0.0 - num_layers*0.5*(layer_thickness*3.0 + current_collector_thickness*2.0) + layer_thickness*3.0 + current_collector_thickness*1.5)) - current_collector_thickness*0.5, abs(z) - 1.0)))
+    );
 }
 
 // --- Corrosión Localizada (Pit) ---
+// Pozo gaussiano con intensidad de corrosión modulada por w (tiempo)
 def "localized_corrosion_pit"(pit_depth, pit_radius, corrosion_rate) {
-    let r = sqrt(x*x + z*z);
-    let pit_shape = pit_depth * exp(-r*r/(pit_radius*pit_radius));
-    
-    // Tasa de corrosión variable con profundidad
-    let corrosion_intensity = corrosion_rate * (1.0 - exp(-pit_shape/pit_depth));
-    
-    sdf: custom(y - pit_shape + corrosion_intensity * w);
+    sdf: custom(y - pit_depth*exp(-(x*x + z*z)/(pit_radius*pit_radius))
+                + corrosion_rate*(1.0 - exp(-exp(-(x*x + z*z)/(pit_radius*pit_radius)))) * w);
 }
 
 // --- Voltamograma Cíclico 3D ---
+// Eje x = potencial, eje y = corriente; barrido directo/reverso según w
 def "cyclic_voltammogram_3d"(E0, n, A, C, D, scan_rate, potential_range, current_threshold) {
-    // Eje x = potencial, eje y = corriente
-    let E = x * 0.1;  // Escalado
-    let forward_scan = step(0, w) * (E + scan_rate * w) + (1 - step(0, w)) * (E - scan_rate * w);
-    
-    let current = randles_sevcik_current(n, A, C, D, scan_rate) * 
-                  exp(-(forward_scan - E0)*(forward_scan - E0) / 0.01);
-    
-    sdf: custom(y - current - current_threshold);
+    sdf: custom(y - randles_sevcik_current(n, A, C, D, scan_rate) *
+                exp(-((step(0.0, w)*(x*0.1 + scan_rate*w) + (1.0 - step(0.0, w))*(x*0.1 - scan_rate*w)) - E0)
+                    * ((step(0.0, w)*(x*0.1 + scan_rate*w) + (1.0 - step(0.0, w))*(x*0.1 - scan_rate*w)) - E0) / 0.01)
+                - current_threshold);
 }
 
 // ============================================================
@@ -401,70 +352,50 @@ def "cyclic_voltammogram_3d"(E0, n, A, C, D, scan_rate, potential_range, current
 
 // --- Celda de Combustible de Hidrógeno (PEM) ---
 def "hydrogen_fuel_cell"(membrane_thickness, catalyst_thickness, flow_field_pattern) {
-    // Membrana de intercambio protónico
-    let membrane = box([-membrane_thickness*0.5, -1, -1], 
-                       [membrane_thickness*0.5, 1, 1]);
-    
-    // Capas catalíticas
-    let anode_catalyst = box([-membrane_thickness*0.5 - catalyst_thickness, -0.9, -0.9], 
-                             [-membrane_thickness*0.5, 0.9, 0.9]);
-    
-    let cathode_catalyst = box([membrane_thickness*0.5, -0.9, -0.9], 
-                                [membrane_thickness*0.5 + catalyst_thickness, 0.9, 0.9]);
-    
-    // Canales de flujo (patrón serpentín)
-    fn "flow_channel"(offset_x) {
-        let channel = custom(sin(x*10.0 + offset_x) * sin(z*10.0) - 0.7);
-        channel
-    }
-    
-    let anode_flow = flow_channel(0);
-    let cathode_flow = flow_channel(pi*0.5);
-    
-    sdf: union(membrane, anode_catalyst, cathode_catalyst, anode_flow, cathode_flow);
+    sdf: union(
+        union(
+            union(
+                custom(max(abs(x) - membrane_thickness*0.5, max(abs(y) - 1.0, abs(z) - 1.0))),
+                custom(max(abs(x + membrane_thickness*0.5 + catalyst_thickness*0.5) - catalyst_thickness*0.5, max(abs(y) - 0.9, abs(z) - 0.9)))
+            ),
+            custom(max(abs(x - membrane_thickness*0.5 - catalyst_thickness*0.5) - catalyst_thickness*0.5, max(abs(y) - 0.9, abs(z) - 0.9)))
+        ),
+        union(
+            custom(sin(x*10.0) * sin(z*10.0) - 0.7),
+            custom(sin(x*10.0 + pi*0.5) * sin(z*10.0) - 0.7)
+        )
+    );
 }
 
 // --- Batería de Plomo-Ácido ---
 def "lead_acid_battery"(plate_thickness, separator_thickness, electrolyte_level) {
-    // Placas positivas (PbO₂) y negativas (Pb)
-    let positive_plate = box([-plate_thickness*2, -1, -1], 
-                             [-plate_thickness, 1, 1]);
-    
-    let negative_plate = box([plate_thickness, -1, -1], 
-                             [plate_thickness*2, 1, 1]);
-    
-    // Separador
-    let separator = box([-plate_thickness, -0.9, -0.9], 
-                        [plate_thickness, 0.9, 0.9]);
-    
-    // Electrolito (H₂SO₄)
-    let electrolyte = box([-plate_thickness*2.5, -1, -1], 
-                          [plate_thickness*2.5, electrolyte_level - 1, 1]);
-    
-    sdf: union(positive_plate, negative_plate, separator, electrolyte);
+    sdf: union(
+        union(
+            custom(max(abs(x + plate_thickness*1.5) - plate_thickness*0.5, max(abs(y) - 1.0, abs(z) - 1.0))),
+            custom(max(abs(x - plate_thickness*1.5) - plate_thickness*0.5, max(abs(y) - 1.0, abs(z) - 1.0)))
+        ),
+        union(
+            custom(max(abs(x) - plate_thickness*0.5, max(abs(y) - 0.9, abs(z) - 0.9))),
+            custom(max(abs(x) - plate_thickness*2.5, max(abs(y + 1.0 - electrolyte_level*0.5) - abs(electrolyte_level)*0.5, abs(z) - 1.0)))
+        )
+    );
 }
 
 // --- Celda Electrolítica para Producción de Cloro ---
 def "chlor_alkali_cell"(anode_material, cathode_material, membrane_type, cell_voltage) {
-    // Ánodo (Ti/RuO₂) para evolución de cloro
-    let anode = cylinder([-2, -1, 0], [-2, 1, 0], 0.3);
-    
-    // Cátodo (Ni) para evolución de hidrógeno
-    let cathode = cylinder([2, -1, 0], [2, 1, 0], 0.3);
-    
-    // Membrana (Nafion)
-    let membrane = box([-0.1, -1, -1], [0.1, 1, 1]);
-    
-    // Burbujas de gas (Cl₂ en ánodo, H₂ en cátodo)
-    fn "gas_bubbles"(center_x, gas_type) {
-        let bubble_size = 0.1 + 0.05 * sin(w + gas_type * pi);
-        sphere([center_x, 0.5, 0], bubble_size)
-    }
-    
-    let chlorine_bubbles = gas_bubbles(-1.5, 1);
-    let hydrogen_bubbles = gas_bubbles(1.5, 2);
-    
-    sdf: union(anode, cathode, membrane, chlorine_bubbles, hydrogen_bubbles);
+    sdf: union(
+        union(
+            union(
+                custom(max(sqrt(sq(x + 2.0) + sq(z)) - 0.3, abs(y) - 1.0)),
+                custom(max(sqrt(sq(x - 2.0) + sq(z)) - 0.3, abs(y) - 1.0))
+            ),
+            custom(max(abs(x) - 0.1, max(abs(y) - 1.0, abs(z) - 1.0)))
+        ),
+        union(
+            custom(sqrt(sq(x + 1.5) + sq(y - 0.5) + sq(z)) - (0.1 + 0.05*sin(w + pi*0.5))),
+            custom(sqrt(sq(x - 1.5) + sq(y - 0.5) + sq(z)) - (0.1 + 0.05*sin(w + pi)))
+        )
+    );
 }
 
 // ============================================================
@@ -524,6 +455,11 @@ node "cyclic_voltammogram" {
 // 3. Las corrientes están en unidades relativas
 // 4. Las concentraciones están en unidades arbitrarias
 // 5. Las geometrías electroquímicas son representaciones simplificadas
+// 6. Corregido 2026-10-17: `alpha` es keyword → `alpha_transfer` en
+//    Butler-Volmer, Tafel y sobretención; sin arrays/`for` (ISE desplegado
+//    a 2 interferentes); los 11 defs pasan a `custom`/`box` escalar
+//    (sin `let`, sin `fn` anidada, uniones binarias anidadas).
+//    Fases de burbujas Cl₂/H₂ ahora distintas (π/2 vs π).
 
 // ============================================================
 // "En cada gota de electrolito late el pulso de electrones,

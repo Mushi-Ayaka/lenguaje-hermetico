@@ -37,11 +37,11 @@ let RAD2DEG = 57.29577951308232087684;
 // FUNCIONES DE COMPARACIÓN Y SELECCIÓN (algebraicas puras)
 // ============================================================
 
-// step(edge, x) ya es nativa. Alias para claridad:
+// step/smoothstep: nativas en GLSL (GPU); en CPU (herm_eval.cpp) devuelven 0
 fn "heaviside"(x)         { step(0.0, x) }
 fn "heaviside_smooth"(x, k) { smoothstep(-k, k, x) }
 fn "sign_approx"(x)       { step(0.0, x) * 2.0 - 1.0 }
-fn "select"(cond, a, b)   { a * (1.0 - step(0.5, cond)) + b * step(0.5, cond) }
+fn "select"(cond, a, b)   { a * step(0.5, cond) + b * (1.0 - step(0.5, cond)) }
 
 // ============================================================
 // FUNCIONES ARITMÉTICAS EXTENDIDAS
@@ -69,10 +69,10 @@ fn "thresh"(x, t)  { step(t, x) }
 // INTERPOLACIÓN Y TRANSICIÓN
 // ============================================================
 
-// smoothstep y smootherstep — versiones más suaves
+// smootherstep — polinomio C² de 5º grado: t³(6t² - 15t + 10)
 fn "smootherstep"(edge0, edge1, x) {
-    sat((x - edge0) / (edge1 - edge0 + EPSILON)) * sat((x - edge0) / (edge1 - edge0 + EPSILON)) * sat((x - edge0) / (edge1 - edge0 + EPSILON)) *
-    (6.0 * sat((x - edge0) / (edge1 - edge0 + EPSILON)) * sat((x - edge0) / (edge1 - edge0 + EPSILON)) - 15.0 * sat((x - edge0) / (edge1 - edge0 + EPSILON)) + 10.0)
+    let t = sat((x - edge0) / (edge1 - edge0 + EPSILON));
+    t * t * t * (6.0 * t * t - 15.0 * t + 10.0)
 }
 
 // Lerp seguro con sat
@@ -93,7 +93,7 @@ fn "tan_safe"(x)  { sin(x) / (cos(x) + EPSILON) }
 fn "cot"(x)       { cos(x) / (sin(x) + EPSILON) }
 fn "sec"(x)       { 1.0 / (cos(x) + EPSILON) }
 fn "csc"(x)       { 1.0 / (sin(x) + EPSILON) }
-fn "sinc"(x)      { select(step(EPSILON, abs(x)), sin(PI * x) / (PI * x), 1.0) }
+fn "sinc"(x)      { select(step(EPSILON, abs(x)), sin(PI * x) / (PI * x + EPSILON), 1.0) }
 
 // Funciones hiperbólicas
 fn "sinh_approx"(x) { (exp(x) - exp(-x)) * 0.5 }
@@ -136,7 +136,7 @@ fn "weighted_mean"(a, b, w) { a * (1.0 - w) + b * w }
 // FUNCIONES ESPECIALES DE SEÑAL
 // ============================================================
 
-// Función gaussiana normalizada: e^(-x²/2σ²) / (σ√2π)
+// Función gaussiana (pico en 1, sin normalizar): e^(-x²/2σ²)
 fn "gaussian"(x, sigma)     { exp(-0.5 * x * x / (sigma * sigma + EPSILON)) }
 fn "gaussian_norm"(x, mu, sigma) { exp(-0.5 * (x - mu) * (x - mu) / (sigma * sigma + EPSILON)) }
 
@@ -154,7 +154,7 @@ fn "sinc_norm"(x)           { select(step(EPSILON, abs(x)), sin(PI * x) / (PI * 
 // FUNCIONES GEOMÉTRICAS PURAS
 // ============================================================
 
-// Longitud 2D/3D sin primitiva native
+// Longitud 2D/3D sin primitiva nativa
 fn "len2"(a, b)             { sqrt(a * a + b * b) }
 fn "len3"(a, b, c)          { sqrt(a * a + b * b + c * c) }
 
@@ -175,9 +175,9 @@ fn "angle_between"(ax, ay, az, bx, by, bz) {
 // FUNCIONES DE COMBINACIÓN SDF (suaves)
 // ============================================================
 
-// Unión suave (opmin de Inigo Quilez)
+// Unión suave (opmin de Inigo Quilez): min(a,b) - h²/(4k), h = max(0, k-|a-b|)
 fn "smin"(a, b, k) {
-    max(k, min(a, b)) - pow(max(0.0, k - abs(a - b)), 2.0) / (4.0 * k + EPSILON)
+    min(a, b) - pow(max(0.0, k - abs(a - b)), 2.0) / (4.0 * k + EPSILON)
 }
 
 // Intersección suave
@@ -232,8 +232,10 @@ fn "hash13"(x_val, y_val, z_val) { frac(sin(dot3(x_val, y_val, z_val, 127.1, 311
 // ============================================================
 //
 // 1. NUNCA usar 'return' en fn — la última expresión es el valor
-// 2. NUNCA usar 'let' dentro de fn — solo constantes globales
+// 2. 'let' interno permitido desde v0.17 (DL-14); sin 'if', 'for'
+//    ni comparadores de sintaxis
 // 3. Usar step/smoothstep para condicionales algebraicas
+//    (solo GPU/GLSL — en CPU herm_eval.cpp devuelven 0)
 // 4. Las fn se expanden textualmente en O(1) — sin overhead
 // 5. Palabras reservadas prohibidas como params: alpha, target,
 //    position, rotation, scale, color, type, mode, etc.

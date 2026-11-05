@@ -508,11 +508,12 @@ std::string Resolver::substExprText(const std::string& text,
     const std::unordered_map<std::string, std::string>& subst) const
 {
     std::string t = text;
+    auto isWord = [](char c) { return std::isalnum((unsigned char)c) || c == '_'; };
     for (auto& [param, arg] : subst) {
         size_t pos = 0;
         while ((pos = t.find(param, pos)) != std::string::npos) {
-            bool bl = (pos == 0 || !std::isalnum((unsigned char)t[pos - 1]));
-            bool br = (pos + param.size() >= t.size() || !std::isalnum((unsigned char)t[pos + param.size()]));
+            bool bl = (pos == 0 || !isWord(t[pos - 1]));
+            bool br = (pos + param.size() >= t.size() || !isWord(t[pos + param.size()]));
             if (bl && br) {
                 t.replace(pos, param.size(), arg);
                 pos += arg.size();

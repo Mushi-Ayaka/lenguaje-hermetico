@@ -18,7 +18,8 @@ Generar patrones periódicos tipo Turing (manchas, estrías) para modelado de pi
 ## Funciones principales
 - `turing_pattern_amplitude(x, λ, A, φ)` — Amplitud de patrón de Turing estacionario
 - `stripe_pattern(x, width, spacing, A)` — Patrón de estrías periódicas
-- `spot_pattern(x, y, radius, spacing, A)` — Patrón de manchas gaussianas
+- `spot_pattern(x, y, radius, A)` — Mancha gaussiana individual (centro en el origen)
+- `spot_lattice(x, y, radius, spacing, A)` — Lattice periódico de manchas gaussianas
 - `exponential_gradient(x, C0, λ)` — Gradiente exponencial morfogénico
 - `linear_gradient(x, C0, L)` — Gradiente lineal
 - `thresholded_gradient_response(C, threshold, k)` — Respuesta sigmoide a gradiente
@@ -36,6 +37,6 @@ Generar patrones periódicos tipo Turing (manchas, estrías) para modelado de pi
 
 ## Notas
 - Los patrones de Turing son estacionarios (no resuelven EDPs de reacción-difusión temporalmente).
-- `spot_pattern` tiene un bug: la primera línea `sqrt(x*x + y*y)` no se asigna a nada (código inerte).
+- `spot_pattern` es una mancha única; `spot_lattice` repite la mancha con separación `spot_spacing` (vía `frac`). Corregido 2026-10-17: `spot_pattern` tenía una línea `sqrt` inerte (error de sintaxis) y un `spot_spacing` sin usar.
 - La constante `DIFFUSION_COEFFICIENT_TYPICAL` (1e-10 m²/s) es un valor de referencia para morfógenos.
 - La blástula se modela como esfera con perturbación sinusoidal proporcional al número de células.

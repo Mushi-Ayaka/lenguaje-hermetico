@@ -63,15 +63,10 @@ fn "hardy_weinberg_deviation"(observed_heterozygotes, allele_frequency_p, total_
 // Para cruzamiento Aa × Aa: P(dominante) = 0.75, P(recesivo) = 0.25
 fn "monohybrid_cross_probability"(parent1_genotype, parent2_genotype, phenotype_dominant) {
     // Genotipos: 0 = aa, 1 = Aa, 2 = AA
-    let p1 = parent1_genotype;
-    let p2 = parent2_genotype;
-    
-    // Matriz de probabilidades simplificada
-    let prob_dominant = step(0.5, p1) * step(0.5, p2) * 1.0 + 
-                       (1.0 - step(0.5, p1)) * step(0.5, p2) * 0.5 + 
-                       step(0.5, p1) * (1.0 - step(0.5, p2)) * 0.5 + 
-                       (1.0 - step(0.5, p1)) * (1.0 - step(0.5, p2)) * 0.25;
-    
+    // P(pasar alelo recesivo) por genotipo: 1.0 (aa), 0.5 (Aa), 0.0 (AA)
+    let a1 = (1.0 - step(0.5, parent1_genotype)) + step(0.5, parent1_genotype) * (1.0 - step(1.5, parent1_genotype)) * 0.5;
+    let a2 = (1.0 - step(0.5, parent2_genotype)) + step(0.5, parent2_genotype) * (1.0 - step(1.5, parent2_genotype)) * 0.5;
+    let prob_dominant = 1.0 - a1 * a2;
     phenotype_dominant * prob_dominant + (1.0 - phenotype_dominant) * (1.0 - prob_dominant)
 }
 
@@ -99,7 +94,7 @@ fn "dna_methylation_dynamics"(current_methylation, methylation_rate, demethylati
 }
 
 // --- Herencia Epigenética (Modelo Simple) ---
-// Metilación hija = (metilación madre + ruido) * fidelidad
+// Metilación hija = madre * fidelidad + ruido * (1 - fidelidad): fidelidad=1 → madre, fidelidad=0 → ruido
 fn "epigenetic_inheritance"(parent_methylation, inheritance_fidelity, epigenetic_noise) {
     parent_methylation * inheritance_fidelity + epigenetic_noise * (1.0 - inheritance_fidelity)
 }
@@ -162,16 +157,19 @@ fn "epistatic_interaction"(gene1_effect, gene2_effect, interaction_strength) {
 // --- Doble Hélice de ADN (Estructura Básica) ---
 def "dna_double_helix"(helix_radius, pitch_length, base_pair_spacing, intensity_threshold) {
     sdf: union(
-        custom(sqrt(x*x + y*y) - helix_radius + 0.1 * sin(z * 2.0 * pi / pitch_length + atan2(y, x))),  // Cadena principal
-        custom(sqrt(x*x + y*y) - helix_radius + 0.1 * sin(z * 2.0 * pi / pitch_length + atan2(y, x) + pi)))  // Cadena complementaria
+        custom(sqrt(x*x + y*y) - helix_radius + 0.1 * sin(z * 2.0 * pi / pitch_length + atan(y, x))),  // Cadena principal
+        custom(sqrt(x*x + y*y) - helix_radius + 0.1 * sin(z * 2.0 * pi / pitch_length + atan(y, x) + pi)))  // Cadena complementaria
 }
 
 // --- Cromosoma en Metafase ---
+// Dos cromátidas (cápsulas verticales separadas en X) + centrómero (esfera central)
 def "metaphase_chromosome"(chromosome_length, centromere_position, chromatid_thickness, intensity_threshold) {
     sdf: union(
-        cylinder([0, -chromosome_length * 0.5, 0], [0, chromosome_length * 0.5, 0], chromatid_thickness),  // Cromátida 1
-        cylinder([chromatid_thickness * 2.0, -chromosome_length * 0.5, 0], [chromatid_thickness * 2.0, chromosome_length * 0.5, 0], chromatid_thickness),  // Cromátida 2
-        sphere([chromatid_thickness, chromosome_length * (centromere_position - 0.5), 0], chromatid_thickness * 1.5))  // Centrómero
+        union(
+            custom(sqrt(sq(x) + z*z + sq(max(abs(y) - chromosome_length * 0.5, 0.0))) - chromatid_thickness),  // Cromátida 1
+            custom(sqrt(sq(x - chromatid_thickness * 2.0) + z*z + sq(max(abs(y) - chromosome_length * 0.5, 0.0))) - chromatid_thickness)  // Cromátida 2
+        ),
+        custom(sqrt(sq(x - chromatid_thickness) + sq(y - chromosome_length * (centromere_position - 0.5)) + z*z) - chromatid_thickness * 1.5))  // Centrómero
 }
 
 // --- Patrón de Metilación CpG ---

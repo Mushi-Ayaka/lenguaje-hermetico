@@ -1,5 +1,50 @@
 # Changelog
 
+## 2026-11-04 — v0.20 — Cierre de la reescritura: 55/55 librerías compilan + `materiales.hm` archivado (DL-27)
+
+### Resultado
+- **55/55 librerías estándar compilan** con `build/herm.exe` (DL-14 + DL-26). Barrido completo en ~1 s, exit code 0 en todas. Antes: 35/55.
+- **20 librerías reescritas a mano** sin tocar el lenguaje (ni `if`, ni `for`, ni comparadores, ni estado): 21 `.hm` modificados, −4823/+3892 líneas.
+  - `for` → `def`/`instance` repetidos: `std_bridge_quantchem`, `std_chem_theoretical`.
+  - `if`/`else` → `mix`/`step`/`smoothstep`: `std_bridge_biophysics`, `std_bridge_enzymology`, `std_chem_coordination`.
+  - Keyword como identificador → renombrado: `std_bridge_biochem`, `electrochem`, `genomics`, `statmech_mol`, `chembio`, `physchem`, `chem_optics`, `bio_development`.
+  - `let` en cuerpo de `node` → movidos a `fn` o top-level: `std_bridge_atomic`, `molbio`, `spectral`.
+  - Otros: `std_bio_genetics` (coma espuria), `std_bridge_kinetics` (`q_ratio`), `std_chem_inorganic`/`std_chem_supramolecular` (llaves desbalanceadas).
+
+### Añadido
+- **`docs/12-guia-sintaxis-completa.md`**: guía de sintaxis y capacidades reales del lenguaje (pre-Fase 2), para que nadie escriba construcciones que el parser rechaza.
+- **`docs/librerias/*.md`** (20): documentación actualizada de cada librería reescrita — qué se cambió y por qué.
+
+### Archivado (DL-27)
+- **`libreria/materiales.hm` → `archived/libreria/materiales.hm`**: único `.hm` que no compilaba. Catálogo pre-tensor que usa `ior`/`transmission`, campos que `parse_material` no acepta. No se convierte al tensor (el mapeo no está definido) ni se borra (se conservan los valores de referencia).
+- **`ejemplos/teclado.herm`**: quitado el `import "materiales.hm"` y añadida la definición local de `cobre` (único material que usaba del catálogo). Vuelve a compilar: 33 fotogramas, 3 materiales, 40 nodos.
+
+### Corregido (documentación)
+- **`libreria/README.md`**: estado real 55/55 con historial (35/55 el 2026-10-16), sección de las 20 reescritas y nota de `materiales.hm` archivado.
+- **`DECISION_LOG.md`**: "Estado actual" actualizado (Fase 0 y 1 cerradas, Fase 2 no se abre sin aprobación explícita). Antes decía "Fase 0 lista para ejecutar / Fase 1 pendiente", falso desde el 2026-10-16.
+- **Referencias al catálogo**: `README.md`, `docs/04-guia-uso.md` (ejemplo de import ahora `std_math_core.hm`), `docs/contrato-ontologico.md`.
+
+### Pendiente conocido (no se toca aquí)
+- **`ejemplos/bodegon.herm`** falla por `ior` en un `material` inline (L29). Misma carencia del parser que DL-27 documenta; soportar `ior`/`transmission` es una decisión de lenguaje que corresponde al usuario.
+- **`herm_eval.cpp`**: 13 funciones sin implementar y fallback silencioso `return 0.0f` → Paso 2.0, siguiente trabajo de Fase 2.
+- **RAM bomb** del resolver (1568 MB en `v_lets.herm`) → DL-09.
+
+## 2026-10-23 — v0.19 — Fix `substExprText`: `_` como carácter de palabra (DL-26) + entrada DL-22..26 en DECISION_LOG
+
+### Arreglado
+- **`substExprText`** (`herm_resolver.cpp:507`): el límite de palabra era `std::isalnum`, que **no incluye `_`**. Identificadores con `_` se corrompían al sustituir parámetros de `def`/`fn`: `substExprText("ancho_2 + ancho", {"ancho":"0.5"})` producía `"0.5_2 + 0.5"` (silencioso). Ahora: `isalnum(c) || c == '_'` — criterio estándar C/C++/Rust/Python. `"ancho_2 + 0.5"` correcto. Test mínimo: los 4 casos de `DL-26` en el DECISION_LOG.
+
+### Añadido (DECISION_LOG, ambos repos)
+- **DL-22** — Intersección analítica para composiciones de primitivas puras (Paso 5.14 en PLAN.md, sub-pasos 5.14.1–5.14.6, depende de Fase 3 + DL-09).
+- **DL-23** — Política de decisión de pipeline (SDF vs rasterización). PENDIENTE.
+- **DL-24** — Compositing unificado (depth buffer + UBO compartido). PENDIENTE.
+- **DL-25** — Sistema de shading unificado (mismo PBR, luces, sombras). PENDIENTE.
+- **DL-26** — Fix `substExprText` `_`. Registrado con tests mínimos + bug latente `unordered_map` (orden de sustitución no determinista, pendiente).
+- **Paso 2.0** en PLAN.md — Funciones faltantes en `herm_eval.cpp` (13 funciones + fallback a error). PRIORIDAD ALTA antes de DL-09: incorrecto > lento.
+
+### Nota (patrón del proyecto)
+Tres fallos silenciosos encontrados en una semana: funciones faltantes en `evalExpression` (devuelve 0.0f), `substExprText` con `isalnum` sin `_` (corrompe identificadores), benchmark RAM (peak=0 por muestreo mal). Disciplina: **todo fallo debe ser ruidoso** — si algo no se soporta, error; si algo no existe, error; si algo diverge, error.
+
 ## 2026-10-16 — v0.18 — DL-14 validado con edge cases + fixes de shadowing/sin-retorno + regresión verde
 
 ### Arreglado (DL-14, encontrados por edge-case testing)

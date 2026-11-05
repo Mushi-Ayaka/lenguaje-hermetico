@@ -21,7 +21,7 @@ El color visible se obtiene combinando estos campos por píxel.
 | Pipeline `.herm → RIH → render → .png` | Funcional |
 | SDFs: sphere, box, cylinder, torus, cone, plane, capsule, rounded_box, octahedron | Hardcodeadas en C++ |
 | Operadores: union, subtract, intersect, smooth_*, repeat, twist, elongate, displace | Hardcodeados en C++ |
-| Materiales: lookup table con ~40 materiales | Librería `libreria/materiales.hm` |
+| Materiales: definidos en la escena con `tensor` 1x8 | Catálogo legado `archived/libreria/materiales.hm` (archivado, DL-27) |
 | Luces: directional + point con shadow | En C++ |
 | `let`, `def`/`instance` parametrizadas | Funcional |
 | Animación por eje W | Funcional |

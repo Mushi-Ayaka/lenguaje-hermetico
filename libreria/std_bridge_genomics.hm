@@ -3,13 +3,15 @@
 // CAPA:     Intermediario Química-Biología (5.7 - Genómica Química y Metabolómica)
 // VERSIÓN:  1.0
 // FUENTE:   "Chemical Genomics" & "Metabolomics: From Fundamentals to Clinical Applications"
-// DEPS:     std_math_core.hm, std_math_algebra.hm, std_chem_organic.hm
-// DEPS:     std_bridge_biochem.hm, std_bridge_molbio.hm, std_bridge_chembio.hm
+// DEPS:     std_math_core.hm, std_bridge_atomic.hm
 // FECHA:    6 de junio de 2026
 // ============================================================
 
 // GENÓMICA QUÍMICA: Estudio sistemático de interacciones entre moléculas pequeñas y el genoma
 // METABOLÓMICA: Estudio cuantitativo de metabolitos en sistemas biológicos
+
+import "std_math_core.hm";
+import "std_bridge_atomic.hm";
 
 // ============================================================
 // CONSTANTES FUNDAMENTALES
@@ -26,9 +28,9 @@ let RT_METABOLOMICS = 0.008314462618;    // Constante de gas para metabolómica 
 // ============================================================
 
 // --- Densidad de Secuencia GC ---
-fn "gc_content_density"(gc_fraction, position, genome_scale) {
+fn "gc_content_density"(gc_fraction, sequence_position, genome_scale) {
     // Densidad de GC a lo largo del genoma
-    gc_fraction * (sin(position * genome_scale * 3.1416) * 0.5 + 0.5)
+    gc_fraction * (sin(sequence_position * genome_scale * 3.1416) * 0.5 + 0.5)
 }
 
 // --- Puntuación de Unión de Fármaco-DNA ---
@@ -105,8 +107,8 @@ fn "metabolic_ratio"(metabolite_a, metabolite_b) {
 
 // --- Cambio Metabólico ---
 fn "metabolic_fold_change"(treated_level, control_level) {
-    // Fold change log2
-    log(2, treated_level / (control_level + 1e-6))
+    // Fold change log2: log2(x) = ln(x)/ln(2)
+    log(treated_level / (control_level + 1e-6) + 1e-6) / log(2.0)
 }
 
 // --- Índice de Estrés Metabólico ---
@@ -122,29 +124,17 @@ fn "cellular_energy_ratio"(atp, adp, amp) {
 }
 
 // --- Perfil Metabólico Normalizado ---
-fn "metabolic_profile_normalized"(metabolites, reference_levels) {
-    // Perfil metabólico normalizado por referencia
-    // Representación simplificada: promedio de ratios
-    let normalized_sum = 0;
-    for i in range(0, len(metabolites)) {
-        normalized_sum = normalized_sum + (metabolites[i] / (reference_levels[i] + 1e-6));
-    }
-    normalized_sum / max(1, len(metabolites))
+// Promedio de ratios para 2 metabolitos
+fn "metabolic_profile_normalized"(metabolite1, metabolite2, reference1, reference2) {
+    (metabolite1 / (reference1 + 1e-6) + metabolite2 / (reference2 + 1e-6)) * 0.5
 }
 
 // --- Patrón Metabólico ---
-fn "metabolic_pattern_similarity"(profile_a, profile_b) {
-    // Similaridad de patrones metabólicos
-    // Distancia coseno simplificada
-    let dot_product = 0;
-    let norm_a = 0;
-    let norm_b = 0;
-    
-    for i in range(0, min(len(profile_a), len(profile_b))) {
-        dot_product = dot_product + profile_a[i] * profile_b[i];
-        norm_a = norm_a + profile_a[i] * profile_a[i];
-        norm_b = norm_b + profile_b[i] * profile_b[i];
-    }
+// Similitud coseno para perfiles de 3 componentes
+fn "metabolic_pattern_similarity"(a1, a2, a3, b1, b2, b3) {
+    let dot_product = a1 * b1 + a2 * b2 + a3 * b3;
+    let norm_a = a1 * a1 + a2 * a2 + a3 * a3;
+    let norm_b = b1 * b1 + b2 * b2 + b3 * b3;
     
     dot_product / (sqrt(norm_a) * sqrt(norm_b) + 1e-6)
 }
@@ -190,14 +180,9 @@ fn "metabolic_flux_control_coefficient"(flux_change, enzyme_change) {
 }
 
 // --- Análisis de Estabilidad Metabólica ---
-fn "metabolic_stability_analysis"(jacobian_matrix, eigenvalues) {
-    // Análisis de estabilidad metabólica
-    // Determinante simplificado
-    let stability_index = 1;
-    for i in range(0, len(eigenvalues)) {
-        stability_index = stability_index * eigenvalues[i];
-    }
-    step(0, stability_index)  // 1=estable, 0=inestable
+// Producto de 2 eigenvalores del jacobiano (determinante simplificado)
+fn "metabolic_stability_analysis"(eigenvalue1, eigenvalue2) {
+    step(0.0, eigenvalue1 * eigenvalue2)  // 1=estable, 0=inestable
 }
 
 // ============================================================
@@ -205,213 +190,161 @@ fn "metabolic_stability_analysis"(jacobian_matrix, eigenvalues) {
 // ============================================================
 
 // --- Representación de Secuencia de DNA ---
-def "dna_sequence_visualization"(sequence_pattern, position, intensity_threshold) {
-    // Helice de DNA con patrón de secuencia
-    let dna_backbone = sphere([0, 0, 0], 0.08);
-    
-    // Bases nitrogenadas (A,T,C,G)
-    let bases = [];
-    for i in range(0, len(sequence_pattern)) {
-        let angle = i * 2.0 * pi / len(sequence_pattern);
-        let height = i * 0.05;
-        let base_position = [0.1 * cos(angle), height, 0.1 * sin(angle)];
-        let base = sphere(base_position, 0.03 * sequence_pattern[i]);
-        bases = append(bases, base);
-    }
-    
-    // Enlaces fosfodiéster
-    let backbone_links = [];
-    for i in range(0, len(sequence_pattern) - 1) {
-        let angle1 = i * 2.0 * pi / len(sequence_pattern);
-        let angle2 = (i + 1) * 2.0 * pi / len(sequence_pattern);
-        let pos1 = [0.1 * cos(angle1), i * 0.05, 0.1 * sin(angle1)];
-        let pos2 = [0.1 * cos(angle2), (i + 1) * 0.05, 0.1 * sin(angle2)];
-        let link = cylinder(pos1, pos2, 0.005);
-        backbone_links = append(backbone_links, link);
-    }
-    
-    sdf: union(union(dna_backbone, union_array(bases)), union_array(backbone_links));
+// Doble hélice paramétrica: k = 2π/(n_bases·base_rise); peldaños periódicos
+def "dna_sequence_visualization"(n_bases, base_rise, intensity_threshold) {
+    sdf: union(
+        custom(sqrt(sq(x - 0.1*cos(2.0*pi/(n_bases*base_rise)*y)) + sq(z - 0.1*sin(2.0*pi/(n_bases*base_rise)*y))) - 0.015),
+        union(
+            custom(sqrt(sq(x - 0.1*cos(2.0*pi/(n_bases*base_rise)*y + 3.1416)) + sq(z - 0.1*sin(2.0*pi/(n_bases*base_rise)*y + 3.1416))) - 0.015),
+            custom(max(abs(sqrt(x*x + z*z) - 0.1) - 0.008, abs(sin(pi*y/base_rise)) - 0.08))
+        )
+    );
 }
 
 // --- Interacción Fármaco-DNA ---
-def "drug_dna_interaction_visualization"(dna_position, drug_position, binding_strength, intensity_threshold) {
-    // DNA
-    let dna = sphere(dna_position, 0.08);
-    
-    // Fármaco
-    let drug = sphere(drug_position, 0.04);
-    
-    // Sitio de interacción
-    let interaction_site = custom(-pow(x - dna_position[0], 2) - pow(y - dna_position[1], 2) - pow(z - dna_position[2], 2) + 0.04);
-    
-    // Interacciones moleculares
-    let interactions = sphere(mix(dna_position, drug_position, 0.5), 0.02 * binding_strength);
-    
-    // Campo de influencia
-    let influence_field = sphere(dna_position, 0.12 * binding_strength);
-    
-    sdf: union(union(union(dna, drug), interaction_site), union(interactions, influence_field));
+def "drug_dna_interaction_visualization"(dx, dy, dz, px, py, pz, binding_strength, intensity_threshold) {
+    sdf: union(
+        union(
+            union(
+                custom(sqrt(sq(x - dx) + sq(y - dy) + sq(z - dz)) - 0.08),
+                custom(sqrt(sq(x - px) + sq(y - py) + sq(z - pz)) - 0.04)
+            ),
+            custom(segment_distance(x, y, z, dx, dy, dz, px, py, pz) - 0.004)
+        ),
+        union(
+            custom(sqrt(sq(x - (dx + px)*0.5) + sq(y - (dy + py)*0.5) + sq(z - (dz + pz)*0.5)) - 0.02*binding_strength),
+            custom(sqrt(sq(x - dx) + sq(y - dy) + sq(z - dz)) - 0.12*binding_strength)
+        )
+    );
 }
 
 // --- Red Metabólica ---
-def "metabolic_network_visualization"(metabolite_positions, reaction_fluxes, intensity_threshold) {
-    // Metabolitos (nodos)
-    let metabolites = [];
-    for i in range(0, len(metabolite_positions)) {
-        let metabolite = sphere(metabolite_positions[i], 0.03);
-        metabolites = append(metabolites, metabolite);
-    }
-    
-    // Reacciones (aristas con flujo)
-    let reactions = [];
-    for i in range(0, len(metabolite_positions) - 1) {
-        for j in range(i + 1, len(metabolite_positions)) {
-            let flux_index = i * len(metabolite_positions) + j;
-            let flux_value = 0;
-            if flux_index < len(reaction_fluxes) {
-                flux_value = reaction_fluxes[flux_index];
-            }
-            if flux_value > 0.1 {
-                let reaction = cylinder(metabolite_positions[i], metabolite_positions[j], 0.005 * flux_value);
-                reactions = append(reactions, reaction);
-            }
-        }
-    }
-    
-    // Flujo neto (color/densidad)
-    let total_flux = 0;
-    for i in range(0, len(reaction_fluxes)) {
-        total_flux = total_flux + reaction_fluxes[i];
-    }
-    let flux_density = sphere([0, 0, 0], 0.15 * sqrt(total_flux / max(1, len(reaction_fluxes))));
-    
-    sdf: union(union(union_array(metabolites), union_array(reactions)), flux_density);
+// Nodos como nódulos periódicos en anillo; reacciones como membrana disco
+def "metabolic_network_visualization"(n_nodes, mean_flux, intensity_threshold) {
+    sdf: union(
+        union(
+            custom(max(abs(y) - 0.03, abs(sqrt(x*x + z*z) - 0.15) - 0.02 - 0.012*cos(n_nodes*atan(z, x)))),
+            custom(max(abs(y) - 0.003, sqrt(x*x + z*z) - 0.15))
+        ),
+        custom(sqrt(x*x + y*y + z*z) - 0.15*sqrt(max(mean_flux, 0.0) + 1e-6))
+    );
 }
 
 // --- Perfil Metabólico ---
-def "metabolic_profile_visualization"(metabolite_levels, time_points, intensity_threshold) {
-    // Gráfico de perfil metabólico 3D
-    let profile_surface = [];
-    for i in range(0, len(metabolite_levels)) {
-        for j in range(0, len(metabolite_levels[i])) {
-            let x_pos = i * 0.05;
-            let y_pos = time_points[j];
-            let z_pos = metabolite_levels[i][j] * 0.1;
-            let point = sphere([x_pos, y_pos, z_pos], 0.01);
-            profile_surface = append(profile_surface, point);
-        }
-    }
-    
-    // Eje tiempo
-    let time_axis = cylinder([-0.1, 0, 0], [-0.1, max(time_points) * 1.1, 0], 0.002);
-    
-    // Eje metabolito
-    let metabolite_axis = cylinder([0, -0.1, 0], [max(len(metabolite_levels) * 0.05, 0.1), -0.1, 0], 0.002);
-    
-    // Superficie de tendencia
-    let trend_surface = custom(sin(x * 10.0) * sin(y * 10.0) * 0.02 - z);
-    
-    sdf: union(union(union_array(profile_surface), union(time_axis, metabolite_axis)), trend_surface);
+// Superficie ondulada + ejes de tiempo (y) y metabolito (x)
+def "metabolic_profile_visualization"(n_series, n_points, time_span, intensity_threshold) {
+    sdf: union(
+        union(
+            custom(z - 0.05*(sin(x*40.0)*sin(y*2.0*pi*n_points/(time_span + 1e-6))*0.5 + 0.5)),
+            custom(max(sqrt(sq(x + 0.1) + sq(z)) - 0.002, abs(y - time_span*0.5) - time_span*0.55))
+        ),
+        union(
+            custom(max(sqrt(sq(y) + sq(z)) - 0.002, abs(x - n_series*0.025) - n_series*0.0275)),
+            custom(sqrt(sq(x + 0.1) + sq(y) + sq(z)) - 0.008)
+        )
+    );
 }
 
 // --- Sistema CRISPR-Chem ---
-def "crispr_chemical_system_visualization"(target_site, guide_rna, cas_protein, chemical_effector, intensity_threshold) {
-    // Sitio objetivo DNA
-    let target_dna = sphere(target_site, 0.06);
-    
-    // Guía RNA
-    let guide = sphere(guide_rna, 0.03);
-    
-    // Proteína Cas
-    let cas = sphere(cas_protein, 0.05);
-    
-    // Efecto químico
-    let chemical = sphere(chemical_effector, 0.025);
-    
-    // Complejo CRISPR-Chem
-    let complex_center = mix(mix(target_site, guide_rna, 0.5), mix(cas_protein, chemical_effector, 0.5), 0.5);
-    let complex_sphere = sphere(complex_center, 0.08);
-    
-    // Interacciones
-    let interaction_1 = cylinder(target_site, guide_rna, 0.003);
-    let interaction_2 = cylinder(guide_rna, cas_protein, 0.003);
-    let interaction_3 = cylinder(cas_protein, chemical_effector, 0.003);
-    let interaction_4 = cylinder(chemical_effector, target_site, 0.003);
-    
-    sdf: union(union(union(union(target_dna, union(guide, cas)), chemical), complex_sphere), 
-               union(union(interaction_1, interaction_2), union(interaction_3, interaction_4)));
+def "crispr_chemical_system_visualization"(tx, ty, tz, gx, gy, gz, cx, cy, cz, ex, ey, ez, intensity_threshold) {
+    sdf: union(
+        union(
+            union(
+                union(
+                    custom(sqrt(sq(x - tx) + sq(y - ty) + sq(z - tz)) - 0.06),
+                    custom(sqrt(sq(x - gx) + sq(y - gy) + sq(z - gz)) - 0.03)
+                ),
+                custom(sqrt(sq(x - cx) + sq(y - cy) + sq(z - cz)) - 0.05)
+            ),
+            union(
+                custom(sqrt(sq(x - ex) + sq(y - ey) + sq(z - ez)) - 0.025),
+                custom(sqrt(sq(x - (tx + gx + cx + ex)*0.25) + sq(y - (ty + gy + cy + ey)*0.25) + sq(z - (tz + gz + cz + ez)*0.25)) - 0.08)
+            )
+        ),
+        union(
+            union(
+                custom(segment_distance(x, y, z, tx, ty, tz, gx, gy, gz) - 0.003),
+                custom(segment_distance(x, y, z, gx, gy, gz, cx, cy, cz) - 0.003)
+            ),
+            union(
+                custom(segment_distance(x, y, z, cx, cy, cz, ex, ey, ez) - 0.003),
+                custom(segment_distance(x, y, z, ex, ey, ez, tx, ty, tz) - 0.003)
+            )
+        )
+    );
 }
 
 // --- Pantalla de Fenotipo Químico ---
-def "chemical_phenotype_screen_visualization"(well_positions, hit_scores, intensity_threshold) {
-    // Placa de fenotipado (grid)
-    let wells = [];
-    for i in range(0, len(well_positions)) {
-        let well = sphere(well_positions[i], 0.02);
-        // Fenotipo (tamaño según score)
-        let phenotype_effect = sphere(well_positions[i], 0.04 * hit_scores[i]);
-        wells = append(wells, well);
-        wells = append(wells, phenotype_effect);
-    }
-    
-    // Contorno de placa
-    let plate_outline = custom(-pow(x, 2) - pow(z, 2) + 0.3 + sin(x * 10.0 + w * 2.0) * 0.02);
-    
-    // Legend de fenotipos
-    let legend = [];
-    for i in range(0, 5) {
-        let legend_pos = [-0.3, 0, -0.3 + i * 0.1];
-        let legend_item = sphere(legend_pos, 0.015 * (i + 1));
-        legend = append(legend, legend_item);
-    }
-    
-    sdf: union(union(union_array(wells), plate_outline), union_array(legend));
+// Anillo de pocillos + burbujas de fenotipo escaladas por hit medio + leyenda de 5 puntos
+def "chemical_phenotype_screen_visualization"(n_wells, mean_hit, intensity_threshold) {
+    sdf: union(
+        union(
+            union(
+                custom(max(abs(y) - 0.015, abs(sqrt(x*x + z*z) - 0.3) - 0.015 - 0.012*cos(n_wells*atan(z, x)))),
+                custom(max(abs(y) - 0.01, abs(sqrt(x*x + z*z) - (0.3 + (0.02 + 0.04*mean_hit)*(0.5 + 0.5*cos(n_wells*atan(z, x))))) - 0.008))
+            ),
+            custom(-x*x - z*z + 0.3 + sin(x*10.0 + w*2.0)*0.02)
+        ),
+        union(
+            union(
+                custom(sqrt(sq(x + 0.3) + sq(y) + sq(z + 0.3)) - 0.015),
+                custom(sqrt(sq(x + 0.3) + sq(y) + sq(z + 0.2)) - 0.03)
+            ),
+            union(
+                union(
+                    custom(sqrt(sq(x + 0.3) + sq(y) + sq(z + 0.1)) - 0.045),
+                    custom(sqrt(sq(x + 0.3) + sq(y) + sq(z)) - 0.06)
+                ),
+                custom(sqrt(sq(x + 0.3) + sq(y) + sq(z - 0.1)) - 0.075)
+            )
+        )
+    );
 }
 
 // ============================================================
-// EJEMPLOS DE USO CON custom(expr)
+// EJEMPLOS DE USO
 // ============================================================
 
 /*
-// EJEMPLO 1: Secuencia de DNA
+// EJEMPLO 1: Secuencia de DNA (12 bases, 0.05 de paso)
 node "dna_sequence_example" {
     position: [-4, 0, 0];
-    sdf: dna_sequence_visualization([1, 0.8, 0.6, 0.4], [0, 0, 0], 0.15);
+    sdf: dna_sequence_visualization(12, 0.05, 0.15);
     material: "genomic_dna";
 }
 
 // EJEMPLO 2: Interacción Fármaco-DNA
 node "drug_dna_interaction_example" {
     position: [-2, 2, 0];
-    sdf: drug_dna_interaction_visualization([0, 0, 0], [0.2, 0, 0], 0.7, 0.12);
+    sdf: drug_dna_interaction_visualization(0, 0, 0, 0.2, 0, 0, 0.7, 0.12);
     material: "chemogenomic_interaction";
 }
 
-// EJEMPLO 3: Red Metabólica
+// EJEMPLO 3: Red Metabólica (4 nodos, flujo medio 0.35)
 node "metabolic_network_example" {
     position: [0, 0, 0];
-    sdf: metabolic_network_visualization([[-0.1,0,0], [0.1,0,0], [0,0.1,0], [0,-0.1,0]], [0.5, 0.3, 0.2, 0.1, 0.4, 0.6], 0.1);
+    sdf: metabolic_network_visualization(4, 0.35, 0.1);
     material: "metabolic_pathway";
 }
 
 // EJEMPLO 4: Perfil Metabólico
 node "metabolic_profile_example" {
     position: [2, 2, 0];
-    sdf: metabolic_profile_visualization([[0.5,0.6,0.7], [0.3,0.4,0.5]], [0, 0.5, 1.0], 0.12);
+    sdf: metabolic_profile_visualization(2, 3, 1.0, 0.12);
     material: "metabolomics_data";
 }
 
 // EJEMPLO 5: Sistema CRISPR-Chem
 node "crispr_chemical_example" {
     position: [4, 0, 0];
-    sdf: crispr_chemical_system_visualization([0, 0, 0], [0.1, 0.1, 0], [0.1, -0.1, 0], [-0.1, 0, 0], 0.1);
+    sdf: crispr_chemical_system_visualization(0, 0, 0, 0.1, 0.1, 0, 0.1, -0.1, 0, -0.1, 0, 0, 0.1);
     material: "chemogenetic_tool";
 }
 
 // EJEMPLO 6: Pantalla de Fenotipo
 node "chemical_phenotype_screen_example" {
     position: [0, -2, 0];
-    sdf: chemical_phenotype_screen_visualization([[-0.1,0,0], [0.1,0,0], [0,0.1,0], [0,-0.1,0]], [0.8, 0.2, 0.6, 0.4], 0.1);
+    sdf: chemical_phenotype_screen_visualization(8, 0.5, 0.1);
     material: "chemical_screening";
 }
 */
@@ -425,6 +358,13 @@ node "chemical_phenotype_screen_example" {
 // 3. Las pantallas quimio-genómicas identifican compuestos que alteran fenotipos
 // 4. El análisis de flujos metabólicos modela dinámicas de redes bioquímicas
 // 5. Los sistemas CRISPR-Chem combinan edición genómica con modulación química
+// 6. Corregido 2026-10-17: `log(2, x)` no existe (log de 2 args) → log2(x)=ln x/ln 2;
+//    sin arrays/`for`/`<`: normalización a 2 metabolitos, similitud coseno a 3
+//    componentes, estabilidad = producto de 2 eigenvalores; los 6 defs usan
+//    parámetros escalares (hélice paramétrica con k=2π/(n·paso), anillos de
+//    nódulos periódicos `cos(n·atan(z,x))`, ejes y uniones binarias anidadas);
+//    el sitio de interacción invertido (esfera negativa) se reemplazó por una
+//    cápsula real fármaco-DNA.
 
 // ============================================================
 // "La genómica química revela el diálogo molecular entre compuestos y genoma,

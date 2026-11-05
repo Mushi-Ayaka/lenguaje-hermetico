@@ -3,7 +3,7 @@
 **Capa:** Intermediario: Química-Biología (5.1/5.2 — Bioquímica y Bioquímica Estructural)
 **Versión:** 1.0
 **Fuente:** Lehninger "Biochemistry", Stryer "Biochemistry", PDB (Protein Data Bank)
-**Dependencias:** std_math_core.hm, std_math_algebra.hm, std_math_calculus.hm, std_bridge_atomic.hm, std_chem_optics.hm, std_chem_polymer.hm
+**Dependencias:** std_math_core.hm, std_bridge_atomic.hm
 **Fecha:** 6 de junio de 2026
 
 ## Cómo
@@ -27,7 +27,7 @@ Usada como puente entre la química y la biología para representar proteínas, 
 - `hill_equation_cooperative(Vmax, K_half, n, S)` — Cooperatividad alostérica
 - `biochemical_gibbs_free_energy(deltaG0, Q)` — ΔG = ΔG⁰ + RT·ln(Q)
 - `nernst_membrane_potential(z, out, in)` — Potencial de Nernst
-- `goldman_hodgkin_katz_potential(...)` — Potencial multi-iónico de membrana
+- `goldman_hodgkin_katz_potential(p_na, na_out, na_in, p_k, k_out, k_in, p_cl, cl_out, cl_in)` — GHK en forma estándar Na⁺/K⁺/Cl⁻ (~-68.7 mV típico)
 - `protein_denaturation_free_energy(deltaH, deltaS, T)` — Desnaturalización
 - `membrane_bending_energy(kappa, H, H0, kappa_G, K)` — Energía de Helfrich
 
@@ -46,3 +46,5 @@ Usada como puente entre la química y la biología para representar proteínas, 
 
 ## Notas
 Las constantes están escaladas para visualización. Las interacciones moleculares son aproximaciones energéticas. Las cinéticas enzimáticas siguen modelos clásicos (Michaelis-Menten, inhibiciones, Hill). Los sistemas bioquímicos son abstracciones geométricas de procesos reales.
+
+Corregido 2026-10-17: `alpha` es palabra reservada (renombrada `alpha_factor`); los `def` no aceptan `let` (expresiones inline); `union` es binario; el lenguaje no tiene `for`/listas de longitud dinámica: GHK pasó a la forma estándar de 3 iones, la cadena de transporte despliega sus 4 complejos (escalados por `complex_spacing`) y el ciclo de Krebs reemplazó el bucle de metabolitos por nódulos periódicos (cos(n·θ)). El par de bases del ADN ahora es un segmento horizontal real entre hebras (vía `segment_distance`).

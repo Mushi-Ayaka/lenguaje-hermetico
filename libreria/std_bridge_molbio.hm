@@ -3,13 +3,15 @@
 // CAPA:     Intermediario: Química-Biología (5.3 - Biología Molecular)
 // VERSIÓN:  1.0
 // FUENTE:   Watson & Crick "DNA Structure", Alberts "Molecular Biology of the Cell"
-// DEPS:     std_math_core.hm, std_math_algebra.hm, std_math_calculus.hm
-// DEPS:     std_bridge_biochem.hm, std_chem_polymer.hm
+// DEPS:     std_math_core.hm, std_bridge_atomic.hm
 // FECHA:    6 de junio de 2026
 // ============================================================
 
 // BIOLOGÍA MOLECULAR: Replicación del ADN, transcripción, traducción,
 // expresión génica, regulación, reparación del ADN, biología sintética
+
+import "std_math_core.hm";
+import "std_bridge_atomic.hm";
 
 // ============================================================
 // CONSTANTES DE BIOLOGÍA MOLECULAR
@@ -76,7 +78,7 @@ fn "dna_melting_temperature"(gc_content, salt_concentration, length) {
     // Tm ≈ 81.5 + 16.6·log₁₀[Na⁺] + 0.41·(%GC) - 675/length
     DNA_MELTING_TEMPERATURE_BASE + 
     0.41 * gc_content * 100.0 + 
-    16.6 * log10(salt_concentration) - 
+    16.6 * (log(salt_concentration + 1e-6) / 2.302585092994046) - 
     675.0 / (length + 1e-6)
 }
 
@@ -260,143 +262,112 @@ fn "dna_damage_response"(atm_atr, chk1_chk2, p53) {
 // ============================================================
 
 // --- Doble Hélice de ADN (B-DNA) ---
+// Hebras antiparalelas como superficies helicoidales implícitas + columna de
+// pares de bases con abalorios cada 3.4Å (t = y·length·2 a lo largo del eje)
 def "dna_double_helix_detailed"(helix_radius, pitch, length, twist_variation) {
-    let t = y * 10.0;  // Eje y como eje largo
-    
-    // Dos hebras antiparalelas
-    let strand1_x = helix_radius * cos(2.0 * pi * t / pitch);
-    let strand1_z = helix_radius * sin(2.0 * pi * t / pitch);
-    
-    let strand2_x = helix_radius * cos(2.0 * pi * t / pitch + pi + twist_variation * sin(t * 0.1));
-    let strand2_z = helix_radius * sin(2.0 * pi * t / pitch + pi + twist_variation * sin(t * 0.1));
-    
-    // Bases nitrogenadas conectando las hebras
-    fn "base_pair"(t_val) {
-        let bp_t = t_val;
-        let s1x = helix_radius * cos(2.0 * pi * bp_t / pitch);
-        let s1z = helix_radius * sin(2.0 * pi * bp_t / pitch);
-        let s2x = helix_radius * cos(2.0 * pi * bp_t / pitch + pi);
-        let s2z = helix_radius * sin(2.0 * pi * bp_t / pitch + pi);
-        
-        let mid_x = (s1x + s2x) * 0.5;
-        let mid_z = (s1z + s2z) * 0.5;
-        
-        sqrt((x - mid_x)*(x - mid_x) + (z - mid_z)*(z - mid_z)) - 0.08
-    }
-    
-    // Hebras de azúcar-fosfato
-    let backbone1 = sqrt((x - strand1_x)*(x - strand1_x) + (z - strand1_z)*(z - strand1_z)) - 0.04;
-    let backbone2 = sqrt((x - strand2_x)*(x - strand2_x) + (z - strand2_z)*(z - strand2_z)) - 0.04;
-    
-    // Bases cada 3.4Å (aproximadamente)
-    let base_pairs = base_pair(t);
-    
-    sdf: min(min(backbone1, backbone2), base_pairs);
+    sdf: union(
+        union(
+            custom(sqrt(sq(x - helix_radius * cos(2.0 * pi * (y * length * 2.0) / pitch)) 
+                        + sq(z - helix_radius * sin(2.0 * pi * (y * length * 2.0) / pitch))) - 0.04),
+            custom(sqrt(sq(x + helix_radius * cos(2.0 * pi * (y * length * 2.0) / pitch + twist_variation * sin(y * length * 0.2))) 
+                        + sq(z + helix_radius * sin(2.0 * pi * (y * length * 2.0) / pitch + twist_variation * sin(y * length * 0.2)))) - 0.04)
+        ),
+        custom(sqrt(x*x + z*z) - 0.08 + 0.02 * cos(2.0 * pi * (y * length * 2.0) * 3.4 / pitch))
+    );
 }
 
 // --- RNA Polimerasa en Promotor ---
 def "rna_polymerase_promoter_complex"(polymerase_size, promoter_length, dna_bend) {
-    // RNA polimerasa unida al ADN en promotor
-    let polymerase = sphere([0, 0, 0], polymerase_size * 0.1);
-    
-    // ADN doble hélice doblado en promotor
-    let bent_dna = custom(
-        sin(x * 2.0) * 0.1 + 
-        cos(z * 2.0) * 0.1 - 
-        y * 0.05 + 
-        dna_bend * sin(x * 3.0) * 0.2
+    sdf: union(
+        sphere(polymerase_size * 0.1),
+        union(
+            custom(sin(x * 2.0) * 0.1 + cos(z * 2.0) * 0.1 - y * 0.05 
+                   + dna_bend * sin(x * 20.0 / (promoter_length + 5.0)) * 0.2),
+            custom(sqrt(x*x + sq(y - polymerase_size * 0.15) + z*z) - polymerase_size * 0.05)
+        )
     );
-    
-    // Sitio de unión
-    let binding_site = sphere([0, polymerase_size * 0.15, 0], polymerase_size * 0.05);
-    
-    sdf: union(polymerase, bent_dna, binding_site);
 }
 
 // --- Ribosoma durante Traducción ---
+// Subunidades, mRNA entrante y cadena polipeptídica emergente
 def "ribosome_translation_complex"(ribosome_size, mrna_length, polypeptide_chain) {
-    // Ribosoma (subunidades grande y pequeña)
-    let large_subunit = sphere([-ribosome_size * 0.1, 0, 0], ribosome_size * 0.15);
-    let small_subunit = sphere([ribosome_size * 0.1, 0, 0], ribosome_size * 0.1);
-    
-    // mRNA pasando a través
-    let mrna = cylinder([-mrna_length * 0.5, -ribosome_size * 0.05, 0], 
-                        [mrna_length * 0.5, -ribosome_size * 0.05, 0], 
-                        ribosome_size * 0.02);
-    
-    // Cadena polipeptídica emergente
-    let polypeptide = cylinder([0, ribosome_size * 0.1, 0], 
-                               [0, ribosome_size * 0.3, 0], 
-                               ribosome_size * 0.015 * polypeptide_chain);
-    
-    sdf: union(large_subunit, small_subunit, mrna, polypeptide);
+    sdf: union(
+        union(
+            custom(sqrt(sq(x + ribosome_size * 0.1) + y*y + z*z) - ribosome_size * 0.15),
+            custom(sqrt(sq(x - ribosome_size * 0.1) + y*y + z*z) - ribosome_size * 0.1)
+        ),
+        union(
+            custom(segment_distance(x, y, z, -mrna_length * 0.5, -ribosome_size * 0.05, 0.0,
+                                    mrna_length * 0.5, -ribosome_size * 0.05, 0.0) - ribosome_size * 0.02),
+            custom(segment_distance(x, y, z, 0.0, ribosome_size * 0.1, 0.0,
+                                    0.0, ribosome_size * 0.3, 0.0) - ribosome_size * 0.015 * polypeptide_chain)
+        )
+    );
 }
 
 // --- Horquilla de Replicación ---
+// fork_angle normalizado a 45° escala la apertura en y de las cadenas hijas
 def "dna_replication_fork"(parent_dna_length, daughter_strands_length, fork_angle) {
-    // ADN parental
-    let parent_dna = box([-parent_dna_length * 0.5, -0.02, -0.02], 
-                         [0, 0.02, 0.02]);
-    
-    // Cadenas hijas (líder y retardada)
-    let leading_strand = box([0, 0, -0.015], 
-                             [daughter_strands_length * 0.8, 0.01, 0.015]);
-    
-    let lagging_strand = union(
-        box([0, 0.02, -0.015], [daughter_strands_length * 0.3, 0.03, 0.015]),
-        box([daughter_strands_length * 0.4, 0.02, -0.015], [daughter_strands_length * 0.7, 0.03, 0.015])
+    sdf: union(
+        union(
+            custom(max(max(abs(x + parent_dna_length * 0.25) - parent_dna_length * 0.25, abs(y) - 0.02), abs(z) - 0.02)),
+            union(
+                custom(max(max(abs(x - daughter_strands_length * 0.4) - daughter_strands_length * 0.4, 
+                               abs(y - 0.005 * (fork_angle / 45.0)) - 0.005), abs(z) - 0.015)),
+                union(
+                    custom(max(max(abs(x - daughter_strands_length * 0.15) - daughter_strands_length * 0.15, 
+                                   abs(y - 0.025 * (fork_angle / 45.0)) - 0.005), abs(z) - 0.015)),
+                    custom(max(max(abs(x - daughter_strands_length * 0.55) - daughter_strands_length * 0.15, 
+                                   abs(y - 0.025 * (fork_angle / 45.0)) - 0.005), abs(z) - 0.015))
+                )
+            )
+        ),
+        union(
+            union(
+                custom(sqrt(sq(x - daughter_strands_length * 0.75) + sq(y - 0.005 * (fork_angle / 45.0)) + z*z) - 0.03),
+                custom(sqrt(sq(x - daughter_strands_length * 0.65) + sq(y - 0.025 * (fork_angle / 45.0)) + z*z) - 0.03)
+            ),
+            custom(sqrt(sq(sqrt(y*y + z*z) - 0.03) + sq(x - daughter_strands_length * 0.2)) - 0.008)
+        )
     );
-    
-    // Polimerasas
-    let pol_leading = sphere([daughter_strands_length * 0.75, 0.005, 0], 0.03);
-    let pol_lagging = sphere([daughter_strands_length * 0.65, 0.025, 0], 0.03);
-    
-    sdf: union(parent_dna, leading_strand, lagging_strand, pol_leading, pol_lagging);
 }
 
 // --- Cromosoma Condensado (Metafase) ---
+// Eje central + cromátidas hermanas + bucles de cromatina
 def "condensed_chromosome"(chromosome_length, condensation_level, sister_chromatids) {
-    // Cromosoma altamente condensado
-    let main_axis = cylinder([-chromosome_length * 0.5, 0, 0], 
-                             [chromosome_length * 0.5, 0, 0], 
-                             0.05 * condensation_level);
-    
-    // Bucles de cromatina
-    fn "chromatin_loop"(pos_x) {
-        let loop_radius = 0.1 * (1.0 - condensation_level * 0.5);
-        let loop = sqrt((x - pos_x)*(x - pos_x) + y*y + z*z) - loop_radius;
-        loop
-    }
-    
-    // Cromátidas hermanas (si está en metafase)
-    let chromatid_offset = sister_chromatids * 0.08;
-    let sister1 = cylinder([-chromosome_length * 0.5, chromatid_offset, 0], 
-                           [chromosome_length * 0.5, chromatid_offset, 0], 
-                           0.04 * condensation_level);
-    let sister2 = cylinder([-chromosome_length * 0.5, -chromatid_offset, 0], 
-                           [chromosome_length * 0.5, -chromatid_offset, 0], 
-                           0.04 * condensation_level);
-    
-    sdf: union(main_axis, sister1, sister2);
+    sdf: union(
+        union(
+            custom(segment_distance(x, y, z, -chromosome_length * 0.5, 0.0, 0.0,
+                                    chromosome_length * 0.5, 0.0, 0.0) - 0.05 * condensation_level),
+            union(
+                custom(segment_distance(x, y, z, -chromosome_length * 0.5, sister_chromatids * 0.08, 0.0,
+                                        chromosome_length * 0.5, sister_chromatids * 0.08, 0.0) - 0.04 * condensation_level),
+                custom(segment_distance(x, y, z, -chromosome_length * 0.5, -sister_chromatids * 0.08, 0.0,
+                                        chromosome_length * 0.5, -sister_chromatids * 0.08, 0.0) - 0.04 * condensation_level)
+            )
+        ),
+        union(
+            custom(sqrt(sq(sqrt(sq(x - chromosome_length * 0.3) + y*y) - 0.1 * (1.0 - condensation_level * 0.5)) + z*z) - 0.01),
+            custom(sqrt(sq(sqrt(sq(x + chromosome_length * 0.3) + y*y) - 0.1 * (1.0 - condensation_level * 0.5)) + z*z) - 0.01)
+        )
+    );
 }
 
 // --- Complejo de Splicing (Spliceosoma) ---
+// pre-mRNA con crestas de exones (modulación sinusoidal del radio)
 def "spliceosome_complex"(mrna_length, intron_exon_pattern) {
-    // Spliceosoma en pre-mRNA
-    let spliceosome = sphere([0, 0, 0], 0.15);
-    
-    // pre-mRNA con intrones y exones
-    let mrna_base = cylinder([-mrna_length * 0.5, 0, 0], 
-                             [mrna_length * 0.5, 0, 0], 0.02);
-    
-    // Exones (más gruesos)
-    let exon_pattern = sin(x * 10.0 * intron_exon_pattern) * 0.01;
-    
-    // Sitios de splicing (5' y 3')
-    let splice_site_5 = sphere([-mrna_length * 0.2, 0, 0], 0.03);
-    let splice_site_3 = sphere([mrna_length * 0.2, 0, 0], 0.03);
-    
-    sdf: union(spliceosome, custom(mrna_base + exon_pattern), splice_site_5, splice_site_3);
+    sdf: union(
+        sphere(0.15),
+        union(
+            custom(segment_distance(x, y, z, -mrna_length * 0.5, 0.0, 0.0,
+                                    mrna_length * 0.5, 0.0, 0.0) 
+                   + sin(x * 10.0 * intron_exon_pattern) * 0.01),
+            union(
+                custom(sqrt(sq(x + mrna_length * 0.2) + y*y + z*z) - 0.03),
+                custom(sqrt(sq(x - mrna_length * 0.2) + y*y + z*z) - 0.03)
+            )
+        )
+    );
 }
 
 // ============================================================
@@ -404,93 +375,100 @@ def "spliceosome_complex"(mrna_length, intron_exon_pattern) {
 // ============================================================
 
 // --- Operón Lac (Regulación Procarionte) ---
+// promoter/operator/genes como cajas; represor y CAP escalan con sus ligandos
 def "lac_operon_system"(lactose_present, glucose_absent) {
-    // Promotor + operador + genes estructurales
-    let promoter = box([-1.0, -0.05, -0.05], [-0.8, 0.05, 0.05]);
-    let operator = box([-0.6, -0.04, -0.04], [-0.4, 0.04, 0.04]);
-    let genes = union(
-        box([-0.2, -0.06, -0.06], [0.0, 0.06, 0.06]),  // lacZ
-        box([0.1, -0.05, -0.05], [0.3, 0.05, 0.05]),   // lacY
-        box([0.4, -0.04, -0.04], [0.6, 0.04, 0.04])    // lacA
+    sdf: union(
+        union(
+            union(
+                custom(max(max(abs(x + 0.9) - 0.1, abs(y) - 0.05), abs(z) - 0.05)),
+                custom(max(max(abs(x + 0.5) - 0.1, abs(y) - 0.04), abs(z) - 0.04))
+            ),
+            union(
+                custom(max(max(abs(x + 0.1) - 0.1, abs(y) - 0.06), abs(z) - 0.06)),
+                custom(max(max(abs(x - 0.2) - 0.1, abs(y) - 0.05), abs(z) - 0.05))
+            )
+        ),
+        union(
+            union(
+                custom(max(max(abs(x - 0.5) - 0.1, abs(y) - 0.04), abs(z) - 0.04)),
+                custom(sqrt(sq(x + 0.5) + sq(y - 0.1) + z*z) - 0.08 * (1.0 - lactose_present) * 0.1)
+            ),
+            custom(sqrt(sq(x + 0.9) + sq(y - 0.1) + z*z) - 0.06 * glucose_absent * 0.1)
+        )
     );
-    
-    // Represor (unido si no hay lactosa)
-    let repressor_bound = (1.0 - lactose_present) * 0.1;
-    let repressor = sphere([-0.5, 0.1, 0], 0.08 * repressor_bound);
-    
-    // CAP-cAMP (unido si no hay glucosa)
-    let cap_bound = glucose_absent * 0.1;
-    let cap = sphere([-0.9, 0.1, 0], 0.06 * cap_bound);
-    
-    sdf: union(promoter, operator, genes, repressor, cap);
 }
 
 // --- Máquina de Replicación (Replisoma) ---
+// 4 polimerasas desplegadas en cadena tras la helicasa; abrazadera anular
 def "replisome_machine"(fork_position, polymerase_count, helicase_activity) {
-    // Helicasa desenrollando el ADN
-    let helicase = sphere([fork_position, 0, 0], 0.08 * helicase_activity);
-    
-    // ADN parental desenrollado
-    let unwound_dna = union(
-        cylinder([fork_position - 0.3, 0.05, 0], [fork_position - 0.1, 0.05, 0], 0.02),
-        cylinder([fork_position - 0.3, -0.05, 0], [fork_position - 0.1, -0.05, 0], 0.02)
+    sdf: union(
+        union(
+            union(
+                custom(sqrt(sq(x - fork_position) + y*y + z*z) - 0.08 * helicase_activity),
+                union(
+                    custom(segment_distance(x, y, z, fork_position - 0.3, 0.05, 0.0,
+                                            fork_position - 0.1, 0.05, 0.0) - 0.02),
+                    custom(segment_distance(x, y, z, fork_position - 0.3, -0.05, 0.0,
+                                            fork_position - 0.1, -0.05, 0.0) - 0.02)
+                )
+            ),
+            union(
+                custom(sqrt(sq(x - fork_position - 0.1) + sq(y - 0.06) + z*z) - (0.02 + 0.01 * polymerase_count)),
+                custom(sqrt(sq(x - fork_position - 0.15) + sq(y - 0.04) + z*z) - (0.02 + 0.01 * polymerase_count))
+            )
+        ),
+        union(
+            union(
+                custom(sqrt(sq(x - fork_position - 0.2) + sq(y - 0.02) + z*z) - (0.02 + 0.01 * polymerase_count)),
+                custom(sqrt(sq(x - fork_position - 0.25) + y*y + z*z) - (0.02 + 0.01 * polymerase_count))
+            ),
+            custom(sqrt(sq(sqrt(y*y + z*z) - 0.03) + sq(x - fork_position - 0.15)) - 0.008)
+        )
     );
-    
-    // Múltiples polimerasas
-    fn "dna_polymerase_unit"(offset_x, offset_y) {
-        sphere([fork_position + offset_x, offset_y, 0], 0.05)
-    }
-    
-    let polymerases = dna_polymerase_unit(0.1, 0.06);
-    for i in range(1, polymerase_count) {
-        polymerases = union(polymerases, dna_polymerase_unit(0.1 + i*0.05, 0.06 - i*0.02));
-    }
-    
-    // Proteínas de sujeción (sliding clamps)
-    let clamp = torus([fork_position + 0.15, 0, 0], [0, 1, 0], 0.03, 0.01);
-    
-    sdf: union(helicase, unwound_dna, polymerases, clamp);
 }
 
 // --- Ruta de Señalización (MAPK Cascade) ---
+// MAPKKK → MAPKK → MAPK con flechas de fosforilación y fosfatos
 def "mapk_signaling_cascade"(signal_strength, phosphorylation_levels) {
-    // Tres niveles de quinasa: MAPKKK → MAPKK → MAPK
-    let mapkkk = sphere([-0.8, 0, 0], 0.07 * signal_strength);
-    let mapkk = sphere([0, 0, 0], 0.08 * phosphorylation_levels);
-    let mapk = sphere([0.8, 0, 0], 0.09 * phosphorylation_levels * 1.2);
-    
-    // Fosforilaciones (transferencia de fosfato)
-    let phosphate_transfer1 = cylinder([-0.7, 0, 0], [-0.1, 0, 0], 0.01);
-    let phosphate_transfer2 = cylinder([0.1, 0, 0], [0.7, 0, 0], 0.01);
-    
-    // Fosfatos (esferas pequeñas)
-    let phosphates = union(
-        sphere([-0.4, 0.1, 0], 0.02 * phosphorylation_levels),
-        sphere([0.4, 0.1, 0], 0.02 * phosphorylation_levels * 1.5)
+    sdf: union(
+        union(
+            union(
+                custom(sqrt(sq(x + 0.8) + y*y + z*z) - 0.07 * signal_strength),
+                custom(sqrt(x*x + y*y + z*z) - 0.08 * phosphorylation_levels)
+            ),
+            union(
+                custom(sqrt(sq(x - 0.8) + y*y + z*z) - 0.09 * phosphorylation_levels * 1.2),
+                custom(segment_distance(x, y, z, -0.7, 0.0, 0.0, -0.1, 0.0, 0.0) - 0.01)
+            )
+        ),
+        union(
+            custom(segment_distance(x, y, z, 0.1, 0.0, 0.0, 0.7, 0.0, 0.0) - 0.01),
+            union(
+                custom(sqrt(sq(x + 0.4) + sq(y - 0.1) + z*z) - 0.02 * phosphorylation_levels),
+                custom(sqrt(sq(x - 0.4) + sq(y - 0.1) + z*z) - 0.02 * phosphorylation_levels * 1.5)
+            )
+        )
     );
-    
-    sdf: union(mapkkk, mapkk, mapk, phosphate_transfer1, phosphate_transfer2, phosphates);
 }
 
 // --- Degradación Proteica (Proteasoma) ---
 def "proteasome_degradation_machine"(proteasome_activity, substrate_size, ubiquitination) {
-    // Proteasoma 26S (simplificado)
-    let proteasome = cylinder([-0.2, 0, 0], [0.2, 0, 0], 0.1 * proteasome_activity);
-    
-    // Proteína sustrato (poliubiquitinada)
-    let substrate = sphere([0.4, 0, 0], 0.06 * substrate_size);
-    
-    // Cadena de ubiquitina
-    let ubiquitin_chain = union(
-        sphere([0.5, 0.05, 0], 0.02 * ubiquitination),
-        sphere([0.55, 0, 0.05], 0.02 * ubiquitination),
-        sphere([0.5, -0.05, 0], 0.02 * ubiquitination)
+    sdf: union(
+        union(
+            union(
+                custom(segment_distance(x, y, z, -0.2, 0.0, 0.0, 0.2, 0.0, 0.0) - 0.1 * proteasome_activity),
+                custom(sqrt(sq(x - 0.4) + y*y + z*z) - 0.06 * substrate_size)
+            ),
+            union(
+                custom(sqrt(sq(x - 0.5) + sq(y - 0.05) + z*z) - 0.02 * ubiquitination),
+                custom(sqrt(sq(x - 0.55) + y*y + sq(z - 0.05)) - 0.02 * ubiquitination)
+            )
+        ),
+        union(
+            custom(sqrt(sq(x - 0.5) + sq(y + 0.05) + z*z) - 0.02 * ubiquitination),
+            sphere(0.03 * proteasome_activity)
+        )
     );
-    
-    // Sitio catalítico
-    let catalytic_site = sphere([0, 0, 0], 0.03 * proteasome_activity);
-    
-    sdf: union(proteasome, substrate, ubiquitin_chain, catalytic_site);
 }
 
 // ============================================================
@@ -550,6 +528,14 @@ node "condensed_chromosome_example" {
 // 3. Los sistemas de regulación son abstracciones de procesos reales complejos
 // 4. Los procesos moleculares (replicación, transcripción, traducción) están simplificados
 // 5. Las SDFs representan conceptos más que estructuras atómicamente precisas
+// 6. Corregido 2026-10-17: `log10(x)` no existe → log(x)/ln(10); 10 defs sin
+//    `let`/`fn` anidadas; `for i in range` del replisoma → 4 polimerasas
+//    desplegadas; `sphere([vec],r)`/`cylinder([vec],[vec],r)`/`box([vec],[vec])`
+//    /`torus([vec],[vec],...)` no son válidos → `custom` con cajas/cápsulas/
+//    anillos posicionados vía `segment_distance` (std_bridge_atomic); uniones
+//    de 3-7 hijos → anidadas binarias; `custom(mrna_base + expr)` (nodo+expr)
+//    → cápsula con modulación radial real; `fork_angle`/`promoter_length`/
+//    `polymerase_count` parametrizan apertura/crestas/radio de polimerasas.
 
 // ============================================================
 // "El ADN no es solo un código, es una máquina molecular,

@@ -330,7 +330,7 @@ node "galeria" {
 ## 11. Imports
 
 ```
-import "materiales.hm"
+import "std_math_core.hm"
 ```
 
 Busca el archivo en:

@@ -1,564 +1,384 @@
 // ============================================================
 // LIBRERÍA: std_chem_theoretical.hm
 // CAPA:     Química (4.7 - Química Teórica y Computacional)
-// VERSIÓN:  1.0
+// VERSIÓN:  1.1
 // FUENTE:   "Computational Chemistry" by Jensen
-// DEPS:     std_math_core.hm, std_math_algebra.hm, std_math_calculus.hm
-// DEPS:     std_bridge_quantchem.hm, std_phys_statmech.hm
-// FECHA:    6 de junio de 2026
+// DEPS:     std_math_core.hm
+// FECHA:    6 de junio de 2026 (reescrita 2026-11-04)
 // ============================================================
 
-// QUÍMICA TEÓRICA Y COMPUTACIONAL: Métodos computacionales para química,
-// modelado molecular, simulaciones, dinámica molecular, química cuántica computacional
+// QUÍMICA TEÓRICA Y COMPUTACIONAL: métodos cuánticos computacionales,
+// dinámica molecular, Monte Carlo, optimización geométrica, análisis
+// vibracional y visualizaciones de conceptos abstractos.
+// Convenciones numéricas (el lenguaje no tiene arrays/for/fn-callbacks):
+//   - Los vectores se manejan componente a componente; el llamador pasa
+//     ya calculados los cosenos/energías que necesiten las fórmulas.
+//   - Energías en kJ/mol salvo metropolis/gibbs (J por partícula, k_B).
+//   - frecuencias en cm⁻¹ para zero_point_energy; el resto en unidades
+//     coherentes con las constantes indicadas.
+//   - Los *_field son helpers internos: precalculan con let para que las
+//     SDF no repitan subexpresiones.
+
+import "std_math_core.hm";
 
 // ============================================================
 // CONSTANTES FUNDAMENTALES
 // ============================================================
 
-let BOLTZMANN_THEOR = 1.380649e-23;            // k_B (J/K)
-let PLANCK_THEOR = 6.62607015e-34;             // h (J·s)
-let AVOGADRO_THEOR = 6.02214076e23;            // N_A (mol⁻¹)
+let BOLTZMANN_THEOR = 1.380649e-23;       // k_B (J/K)
+let PLANCK_THEOR = 6.62607015e-34;        // h (J·s)
+let AVOGADRO_THEOR = 6.02214076e23;       // N_A (mol⁻¹)
+let LIGHT_SPEED = 2.99792458e8;           // c (m/s)
 
 // ============================================================
-// INTERFAZ PÚBLICA - MÉTODOS CUÁNTICOS COMPUTACIONALES (fn)
+// HELPERS (fn con let; se expanden dentro de las SDF)
+// ============================================================
+
+// --- Esfera centrada en (cx,cy,cz) ---
+fn "sphere_field"(cx, cy, cz, radius, x, y, z) {
+    let dx = x - cx;
+    let dy = y - cy;
+    let dz = z - cz;
+    sqrt(dx * dx + dy * dy + dz * dz) - radius
+}
+
+// --- erfc(x) por la aproximación racional de Numerical Recipes ---
+// Precisión ~1e-7 en todo el eje; para x<0 usa erfc(-x) = 2 - erfc(x).
+fn "erfc_approx"(x) {
+    let ax = abs(x);
+    let t = 1.0 / (1.0 + 0.5 * ax);
+    let poly = 1.00002368 + t * (0.37409196 + t * (0.09678418 + t * (-0.18628806 + t * (0.27886807 + t * (-1.13520398 + t * (1.48851587 + t * (-0.82215223 + t * 0.17087277)))))));
+    let tau = t * exp(-ax * ax - 1.26551223 + t * poly);
+    tau + step(0.0, -x) * (2.0 - 2.0 * tau)
+}
+
+// --- Superficie de energía potencial: doble pozo + pared en z ---
+fn "pes_field"(barrier_height, well_separation, x, z) {
+    let a2 = well_separation * well_separation;
+    let q = x * x - a2;
+    let scaled = q * q / (a2 * a2 + 1e-9);
+    barrier_height * min(scaled, 1.0) + 0.1 * z * z
+}
+
+// --- Tubo de trayectoria MD: y = drift·x + A·sin(kx + w/2) ---
+// Distancia radial en el plano (y,z) para que el tubo tenga sección real.
+fn "md_trajectory_field"(amplitude, wavelength, tube_radius, drift, x, y, z) {
+    let phase = PI2 * x / (wavelength + 1e-6) + w * 0.5;
+    let dy = y - drift * x - amplitude * sin(phase);
+    sqrt(dy * dy + z * z) - tube_radius
+}
+
+// --- Histograma MC: barras periódicas de altura variable ---
+// Altura de campo (independiente de z); gate recorta cada barra.
+fn "mc_bars_field"(acceptance_rate, bar_height, bar_width, x, y) {
+    let spacing = 0.2;
+    let idx = floor(x / spacing);
+    let u = (x / spacing - idx - 0.5) * spacing;
+    let gate = 1.0 - step(bar_width, abs(u));
+    let variation = 0.5 + 0.5 * sin(idx * 1.7);
+    y - bar_height * acceptance_rate * variation * gate
+}
+
+// --- Rampa de optimización con ondulación amortiguada ---
+fn "opt_pathway_field"(start_height, end_height, ripple, x, z) {
+    let t = sat((x + 1.5) / 3.0);
+    let ramp = start_height + (end_height - start_height) * t;
+    ramp + ripple * sin(x * 6.0) * exp(-x * x * 0.2) + 0.05 * z * z
+}
+
+// --- Átomo i de un modo normal (oscilación alterna en y, animada por w) ---
+fn "vib_atom_field"(amplitude, frequency, atom_index, gate, x, y, z) {
+    let parity = atom_index - 2.0 * floor(atom_index * 0.5);
+    let alternation = 1.0 - 2.0 * parity;
+    let displacement = amplitude * sin(frequency * w) * alternation;
+    sphere_field(-0.2 + atom_index * 0.1, displacement, 0.0, 0.03 * gate, x, y, z)
+}
+
+// --- Punto (i,j) de la malla DFT en el plano XZ; peso gaussiano ---
+fn "dft_grid_dot_field"(grid_density, dot_i, dot_j, x, y, z) {
+    let gate = (1.0 - step(grid_density, dot_i)) * (1.0 - step(grid_density, dot_j));
+    let px = (dot_i - 2.0) * 0.12;
+    let pz = (dot_j - 2.0) * 0.12;
+    let weight = exp(-(px * px + pz * pz) / 0.1);
+    sphere_field(px, 0.0, pz, (0.004 + 0.012 * weight) * gate, x, y, z)
+}
+
+// ============================================================
+// INTERFAZ PÚBLICA - MÉTODOS CUÁNTICOS (fn)
 // ============================================================
 
 // --- Funcional DFT (B3LYP híbrido) ---
+// 0.20·HF + 0.80·Slater + 0.72·B88 + 0.81·LYP
 fn "b3lyp_exchange_correlation"(density, gradient, kinetic_energy_density) {
-    // B3LYP: 0.20·HF + 0.80·Slater + 0.72·B88 + 0.81·LYP
-    let exchange_hf = kinetic_energy_density;
-    let exchange_slater = pow(density, 4.0/3.0);
-    let exchange_b88 = gradient * gradient / density;
-    let correlation_lyp = density * exp(-density * 0.1);
-    
-    0.20 * exchange_hf + 0.80 * exchange_slater + 0.72 * exchange_b88 + 0.81 * correlation_lyp
+    let rho = max(density, 1e-6);
+    let r43 = pow(rho, 4.0 / 3.0);
+    let b88 = gradient * gradient / (r43 + 1e-9);
+    let lyp = rho * exp(-0.1 * rho);
+    0.2 * kinetic_energy_density + 0.8 * r43 + 0.72 * b88 + 0.81 * lyp
 }
 
-// --- Energía de Correlación MP2 ---
-fn "mp2_energy_computation"(orbital_energies, two_electron_integrals, occupied, virtual) {
-    let correlation = 0.0;
-    
-    for i in range(0, occupied) {
-        for j in range(0, occupied) {
-            for a in range(occupied, occupied + virtual) {
-                for b in range(occupied, occupied + virtual) {
-                    let denominator = orbital_energies[i] + orbital_energies[j] - 
-                                     orbital_energies[a] - orbital_energies[b];
-                    let integral = two_electron_integrals[i][j][a][b];
-                    correlation = correlation + integral * integral / (denominator + 1e-6);
-                }
-            }
-        }
-    }
-    
-    correlation * 0.25
+// --- Correlación MP2 de un par (i,j)→(a,b) ---
+// E = -0.25·|⟨ij||ab⟩|²/(ε_a+ε_b-ε_i-ε_j)
+fn "mp2_pair_correlation"(energy_gap, integral) {
+    -0.25 * integral * integral / (energy_gap + 1e-6)
 }
 
-// --- Costo Computacional Hartree-Fock ---
+// --- Correlación MP2 total (pares activos × energía media de par) ---
+fn "mp2_energy_computation"(energy_gap, integral, pair_count) {
+    pair_count * mp2_pair_correlation(energy_gap, integral)
+}
+
+// --- Costo Computacional Hartree-Fock: O(N⁴) ---
 fn "hartree_fock_cost"(basis_functions) {
-    // O(N^4) para integrales de dos electrones
-    pow(basis_functions, 4.0)
+    let n2 = basis_functions * basis_functions;
+    n2 * n2
 }
 
-// --- Costo Computacional DFT ---
+// --- Costo Computacional DFT: O(N³) + O(N·G) ---
 fn "dft_cost"(basis_functions, grid_points) {
-    // O(N^3) para diagonalización + O(N·G) para integración
-    pow(basis_functions, 3.0) + basis_functions * grid_points
+    let n2 = basis_functions * basis_functions;
+    n2 * basis_functions + basis_functions * grid_points
 }
 
-// --- Costo Computacional CCSD(T) ---
+// --- Costo Computacional CCSD(T): O(N⁷) ---
 fn "ccsdt_cost"(basis_functions) {
-    // O(N^7) para CCSD(T)
-    pow(basis_functions, 7.0)
+    let n2 = basis_functions * basis_functions;
+    let n4 = n2 * n2;
+    n4 * n2 * basis_functions
 }
 
-// --- Aproximación de Resolution of Identity (RI) ---
+// --- Ahorro de la aproximación Resolution of Identity ---
+// De O(N⁴) a O(N²·M): fracción ahorrada = 1 − M/N².
 fn "ri_approximation_savings"(basis_functions, auxiliary_functions) {
-    // Reduce costo de O(N^4) a O(N^2·M) donde M < N
-    let original = pow(basis_functions, 4.0);
-    let ri_cost = basis_functions * basis_functions * auxiliary_functions;
-    
-    (original - ri_cost) / original  // Fracción ahorrada
+    let n2 = basis_functions * basis_functions;
+    clamp(1.0 - auxiliary_functions / (n2 + 1e-9), 0.0, 1.0)
 }
 
 // ============================================================
 // INTERFAZ PÚBLICA - DINÁMICA MOLECULAR (fn)
 // ============================================================
 
-// --- Integrador Velocity-Verlet ---
-fn "velocity_verlet_step"(position, velocity, acceleration, dt) {
-    let new_position = position + velocity * dt + 0.5 * acceleration * dt * dt;
-    let half_velocity = velocity + 0.5 * acceleration * dt;
-    
-    // Requiere cálculo de nueva aceleración
-    [new_position, half_velocity]
+// --- Velocity-Verlet: nueva posición (una componente) ---
+fn "velocity_verlet_position"(position_value, velocity, acceleration, dt) {
+    position_value + velocity * dt + 0.5 * acceleration * dt * dt
 }
 
-// --- Campo de Fuerza (Lennard-Jones) ---
-fn "lennard_jones_force"(r, epsilon, sigma) {
-    // F = 24ε/r·[2(σ/r)^12 - (σ/r)^6]
-    let sr6 = pow(sigma / (r + 1e-6), 6.0);
-    let sr12 = sr6 * sr6;
-    
-    24.0 * epsilon / (r + 1e-6) * (2.0 * sr12 - sr6)
+// --- Velocity-Verlet: media velocidad (una componente) ---
+// La velocidad completa requiere la aceleración nueva tras el paso.
+fn "velocity_verlet_velocity"(velocity, acceleration, dt) {
+    velocity + 0.5 * acceleration * dt
 }
 
-// --- Energía de Enlace (Armónico) ---
-fn "harmonic_bond_energy"(r, r0, k_bond) {
-    0.5 * k_bond * (r - r0) * (r - r0)
+// --- Energía de Lennard-Jones: 4ε[(σ/r)¹² − (σ/r)⁶] ---
+fn "lennard_jones_energy"(distance_r, epsilon, sigma) {
+    let sr = sigma / (distance_r + 1e-6);
+    let sr2 = sr * sr;
+    let sr6 = sr2 * sr2 * sr2;
+    4.0 * epsilon * (sr6 * sr6 - sr6)
 }
 
-// --- Energía de Ángulo (Armónico) ---
+// --- Fuerza de Lennard-Jones: 24ε/r·[2(σ/r)¹² − (σ/r)⁶] ---
+fn "lennard_jones_force"(distance_r, epsilon, sigma) {
+    let sr = sigma / (distance_r + 1e-6);
+    let sr2 = sr * sr;
+    let sr6 = sr2 * sr2 * sr2;
+    24.0 * epsilon / (distance_r + 1e-6) * (2.0 * sr6 * sr6 - sr6)
+}
+
+// --- Energía de Enlace Armónico ---
+fn "harmonic_bond_energy"(distance_r, r0, k_bond) {
+    let d = distance_r - r0;
+    0.5 * k_bond * d * d
+}
+
+// --- Energía de Ángulo Armónico ---
 fn "harmonic_angle_energy"(theta, theta0, k_angle) {
-    0.5 * k_angle * (theta - theta0) * (theta - theta0)
+    let d = theta - theta0;
+    0.5 * k_angle * d * d
 }
 
 // --- Energía de Torsión (Dihedro) ---
-fn "torsion_energy"(phi, V_n, n, gamma) {
-    // E = V_n·(1 + cos(n·φ - γ))
-    V_n * (1.0 + cos(n * phi - gamma))
+fn "torsion_energy"(phi, barrier, periodicity, gamma) {
+    barrier * (1.0 + cos(periodicity * phi - gamma))
 }
 
-// --- Energía Electroestática (Ewald) ---
-fn "ewald_electrostatic_energy"(charges, positions, alpha, cutoff) {
-    // Suma directa + recíproca + auto-término
-    let direct_sum = 0.0;
-    for i in range(0, len(charges)) {
-        for j in range(i + 1, len(charges)) {
-            let r = distance(positions[i], positions[j]);
-            if r < cutoff {
-                direct_sum = direct_sum + charges[i] * charges[j] * erfc(alpha * r) / (r + 1e-6);
-            }
-        }
-    }
-    
-    direct_sum
+// --- Par electrostático directo de Ewald (con erfc aproximada) ---
+// Devuelve 0 fuera de la esfera de corte.
+fn "ewald_direct_pair"(charge_i, charge_j, distance_r, alpha_value, cutoff) {
+    let inside = 1.0 - step(cutoff, distance_r);
+    let r = max(distance_r, 1e-6);
+    inside * charge_i * charge_j * erfc_approx(alpha_value * r) / r
 }
 
 // ============================================================
-// INTERFAZ PÚBLICA - SIMULACIÓN DE MONTE CARLO (fn)
+// INTERFAZ PÚBLICA - MONTE CARLO (fn)
 // ============================================================
 
-// --- Criterio de Metropolis ---
+// --- Criterio de Metropolis: probabilidad de aceptación (0..1) ---
+// ΔE en J por partícula; el llamador compara con un número aleatorio.
 fn "metropolis_criterion"(energy_change, temperature) {
-    // Aceptar si ΔE < 0, o con probabilidad exp(-ΔE/(k_B·T))
-    if energy_change < 0 {
-        true
-    } else {
-        exp(-energy_change / (BOLTZMANN_THEOR * temperature)) > random()
-    }
+    let exponent = -energy_change / (BOLTZMANN_THEOR * max(temperature, 1e-9));
+    min(1.0, exp(clamp(exponent, -40.0, 40.0)))
 }
 
-// --- Movimiento de Translación MC ---
-fn "mc_translation_move"(position, max_displacement) {
-    let dx = (random() - 0.5) * 2.0 * max_displacement;
-    let dy = (random() - 0.5) * 2.0 * max_displacement;
-    let dz = (random() - 0.5) * 2.0 * max_displacement;
-    
-    [position[0] + dx, position[1] + dy, position[2] + dz]
+// --- Desplazamiento MC de traslación (una componente) ---
+// uniform_sample es un número en [0,1) que aporta el llamador.
+fn "mc_translation_step"(max_displacement, uniform_sample) {
+    (uniform_sample - 0.5) * 2.0 * max_displacement
 }
 
-// --- Movimiento de Rotación MC ---
-fn "mc_rotation_move"(orientation, max_rotation) {
-    let axis = [random() - 0.5, random() - 0.5, random() - 0.5];
-    let angle = (random() - 0.5) * 2.0 * max_rotation;
-    
-    // Rotación simplificada
-    rotate_vector(orientation, axis, angle)
+// --- Giro MC de rotación (un ángulo) ---
+fn "mc_rotation_step"(max_rotation, uniform_sample) {
+    (uniform_sample - 0.5) * 2.0 * max_rotation
 }
 
-// --- Muestreo de Gibbs ---
-fn "gibbs_sampling_step"(particle_index, configurations, temperatures) {
-    // Muestrear configuración para partícula dada
-    let config_sum = 0.0;
-    for i in range(0, len(configurations)) {
-        config_sum = config_sum + configurations[i][particle_index];
-    }
-    
-    config_sum / len(configurations)
+// --- Media de Gibbs ponderada por Boltzmann (dos configuraciones) ---
+fn "gibbs_sampling_average"(value_a, value_b, energy_a, energy_b, temperature) {
+    let kt = BOLTZMANN_THEOR * max(temperature, 1e-9);
+    let wa = exp(clamp(-energy_a / kt, -40.0, 40.0));
+    let wb = exp(clamp(-energy_b / kt, -40.0, 40.0));
+    (value_a * wa + value_b * wb) / (wa + wb + 1e-30)
 }
 
 // ============================================================
 // INTERFAZ PÚBLICA - OPTIMIZACIÓN GEOMÉTRICA (fn)
 // ============================================================
 
-// --- Gradiente de Energía ---
-fn "energy_gradient_numerical"(coordinates, energy_function, delta) {
-    let gradient = [];
-    
-    for i in range(0, len(coordinates)) {
-        let coords_plus = coordinates;
-        coords_plus[i] = coords_plus[i] + delta;
-        
-        let coords_minus = coordinates;
-        coords_minus[i] = coords_minus[i] - delta;
-        
-        let dE = energy_function(coords_plus) - energy_function(coords_minus);
-        gradient = append(gradient, dE / (2.0 * delta));
-    }
-    
-    gradient
+// --- Gradiente numérico por diferencias centrales (una componente) ---
+// El llamador evalúa la energía en x+δ y x−δ.
+fn "energy_gradient_numerical"(energy_plus, energy_minus, delta) {
+    (energy_plus - energy_minus) / (2.0 * delta + 1e-12)
 }
 
-// --- Hessiano (Segunda Derivada) ---
-fn "hessian_matrix"(coordinates, energy_function, delta) {
-    let hessian = [];
-    
-    for i in range(0, len(coordinates)) {
-        let row = [];
-        for j in range(0, len(coordinates)) {
-            let coords_pp = coordinates;
-            coords_pp[i] = coords_pp[i] + delta;
-            coords_pp[j] = coords_pp[j] + delta;
-            
-            let coords_pm = coordinates;
-            coords_pm[i] = coords_pm[i] + delta;
-            coords_pm[j] = coords_pm[j] - delta;
-            
-            let coords_mp = coordinates;
-            coords_mp[i] = coords_mp[i] - delta;
-            coords_mp[j] = coords_mp[j] + delta;
-            
-            let coords_mm = coordinates;
-            coords_mm[i] = coords_mm[i] - delta;
-            coords_mm[j] = coords_mm[j] - delta;
-            
-            let d2E = energy_function(coords_pp) - energy_function(coords_pm) - 
-                     energy_function(coords_mp) + energy_function(coords_mm);
-            row = append(row, d2E / (4.0 * delta * delta));
-        }
-        hessian = append(hessian, row);
-    }
-    
-    hessian
+// --- Elemento diagonal del Hessiano por diferencias centrales ---
+fn "hessian_diagonal"(e_pp, e_pm, e_mp, e_mm, delta) {
+    (e_pp - e_pm - e_mp + e_mm) / (4.0 * delta * delta + 1e-12)
 }
 
-// --- Convergencia de Optimización ---
+// --- Convergencia: 1 si ambos criterios se cumplen, 0 si no ---
 fn "optimization_converged"(gradient_norm, energy_change, threshold_gradient, threshold_energy) {
-    gradient_norm < threshold_gradient && abs(energy_change) < threshold_energy
+    (1.0 - step(threshold_gradient, gradient_norm)) * (1.0 - step(threshold_energy, abs(energy_change)))
 }
 
-// --- Algoritmo BFGS (Quasi-Newton) ---
-fn "bfgs_update_hessian"(hessian, position_diff, gradient_diff) {
-    // H_{k+1} = H_k + (y·y^T)/(y^T·s) - (H·s·s^T·H)/(s^T·H·s)
-    let s = position_diff;
-    let y = gradient_diff;
-    
-    let sy = dot_product(s, y);
-    let hessian_s = matrix_vector_product(hessian, s);
-    let shs = dot_product(s, hessian_s);
-    
-    // Actualización simplificada
-    let update_factor = 1.0 / (sy + 1e-6);
-    
-    hessian  // En implementación real se actualizaría
+// --- Actualización BFGS 1D: curvatura secante H = Δg/Δx ---
+fn "bfgs_hessian_update_1d"(gradient_diff, position_diff) {
+    gradient_diff / (position_diff + 1e-9)
 }
 
 // ============================================================
 // INTERFAZ PÚBLICA - ANÁLISIS VIBRACIONAL (fn)
 // ============================================================
 
-// --- Frecuencias Vibracionales ---
-fn "vibrational_frequencies"(hessian, masses) {
-    // ω = √(λ/m) donde λ son autovalores del Hessiano masificado
-    let mass_weighted_hessian = hessian;
-    
-    for i in range(0, len(hessian)) {
-        for j in range(0, len(hessian[0])) {
-            mass_weighted_hessian[i][j] = hessian[i][j] / sqrt(masses[i/3] * masses[j/3] + 1e-6);
-        }
-    }
-    
-    // Autovalores (simplificado)
-    let eigenvalues = diagonal_approximation(mass_weighted_hessian);
-    
-    let frequencies = [];
-    for i in range(0, len(eigenvalues)) {
-        if eigenvalues[i] > 0 {
-            frequencies = append(frequencies, sqrt(eigenvalues[i]));
-        } else {
-            frequencies = append(frequencies, -sqrt(-eigenvalues[i]));  // Frecuencia imaginaria
-        }
-    }
-    
-    frequencies
+// --- Frecuencia vibracional de un autovalor del Hessiano ---
+// Negativa = frecuencia imaginaria (punto de silla).
+fn "vibrational_frequency"(hessian_eigenvalue, mass) {
+    let magnitude = sqrt(abs(hessian_eigenvalue) / (max(mass, 1e-9)));
+    sign_approx(hessian_eigenvalue) * magnitude
 }
 
-// --- Intensidad IR ---
-fn "infrared_intensity"(dipole_derivative, normal_mode) {
-    // I ∝ |∂μ/∂Q|²
-    let intensity = 0.0;
-    for i in range(0, 3) {
-        intensity = intensity + dipole_derivative[i] * dipole_derivative[i];
-    }
-    
-    intensity * normal_mode * normal_mode
+// --- Intensidad IR: I ∝ |∂μ/∂Q|² ---
+fn "infrared_intensity"(dipole_derivative) {
+    dipole_derivative * dipole_derivative
 }
 
-// --- Actividad Raman ---
-fn "raman_activity"(polarizability_derivative, normal_mode) {
-    // A ∝ |∂α/∂Q|²
-    let activity = 0.0;
-    for i in range(0, 3) {
-        for j in range(0, 3) {
-            activity = activity + polarizability_derivative[i][j] * polarizability_derivative[i][j];
-        }
-    }
-    
-    activity * 0.5
+// --- Actividad Raman: A ∝ |∂α/∂Q|² ---
+fn "raman_activity"(polarizability_derivative) {
+    polarizability_derivative * polarizability_derivative
+}
+
+// --- Energía de punto cero de un modo (ν̃ en cm⁻¹ → kJ/mol) ---
+fn "zero_point_energy"(wavenumber) {
+    0.5 * PLANCK_THEOR * LIGHT_SPEED * wavenumber * 100.0 * AVOGADRO_THEOR / 1000.0
 }
 
 // ============================================================
-// INTERFAZ PÚBLICA - SDFs DE CÓMPUTO QUÍMICO (def)
+// SDFs DE CÓMPUTO QUÍMICO (def con custom; sin let en def)
 // ============================================================
 
-// --- Superficie de Energía Potencial ---
-def "potential_energy_surface_computational"(grid_points, energy_function, intensity_threshold) {
-    // Malla de energía
-    let energy_surface = 0.0;
-    
-    for i in range(0, grid_points) {
-        for j in range(0, grid_points) {
-            let x_val = (i - grid_points/2) * 0.1;
-            let y_val = (j - grid_points/2) * 0.1;
-            let energy = energy_function([x_val, y_val]);
-            
-            // Acumular superficie
-            energy_surface = energy_surface + step(abs(x_val - x), 0.05) * step(abs(y_val - y), 0.05) * energy * 0.01;
-        }
-    }
-    
-    // Mínimo y estados de transición
-    let minimum = sphere([0, -0.1, 0], 0.03);
-    let saddle = sphere([0.2, 0.05, 0], 0.025);
-    
-    sdf: union(custom(energy_surface - intensity_threshold), union(minimum, saddle));
+// --- Superficie de Energía Potencial (doble pozo) ---
+def "potential_energy_surface_computational"(barrier_height, well_separation, intensity_threshold) {
+    sdf: custom(y - pes_field(barrier_height, well_separation, x, z) - intensity_threshold);
 }
 
-// --- Trajectory de Dinámica Molecular ---
-def "md_trajectory_visualization"(initial_positions, velocities, forces, time_steps, intensity_threshold) {
-    // Trayectorias de partículas
-    let trajectories = [];
-    
-    for i in range(0, len(initial_positions)) {
-        let trajectory = [];
-        let pos = initial_positions[i];
-        let vel = velocities[i];
-        
-        for t in range(0, time_steps) {
-            // Paso de Velocity-Verlet
-            let acc = forces[i];  // Simplificado
-            pos = pos + vel * 0.01 + 0.5 * acc * 0.0001;
-            vel = vel + 0.5 * acc * 0.01;
-            
-            let point = sphere([pos[0], pos[1], pos[2]], 0.01);
-            trajectory = append(trajectory, point);
-        }
-        
-        trajectories = append(trajectories, union_array(trajectory));
-    }
-    
-    // Partículas actuales
-    let particles = [];
-    for i in range(0, len(initial_positions)) {
-        let particle = sphere(initial_positions[i], 0.03);
-        particles = append(particles, particle);
-    }
-    
-    sdf: union(union_array(trajectories), union_array(particles));
+// --- Trayectoria de Dinámica Molecular (tubo ondulado animado) ---
+def "md_trajectory_visualization"(amplitude, wavelength, tube_radius, drift, intensity_threshold) {
+    sdf: custom(md_trajectory_field(amplitude, wavelength, tube_radius, drift, x, y, z) - intensity_threshold);
 }
 
-// --- Muestreo Monte Carlo ---
-def "monte_carlo_sampling_visualization"(acceptance_rate, energy_histogram, intensity_threshold) {
-    // Histograma de energía
-    let hist_bars = [];
-    let max_count = max_array(energy_histogram);
-    
-    for i in range(0, len(energy_histogram)) {
-        let bar_height = energy_histogram[i] / (max_count + 1e-6) * 0.3;
-        let bar = cylinder([i * 0.05 - 0.5, 0, 0], [i * 0.05 - 0.5, bar_height, 0], 0.02);
-        hist_bars = append(hist_bars, bar);
-    }
-    
-    // Tasa de aceptación visualizada
-    let acceptance_sphere = sphere([0.6, acceptance_rate * 0.3, 0], 0.05);
-    
-    // Configuraciones aceptadas vs rechazadas
-    let accepted = custom(sin(x*10.0) * sin(z*10.0) * acceptance_rate * 0.1);
-    let rejected = custom(cos(x*10.0) * cos(z*10.0) * (1.0 - acceptance_rate) * 0.05);
-    
-    sdf: union(union_array(hist_bars), union(acceptance_sphere, union(accepted, rejected)));
+// --- Muestreo Monte Carlo (histograma de barras + esfera de aceptación) ---
+def "monte_carlo_sampling_visualization"(acceptance_rate, bar_height, bar_width, intensity_threshold) {
+    sdf: custom(min(mc_bars_field(acceptance_rate, bar_height, bar_width, x, y), sphere_field(0.6, acceptance_rate * 0.3, 0.0, 0.05, x, y, z)) - intensity_threshold);
 }
 
-// --- Optimización Geométrica ---
-def "geometry_optimization_pathway"(initial_geometry, optimized_geometry, intermediate_steps, intensity_threshold) {
-    // Trayectoria de optimización
-    let pathway = [];
-    let current = initial_geometry;
-    
-    for step in range(0, intermediate_steps) {
-        let t = step / intermediate_steps;
-        
-        // Interpolación entre geometrías
-        for i in range(0, len(initial_geometry)) {
-            let pos = [initial_geometry[i][0] * (1.0 - t) + optimized_geometry[i][0] * t,
-                      initial_geometry[i][1] * (1.0 - t) + optimized_geometry[i][1] * t,
-                      initial_geometry[i][2] * (1.0 - t) + optimized_geometry[i][2] * t];
-            
-            let atom = sphere(pos, 0.02);
-            pathway = append(pathway, atom);
-        }
-    }
-    
-    // Geometría inicial
-    let initial = [];
-    for i in range(0, len(initial_geometry)) {
-        let atom = sphere(initial_geometry[i], 0.03);
-        initial = append(initial, atom);
-    }
-    
-    // Geometría optimizada
-    let optimized = [];
-    for i in range(0, len(optimized_geometry)) {
-        let atom = sphere(optimized_geometry[i], 0.035);
-        optimized = append(optimized, atom);
-    }
-    
-    sdf: union(union_array(pathway), union(union_array(initial), union_array(optimized)));
+// --- Trayectoria de Optimización Geométrica (rampa descendente) ---
+def "geometry_optimization_pathway"(start_height, end_height, ripple, intensity_threshold) {
+    sdf: custom(y - opt_pathway_field(start_height, end_height, ripple, x, z) - intensity_threshold);
 }
 
-// --- Modos Vibracionales Animados ---
-def "vibrational_mode_animation"(equilibrium_geometry, mode_vectors, frequency, amplitude, intensity_threshold) {
-    // Geometría de equilibrio
-    let atoms = [];
-    let bonds = [];
-    
-    for i in range(0, len(equilibrium_geometry)) {
-        // Oscilación según modo normal
-        let displacement = sin(frequency * w) * amplitude;
-        let displaced_pos = [equilibrium_geometry[i][0] + mode_vectors[i][0] * displacement,
-                            equilibrium_geometry[i][1] + mode_vectors[i][1] * displacement,
-                            equilibrium_geometry[i][2] + mode_vectors[i][2] * displacement];
-        
-        let atom = sphere(displaced_pos, 0.03);
-        atoms = append(atoms, atom);
-    }
-    
-    // Enlaces
-    for i in range(0, len(equilibrium_geometry) - 1) {
-        let displacement_i = sin(frequency * w) * amplitude;
-        let displacement_j = sin(frequency * w) * amplitude;
-        
-        let pos_i = [equilibrium_geometry[i][0] + mode_vectors[i][0] * displacement_i,
-                    equilibrium_geometry[i][1] + mode_vectors[i][1] * displacement_i,
-                    equilibrium_geometry[i][2] + mode_vectors[i][2] * displacement_i];
-        
-        let pos_j = [equilibrium_geometry[i+1][0] + mode_vectors[i+1][0] * displacement_j,
-                    equilibrium_geometry[i+1][1] + mode_vectors[i+1][1] * displacement_j,
-                    equilibrium_geometry[i+1][2] + mode_vectors[i+1][2] * displacement_j];
-        
-        let bond = cylinder(pos_i, pos_j, 0.01);
-        bonds = append(bonds, bond);
-    }
-    
-    sdf: union(union_array(atoms), union_array(bonds));
+// --- Modos Vibracionales Animados (5 átomos, oscilación alterna) ---
+def "vibrational_mode_animation"(amplitude, frequency, atom_count, intensity_threshold) {
+    sdf: custom(min(vib_atom_field(amplitude, frequency, 0.0, 1.0 - step(atom_count, 0.0), x, y, z), min(vib_atom_field(amplitude, frequency, 1.0, 1.0 - step(atom_count, 1.0), x, y, z), min(vib_atom_field(amplitude, frequency, 2.0, 1.0 - step(atom_count, 2.0), x, y, z), min(vib_atom_field(amplitude, frequency, 3.0, 1.0 - step(atom_count, 3.0), x, y, z), vib_atom_field(amplitude, frequency, 4.0, 1.0 - step(atom_count, 4.0), x, y, z))))) - intensity_threshold);
 }
 
-// --- Malla de Integración DFT ---
-def "dft_integration_grid_visualization"(nuclear_positions, grid_density, intensity_threshold) {
-    // Núcleos
-    let nuclei = [];
-    for i in range(0, len(nuclear_positions)) {
-        let nucleus = sphere(nuclear_positions[i], 0.04);
-        nuclei = append(nuclei, nucleus);
-    }
-    
-    // Puntos de integración (más densos cerca de núcleos)
-    let grid_points = [];
-    for i in range(0, grid_density) {
-        for j in range(0, grid_density) {
-            for k in range(0, grid_density) {
-                let x = (i - grid_density/2) * 0.1;
-                let y = (j - grid_density/2) * 0.1;
-                let z = (k - grid_density/2) * 0.1;
-                
-                // Peso de integración (mayor cerca de núcleos)
-                let min_dist = 1e10;
-                for n in range(0, len(nuclear_positions)) {
-                    let d = distance([x, y, z], nuclear_positions[n]);
-                    min_dist = min(min_dist, d);
-                }
-                
-                let weight = exp(-min_dist * min_dist / 0.1);
-                let point = sphere([x, y, z], 0.005 * weight);
-                grid_points = append(grid_points, point);
-            }
-        }
-    }
-    
-    sdf: union(union_array(nuclei), union_array(grid_points));
+// --- Malla de Integración DFT (rejilla 5×5 + núcleo central) ---
+def "dft_integration_grid_visualization"(grid_density, intensity_threshold) {
+    sdf: custom(min(sphere_field(0.0, 0.0, 0.0, 0.04, x, y, z), min(dft_grid_dot_field(grid_density, 0.0, 0.0, x, y, z), min(dft_grid_dot_field(grid_density, 0.0, 1.0, x, y, z), min(dft_grid_dot_field(grid_density, 0.0, 2.0, x, y, z), min(dft_grid_dot_field(grid_density, 0.0, 3.0, x, y, z), min(dft_grid_dot_field(grid_density, 0.0, 4.0, x, y, z), min(dft_grid_dot_field(grid_density, 1.0, 0.0, x, y, z), min(dft_grid_dot_field(grid_density, 1.0, 1.0, x, y, z), min(dft_grid_dot_field(grid_density, 1.0, 2.0, x, y, z), min(dft_grid_dot_field(grid_density, 1.0, 3.0, x, y, z), min(dft_grid_dot_field(grid_density, 1.0, 4.0, x, y, z), min(dft_grid_dot_field(grid_density, 2.0, 0.0, x, y, z), min(dft_grid_dot_field(grid_density, 2.0, 1.0, x, y, z), min(dft_grid_dot_field(grid_density, 2.0, 2.0, x, y, z), min(dft_grid_dot_field(grid_density, 2.0, 3.0, x, y, z), min(dft_grid_dot_field(grid_density, 2.0, 4.0, x, y, z), min(dft_grid_dot_field(grid_density, 3.0, 0.0, x, y, z), min(dft_grid_dot_field(grid_density, 3.0, 1.0, x, y, z), min(dft_grid_dot_field(grid_density, 3.0, 2.0, x, y, z), min(dft_grid_dot_field(grid_density, 3.0, 3.0, x, y, z), min(dft_grid_dot_field(grid_density, 3.0, 4.0, x, y, z), min(dft_grid_dot_field(grid_density, 4.0, 0.0, x, y, z), min(dft_grid_dot_field(grid_density, 4.0, 1.0, x, y, z), min(dft_grid_dot_field(grid_density, 4.0, 2.0, x, y, z), min(dft_grid_dot_field(grid_density, 4.0, 3.0, x, y, z), dft_grid_dot_field(grid_density, 4.0, 4.0, x, y, z)))))))))))))))))))))))))) - intensity_threshold);
 }
 
 // ============================================================
-// EJEMPLOS DE USO CON custom(expr)
+// EJEMPLOS DE USO (comentados)
 // ============================================================
 
 /*
-// EJEMPLO 1: Superficie de energía potencial
-node "pes_computational_example" {
+// PES de doble pozo: barrera 0.5, separación 0.8
+node "pes_example" {
     position: [-4, 0, 0];
-    sdf: potential_energy_surface_computational(20, fn(coords) { coords[0]*coords[0] + coords[1]*coords[1] }, 0.15);
+    sdf: potential_energy_surface_computational(0.5, 0.8, 0.0);
     material: "computational_chemistry";
 }
-
-// EJEMPLO 2: Trayectoria de MD
+// Trayectoria MD ondulada
 node "md_trajectory_example" {
     position: [0, 0, 0];
-    sdf: md_trajectory_visualization([[0,0,0], [0.2,0,0]], [[0.1,0.1,0.1], [-0.05,0,0]], [[0.01,0,0], [-0.01,0,0]], 100, 0.1);
+    sdf: md_trajectory_visualization(0.1, 0.8, 0.02, 0.05, 0.0);
     material: "molecular_dynamics";
 }
-
-// EJEMPLO 3: Muestreo Monte Carlo
+// Histograma Monte Carlo con 70% de aceptación
 node "monte_carlo_example" {
     position: [4, 0, 0];
-    sdf: monte_carlo_sampling_visualization(0.5, [10, 20, 30, 25, 15, 5], 0.12);
+    sdf: monte_carlo_sampling_visualization(0.7, 0.4, 0.06, 0.0);
     material: "statistical_sampling";
 }
-
-// EJEMPLO 4: Optimización geométrica
+// Rampa de optimización
 node "geometry_optimization_example" {
     position: [-2, 3, 0];
-    sdf: geometry_optimization_pathway([[0,0,0], [0.3,0,0]], [[0,0,0], [0.15,0,0]], 10, 0.1);
+    sdf: geometry_optimization_pathway(0.6, 0.1, 0.02, 0.0);
     material: "optimization";
 }
-
-// EJEMPLO 5: Modos vibracionales
+// Modo vibracional de 3 átomos
 node "vibrational_mode_example" {
     position: [2, 3, 0];
-    sdf: vibrational_mode_animation([[0,0,0], [0.15,0,0]], [[0,0.1,0], [0,-0.1,0]], 10.0, 0.02, 0.1);
+    sdf: vibrational_mode_animation(0.03, 4.0, 3.0, 0.0);
     material: "normal_modes";
 }
-
-// EJEMPLO 6: Malla de integración DFT
+// Malla DFT 4×4
 node "dft_grid_example" {
     position: [0, -3, 0];
-    sdf: dft_integration_grid_visualization([[0,0,0]], 10, 0.1);
+    sdf: dft_integration_grid_visualization(4.0, 0.0);
     material: "quantum_method";
 }
 */
 
 // ============================================================
-// NOTAS PARA USUARIOS
+// NOTAS
 // ============================================================
-
-// 1. La química computacional aplica métodos matemáticos a problemas químicos
-// 2. Los métodos cuánticos (HF, DFT, MP2, CC) calculan estructura electrónica
-// 3. La dinámica molecular simula movimiento atómico en el tiempo
-// 4. Monte Carlo muestrea configuraciones según distribución estadística
-// 5. La optimización geométrica encuentra mínimos en superficies de energía
-// 6. El análisis vibracional predice espectros IR y Raman
-
-// ============================================================
-// "La química computacional es el laboratorio virtual donde
-//  las moléculas danzan según las ecuaciones de la mecánica cuántica."
-// ============================================================
+// 1. La química computacional aplica métodos numéricos a problemas químicos.
+// 2. Los métodos cuánticos (HF, DFT, MP2, CC) calculan estructura electrónica.
+// 3. La dinámica molecular simula movimiento atómico en el tiempo.
+// 4. Monte Carlo muestrea configuraciones según una distribución estadística.
+// 5. La optimización geométrica busca mínimos en la superficie de energía.
+// 6. El análisis vibracional predice espectros IR y Raman.
+// 7. Sin arrays ni callbacks: los vectores se pasan componente a componente
+//    y las energías que dependen de la geometría las calcula el llamador.
+// 8. Los helpers *_field existen solo para precalcular con let; no son API.
+// 9. Exponentes fijos por productos (N⁴, N⁷, (σ/r)⁶, etc.); pow solo con
+//    exponente no entero (B3LYP usa 4/3).

@@ -3,13 +3,15 @@
 // CAPA:     Intermediario Química-Biología (5.5 - Biofísica Molecular)
 // VERSIÓN:  1.0
 // FUENTE:   "Biophysics" by Glaser
-// DEPS:     std_math_core.hm, std_math_algebra.hm, std_phys_statmech.hm
-// DEPS:     std_bridge_biochem.hm, std_bridge_quantchem.hm
+// DEPS:     std_math_core.hm, std_bridge_atomic.hm
 // FECHA:    6 de junio de 2026
 // ============================================================
 
 // BIOFÍSICA MOLECULAR: Aplicación de física a sistemas biológicos,
 // plegamiento de proteínas, dinámica conformacional, fuerzas intermoleculares
+
+import "std_math_core.hm";
+import "std_bridge_atomic.hm";
 
 // ============================================================
 // CONSTANTES FUNDAMENTALES
@@ -93,11 +95,11 @@ fn "ion_pi_interaction_energy"(charge, quadrupole_moment, distance) {
 }
 
 // --- Interacción π-π (Apilamiento) ---
+// interaction_type: 0 = face_to_face (~-2.0), 1 = T-shaped (~-2.5), otro = -1.0 kcal/mol
 fn "pi_pi_stacking_energy"(distance, offset, interaction_type) {
-    // Face-to-face: ~2 kcal/mol, T-shaped: ~2.5 kcal/mol
-    let base_energy = if interaction_type == "face_to_face" { -2.0 }
-                      else if interaction_type == "t_shaped" { -2.5 }
-                      else { -1.0 };
+    let is_face = step(0.5, 1.0 - abs(interaction_type));
+    let is_t_shaped = step(0.5, 1.0 - abs(interaction_type - 1.0));
+    let base_energy = -2.0*is_face - 2.5*is_t_shaped - 1.0*(1.0 - is_face - is_t_shaped);
     
     base_energy * exp(-(distance - 3.5) * (distance - 3.5) / 0.5) * exp(-offset * offset / 2.0)
 }
@@ -107,31 +109,15 @@ fn "pi_pi_stacking_energy"(distance, offset, interaction_type) {
 // ============================================================
 
 // --- RMSD (Root Mean Square Deviation) ---
-fn "rmsd_calculation"(coordinates1, coordinates2) {
-    let sum_squared = 0.0;
-    
-    for i in range(0, min(len(coordinates1), len(coordinates2))) {
-        let dx = coordinates1[i][0] - coordinates2[i][0];
-        let dy = coordinates1[i][1] - coordinates2[i][1];
-        let dz = coordinates1[i][2] - coordinates2[i][2];
-        sum_squared = sum_squared + dx*dx + dy*dy + dz*dz;
-    }
-    
-    sqrt(sum_squared / min(len(coordinates1), len(coordinates2)))
+// Desviación entre una correspondencia de puntos (una posición atómica)
+fn "rmsd_calculation"(x1, y1, z1, x2, y2, z2) {
+    sqrt(sq(x2 - x1) + sq(y2 - y1) + sq(z2 - z1))
 }
 
 // --- Radio Giro (Radius of Gyration) ---
-fn "radius_of_gyration"(coordinates, center_of_mass) {
-    let sum_squared = 0.0;
-    
-    for i in range(0, len(coordinates)) {
-        let dx = coordinates[i][0] - center_of_mass[0];
-        let dy = coordinates[i][1] - center_of_mass[1];
-        let dz = coordinates[i][2] - center_of_mass[2];
-        sum_squared = sum_squared + dx*dx + dy*dy + dz*dz;
-    }
-    
-    sqrt(sum_squared / len(coordinates))
+// Rg = √(Σ|rᵢ − COM|² / N); la suma Σ|rᵢ − COM|² se acumula en la aplicación
+fn "radius_of_gyration"(sum_squared_distance, point_count) {
+    sqrt(sum_squared_distance / (point_count + 1e-6))
 }
 
 // --- Flexibilidad (B-factor) ---
@@ -185,6 +171,7 @@ fn "binding_entropy"(delta_g, delta_h, temperature) {
 }
 
 // --- Termódinámica de Unión (ITC) ---
+// Retorna la tripleta [ΔG, ΔH(T), ΔS] como vector literal
 fn "itc_binding_thermodynamics"(binding_enthalpy, binding_entropy, heat_capacity_change, temperature) {
     // ΔG = ΔH - T·ΔS, ΔH(T) = ΔH(T₀) + ΔCp·(T - T₀)
     let delta_h_at_T = binding_enthalpy + heat_capacity_change * (temperature - 298.0);
@@ -194,14 +181,9 @@ fn "itc_binding_thermodynamics"(binding_enthalpy, binding_entropy, heat_capacity
 }
 
 // --- Especificidad de Unión ---
-fn "binding_specificity"(target_affinity, off_target_affinities) {
-    let specificity_ratio = 1.0;
-    
-    for i in range(0, len(off_target_affinities)) {
-        specificity_ratio = specificity_ratio * off_target_affinities[i] / (target_affinity + 1e-6);
-    }
-    
-    specificity_ratio
+// (afinidad media off-target / afinidad target)^N — agregación de N off-targets
+fn "binding_specificity"(target_affinity, off_target_mean_affinity, num_off_targets) {
+    pow(off_target_mean_affinity / (target_affinity + 1e-6), num_off_targets)
 }
 
 // ============================================================
@@ -240,203 +222,129 @@ fn "transport_rate"(permeability, concentration_gradient, surface_area) {
 // ============================================================
 
 // --- Plegamiento de Proteína ---
-def "protein_folding_visualization"(unfolded_chain, folded_structure, folding_progress, intensity_threshold) {
-    // Interpolación entre estados
-    let positions = [];
-    
-    for i in range(0, min(len(unfolded_chain), len(folded_structure))) {
-        let t = folding_progress;
-        let pos = [unfolded_chain[i][0] * (1.0 - t) + folded_structure[i][0] * t,
-                  unfolded_chain[i][1] * (1.0 - t) + folded_structure[i][1] * t,
-                  unfolded_chain[i][2] * (1.0 - t) + folded_structure[i][2] * t];
-        
-        let residue = sphere(pos, 0.02);
-        positions = append(positions, residue);
-    }
-    
-    // Estructura secundaria (hélices/hojas)
-    let secondary_structure = [];
-    for i in range(0, len(positions) - 3) {
-        if i % 5 < 3 {
-            // Hélice
-            let helix_segment = cylinder([positions[i][0], positions[i][1], positions[i][2]],
-                                        [positions[i+3][0], positions[i+3][1], positions[i+3][2]], 0.01);
-            secondary_structure = append(secondary_structure, helix_segment);
-        }
-    }
-    
-    // Núcleo hidrofóbico
-    let hydrophobic_core = sphere([0, 0, 0], 0.1 * folding_progress);
-    
-    sdf: union(union_array(positions), union(union_array(secondary_structure), hydrophobic_core));
+def "protein_folding_visualization"(unfolded_radius, folding_progress, intensity_threshold) {
+    // Compactación paramétrica: la espiral reduce su radio con el progreso + núcleo hidrofóbico
+    sdf: union(
+        custom(sqrt(sq(x - unfolded_radius*(1.0 - 0.75*folding_progress)*cos(y*4.0)) + sq(z - unfolded_radius*(1.0 - 0.75*folding_progress)*sin(y*4.0))) - 0.04),
+        custom(sqrt(x*x + y*y + z*z) - 0.1*folding_progress)
+    );
 }
 
 // --- Puente de Hidrógeno en Proteína ---
-def "hydrogen_bond_in_protein"(donor_position, acceptor_position, angle, intensity_threshold) {
-    // Donador (N-H)
-    let donor = sphere(donor_position, 0.03);
-    let hydrogen = sphere([donor_position[0] + 0.05 * sin(angle),
-                          donor_position[1] + 0.05 * cos(angle),
-                          donor_position[2]], 0.015);
-    
-    // Aceptor (O)
-    let acceptor = sphere(acceptor_position, 0.03);
-    
-    // Puente de hidrógeno (línea punteada)
-    let hbond_strength = cos(angle) * cos(angle);
-    let bond = cylinder([donor_position[0] + 0.05, donor_position[1], donor_position[2]],
-                       acceptor_position, 0.005 * hbond_strength);
-    
-    // Densidad electrónica del enlace
-    let electron_density = torus([(donor_position[0] + acceptor_position[0])/2,
-                                 (donor_position[1] + acceptor_position[1])/2,
-                                 (donor_position[2] + acceptor_position[2])/2],
-                                [0, 1, 0], 0.02, 0.005);
-    
-    sdf: union(union(union(donor, hydrogen), acceptor), union(bond, electron_density));
+// Donador D(dx,dy,dz) — H desplazado 0.05·(sin a, cos a, 0) — aceptor A(ax,ay,az)
+def "hydrogen_bond_in_protein"(dx, dy, dz, ax, ay, az, angle, intensity_threshold) {
+    sdf: union(
+        union(
+            custom(sqrt(sq(x - dx) + sq(y - dy) + sq(z - dz)) - 0.03),
+            custom(sqrt(sq(x - dx - 0.05*sin(angle)) + sq(y - dy - 0.05*cos(angle)) + sq(z - dz)) - 0.015)
+        ),
+        union(
+            custom(sqrt(sq(x - ax) + sq(y - ay) + sq(z - az)) - 0.03),
+            union(
+                custom(segment_distance(x, y, z, dx + 0.05, dy, dz, ax, ay, az) - 0.005*cos(angle)*cos(angle)),
+                custom(sqrt(sq(x - (dx + ax)*0.5) + sq(y - (dy + ay)*0.5) + sq(z - (dz + az)*0.5)) - 0.015*cos(angle)*cos(angle))
+            )
+        )
+    );
 }
 
 // --- Dinámica Conformacional ---
-def "conformational_dynamics_visualization"(ground_state, excited_states, population_weights, intensity_threshold) {
-    // Estado fundamental
-    let ground = sphere(ground_state, 0.05 * population_weights[0]);
-    
-    // Estados excitados
-    let excited = [];
-    for i in range(0, len(excited_states)) {
-        let state = sphere(excited_states[i], 0.04 * population_weights[i+1]);
-        excited = append(excited, state);
-        
-        // Transición entre estados
-        let transition = cylinder(ground_state, excited_states[i], 0.01 * sqrt(population_weights[i+1]));
-        excited = append(excited, transition);
-    }
-    
-    // Paisaje energético
-    let energy_landscape = custom(sin(x*3.0) * sin(z*3.0) * 0.1);
-    
-    sdf: union(ground, union(union_array(excited), energy_landscape));
+// Estado fundamental G, un estado excitado E y transición + paisaje energético
+def "conformational_dynamics_visualization"(gx, gy, gz, ex, ey, ez, ground_weight, excited_weight, intensity_threshold) {
+    sdf: union(
+        union(
+            custom(sqrt(sq(x - gx) + sq(y - gy) + sq(z - gz)) - 0.05*ground_weight),
+            custom(sqrt(sq(x - ex) + sq(y - ey) + sq(z - ez)) - 0.04*excited_weight)
+        ),
+        union(
+            custom(segment_distance(x, y, z, gx, gy, gz, ex, ey, ez) - 0.01*sqrt(excited_weight)),
+            custom(sin(x*3.0) * sin(z*3.0) * 0.1)
+        )
+    );
 }
 
 // --- Unión Proteína-Ligando ---
-def "protein_ligand_binding_visualization"(binding_site, ligand_structure, binding_energy, intensity_threshold) {
-    // Bolsillo de unión
-    let pocket = custom(-x*x - y*y - z*z + 0.1);
-    
-    // Ligando en sitio
-    let ligand = [];
-    for i in range(0, len(ligand_structure)) {
-        let atom = sphere(ligand_structure[i], 0.025);
-        ligand = append(ligand, atom);
-    }
-    
-    // Interacciones
-    let interactions = [];
-    for i in range(0, min(4, len(ligand_structure))) {
-        // Puentes de H
-        let angle = i * pi / 2.0;
-        let interaction_end = [ligand_structure[i][0] + 0.1 * cos(angle),
-                              ligand_structure[i][1] + 0.05,
-                              ligand_structure[i][2] + 0.1 * sin(angle)];
-        let interaction = cylinder(ligand_structure[i], interaction_end, 0.005);
-        interactions = append(interactions, interaction);
-    }
-    
-    // Energía de unión visualizada
-    let binding_energy_sphere = sphere([0, 0, 0], 0.15 * exp(-binding_energy * 0.01));
-    
-    sdf: union(union(pocket, union_array(ligand)), 
-               union(union_array(interactions), binding_energy_sphere));
+def "protein_ligand_binding_visualization"(lx, ly, lz, ligand_radius, binding_energy, intensity_threshold) {
+    // Bolsillo de unión + ligando + interacción + esfera de energía de unión
+    sdf: union(
+        union(
+            custom(-x*x - y*y - z*z + 0.1),
+            custom(sqrt(sq(x - lx) + sq(y - ly) + sq(z - lz)) - ligand_radius)
+        ),
+        union(
+            custom(segment_distance(x, y, z, lx, ly, lz, lx + 0.1, ly + 0.05, lz) - 0.005),
+            custom(sqrt(x*x + y*y + z*z) - 0.15*exp(-binding_energy*0.01))
+        )
+    );
 }
 
 // --- Canal Iónico ---
 def "ion_channel_visualization"(pore_radius, channel_length, selectivity_filter, intensity_threshold) {
-    // Paredes del canal
-    let channel_wall = difference(cylinder([0, -channel_length/2, 0], [0, channel_length/2, 0], pore_radius * 1.5),
-                                  cylinder([0, -channel_length/2, 0], [0, channel_length/2, 0], pore_radius));
-    
-    // Filtro de selectividad
-    let selectivity = [];
-    for i in range(0, 4) {
-        let ring_y = -channel_length/4 + i * channel_length/6.0;
-        let ring_atom = torus([0, ring_y, 0], [0, 1, 0], pore_radius * 0.8, 0.01);
-        selectivity = append(selectivity, ring_atom);
-    }
-    
-    // Ión pasando
-    let ion_position = [0, sin(w * 0.5) * channel_length/3, 0];
-    let ion = sphere(ion_position, pore_radius * 0.3);
-    
-    // Gradiente electroquímico
-    let gradient = custom(y * 0.1);
-    
-    sdf: union(union(channel_wall, union_array(selectivity)), union(ion, gradient));
+    // Pared tubular (subtract), anillo de selectividad, ión en tránsito y gradiente electroquímico
+    sdf: union(
+        union(
+            subtract(cylinder(pore_radius*1.5, channel_length), cylinder(pore_radius, channel_length)),
+            custom(max(abs(y) - 0.05, abs(sqrt(x*x + z*z) - pore_radius*(1.0 - 0.4*selectivity_filter)) - 0.01))
+        ),
+        union(
+            custom(sqrt(sq(x) + sq(y - sin(w*0.5)*channel_length/3.0) + sq(z)) - pore_radius*0.3),
+            custom(y * 0.1)
+        )
+    );
 }
 
 // --- Membrana Biológica ---
 def "biological_membrane_visualization"(lipid_count, membrane_thickness, intensity_threshold) {
-    // Bicapa lipídica
-    let lipids = [];
-    
-    for i in range(0, lipid_count) {
-        let x = sin(i * 1.5) * 0.3;
-        let z = cos(i * 1.8) * 0.3;
-        
-        // Cabezas polares (arriba y abajo)
-        let head_top = sphere([x, membrane_thickness/2, z], 0.02);
-        let head_bottom = sphere([x, -membrane_thickness/2, z], 0.02);
-        lipids = append(lipids, head_top);
-        lipids = append(lipids, head_bottom);
-        
-        // Colas hidrofóbicas
-        let tail = cylinder([x, -membrane_thickness/2 + 0.02, z], 
-                           [x, membrane_thickness/2 - 0.02, z], 0.008);
-        lipids = append(lipids, tail);
-    }
-    
-    // Dominios lipídicos
-    let domains = custom(sin(x*5.0) * sin(z*5.0) * 0.02);
-    
-    sdf: union(union_array(lipids), domains);
+    // Bicapa: cabezas polares corrugadas (frecuencia = lipid_count), colas hidrofóbicas y dominios
+    sdf: custom(min(
+        min(
+            abs(y - membrane_thickness*0.5) - 0.02 + 0.008*sin(x*lipid_count),
+            abs(y + membrane_thickness*0.5) - 0.02 + 0.008*sin(x*lipid_count)
+        ),
+        min(
+            abs(y) - (membrane_thickness*0.5 - 0.02),
+            sin(x*5.0)*sin(z*5.0)*0.02
+        )
+    ));
 }
 
 // ============================================================
-// EJEMPLOS DE USO CON custom(expr)
+// EJEMPLOS DE USO
 // ============================================================
 
 /*
 // EJEMPLO 1: Plegamiento de proteína
 node "protein_folding_example" {
     position: [-4, 0, 0];
-    sdf: protein_folding_visualization([[0,0,0], [0.2,0,0], [0.4,0,0]], [[0,0,0], [0.1,0.1,0], [0,0,0.1]], 0.5, 0.12);
+    sdf: protein_folding_visualization(0.3, 0.5, 0.12);
     material: "folding_dynamics";
 }
 
 // EJEMPLO 2: Puente de hidrógeno
 node "hydrogen_bond_example" {
     position: [0, 0, 0];
-    sdf: hydrogen_bond_in_protein([0, 0, 0], [0.15, 0, 0], pi/6, 0.1);
+    sdf: hydrogen_bond_in_protein(0, 0, 0, 0.15, 0, 0, pi/6, 0.1);
     material: "noncovalent_interaction";
 }
 
 // EJEMPLO 3: Dinámica conformacional
 node "conformational_dynamics_example" {
     position: [4, 0, 0];
-    sdf: conformational_dynamics_visualization([0, 0, 0], [[0.1, 0.1, 0], [-0.1, 0, 0.1]], [0.7, 0.2, 0.1], 0.1);
+    sdf: conformational_dynamics_visualization(0, 0, 0, 0.1, 0.1, 0, 0.7, 0.2, 0.1);
     material: "energy_landscape";
 }
 
 // EJEMPLO 4: Unión proteína-ligando
 node "binding_example" {
     position: [-2, 3, 0];
-    sdf: protein_ligand_binding_visualization([0, 0, 0], [[0.05,0,0], [0,0.05,0], [-0.05,0,0]], -10.0, 0.15);
+    sdf: protein_ligand_binding_visualization(0.05, 0, 0, 0.025, -10.0, 0.15);
     material: "molecular_recognition";
 }
 
 // EJEMPLO 5: Canal iónico
 node "ion_channel_example" {
     position: [2, 3, 0];
-    sdf: ion_channel_visualization(0.05, 0.3, "K+", 0.12);
+    sdf: ion_channel_visualization(0.05, 0.3, 0.5, 0.12);
     material: "membrane_protein";
 }
 
@@ -458,6 +366,11 @@ node "membrane_example" {
 // 4. La dinámica conformacional permite función y regulación
 // 5. La unión proteína-ligando es clave para función y fármacos
 // 6. Los canales y membranas controlan transporte y señalización
+// 7. Corregido 2026-10-17: el lenguaje no tiene listas dinámicas, `for`,
+//    `append` ni `if`/`<` en expresiones. Los defs SDF pasaron a modelos
+//    paramétricos (posiciones escalares, frecuencias en lugar de conteos) y
+//    `difference` → `subtract` (operador binario nativo). rmsd y Rg aceptan
+//    correspondencias/sumas escolares; la especificidad usa media off-target.
 
 // ============================================================
 // "La biofísica desvela la física oculta en la danza molecular de la vida."

@@ -3,7 +3,7 @@
 **Capa:** Intermediario: Física-Química (3.1/3.2 - Física Atómica y Molecular)
 **Versión:** 1.0
 **Fuente:** Bohr "Atomic Structure", Schrödinger "Wave Mechanics"
-**Dependencias:** std_math_core.hm, std_math_algebra.hm, std_math_calculus.hm, std_phys_sdf.hm, std_phys_relativity.hm
+**Dependencias:** std_math_core.hm
 **Fecha:** 6 de junio de 2026
 
 ## Cómo
@@ -24,6 +24,7 @@ Modelar y visualizar átomos hidrogenoides, orbitales atómicos, enlaces covalen
 - **pi_bond_orbital(...)** — Orbital molecular π
 - **morse_potential(De, a, re, r)** / **lennard_jones_potential(epsilon, sigma, r)** — Potenciales de enlace
 - **spectral_line_intensity(n₁, l₁, n₂, l₂)** — Intensidad con regla de selección Δl = ±1
+- **segment_distance(px, py, pz, ax, ay, az, bx, by, bz)** — Distancia punto-segmento AB (helper para enlaces cápsula)
 - **voigt_profile_approx(nu, nu₀, gamma, sigma)** — Perfil de línea espectral
 
 ## SDFs definidas
@@ -48,3 +49,4 @@ Modelar y visualizar átomos hidrogenoides, orbitales atómicos, enlaces covalen
 - Moléculas modeladas geométricamente, sin campos de fuerza ab initio.
 - Potenciales de enlace (Morse, LJ) son aproximaciones clásicas.
 - Espectros son representaciones visuales, no simulaciones espectroscópicas precisas.
+- Corregido 2026-10-17: los `def` no aceptan `let` (reescritos con expresiones inline y helpers `fn`), `union` es binario (anidado), `sphere(r)` solo centra en el origen (átomos posicionados vía `custom`), `atan2` → `atan(y, x)`, y los enlaces moleculares ahora son cápsulas reales vía `segment_distance`.

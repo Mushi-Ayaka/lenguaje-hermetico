@@ -46,11 +46,18 @@ fn "stripe_pattern"(position_x, stripe_width, spacing, stripe_amplitude) {
     stripe_amplitude * (sin(2.0 * pi * position_x / (stripe_width + spacing)) * 0.5 + 0.5)
 }
 
-// --- Patrón de Manchas (Spot Pattern) ---
-// Formación de puntos periódicos
-fn "spot_pattern"(position_x, position_y, spot_radius, spot_spacing, spot_amplitude) {
-    sqrt(position_x * position_x + position_y * position_y);
-    spot_amplitude * exp(-(position_x * position_x + position_y * position_y) / (spot_radius * spot_radius))
+// --- Mancha Individual (Spot Pattern) ---
+// Gaussiana centrada en el origen
+fn "spot_pattern"(position_x, position_y, spot_radius, spot_amplitude) {
+    spot_amplitude * exp(-(position_x * position_x + position_y * position_y) / (spot_radius * spot_radius + EPSILON))
+}
+
+// --- Lattice Periódico de Manchas (Spot Lattice) ---
+// Formación de puntos periódicos (lattice de gaussianas)
+fn "spot_lattice"(position_x, position_y, spot_radius, spot_spacing, spot_amplitude) {
+    let dx = (frac(position_x / spot_spacing + 0.5) - 0.5) * spot_spacing;
+    let dy = (frac(position_y / spot_spacing + 0.5) - 0.5) * spot_spacing;
+    spot_amplitude * exp(-(dx * dx + dy * dy) / (spot_radius * spot_radius + EPSILON))
 }
 
 // ============================================================
@@ -126,7 +133,7 @@ fn "cell_migration_trajectory"(time, migration_speed, direction_angle, persisten
 
 // --- Embrión Temprano (Blástula) ---
 def "early_embryo_blastula"(embryo_radius, cell_count, intensity_threshold) {
-    sdf: sphere([0, 0, 0], embryo_radius) * (1.0 + 0.1 * sin(cell_count * 0.5))
+    sdf: sphere(embryo_radius * (1.0 + 0.1 * sin(cell_count * 0.5)))
 }
 
 // --- Patrón de Segmentación (Somitos) ---

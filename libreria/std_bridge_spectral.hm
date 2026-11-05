@@ -1,15 +1,17 @@
 // ============================================================
 // LIBRERÍA: std_bridge_spectral.hm
-// CAPA:     Intermediario: Física-Química (3.5 - Espectroscopia Molecular)
+// CAPA:     Intermediario: Física-Química (3.5 - Espectroscopía Molecular)
 // VERSIÓN:  1.0
 // FUENTE:   Herzberg "Molecular Spectra and Molecular Structure"
-// DEPS:     std_math_core.hm, std_math_algebra.hm, std_math_calculus.hm
-// DEPS:     std_bridge_atomic.hm, std_phys_relativity.hm
+// DEPS:     std_math_core.hm, std_bridge_atomic.hm
 // FECHA:    6 de junio de 2026
 // ============================================================
 
 // ESPECTROSCOPIA MOLECULAR: Transiciones rotacionales, vibracionales, electrónicas,
 // espectros de absorción/emisión, reglas de selección, constantes espectroscópicas
+
+import "std_math_core.hm";
+import "std_bridge_atomic.hm";
 
 // ============================================================
 // CONSTANTES ESPECTROSCÓPICAS
@@ -209,118 +211,87 @@ fn "fluorescence_spectrum"(nu, nu_excitation, stokes_shift, width) {
 // ============================================================
 
 // --- Espectro Rotacional 3D (Serie de Líneas) ---
+// 6 líneas J→J+1 (J=0..5); compuerta 1-step(J_max, J) emula range(0, J_max)
 def "rotational_spectrum_3d"(B, T, J_max, intensity_threshold) {
-    // Eje x = frecuencia, eje y = intensidad
-    let nu = x * 100.0;  // Escalado
-    let intensity = 0.0;
-    
-    // Sumar contribuciones de todas las transiciones J→J+1
-    fn "sum_rotational_lines"() {
-        let total = 0.0;
-        for J in range(0, J_max) {
-            let line_nu = rotational_transition_frequency(B, J);
-            let line_intensity = pure_rotational_spectrum_intensity(line_nu, B, T, J_max);
-            total = total + exp(-(nu - line_nu)*(nu - line_nu) / 0.01) * line_intensity;
-        }
-        total
-    }
-    
-    sdf: custom(y - sum_rotational_lines() - intensity_threshold);
+    sdf: custom(y 
+        - (1.0 - step(J_max, 0.0)) * exp(-sq(x*100.0 - 2.0*B)/0.01)
+        - (1.0 - step(J_max, 1.0)) * exp(-sq(x*100.0 - 4.0*B)/0.01) * 3.0 * exp(-2.0*B/(0.695*T))
+        - (1.0 - step(J_max, 2.0)) * exp(-sq(x*100.0 - 6.0*B)/0.01) * 5.0 * exp(-6.0*B/(0.695*T))
+        - (1.0 - step(J_max, 3.0)) * exp(-sq(x*100.0 - 8.0*B)/0.01) * 7.0 * exp(-12.0*B/(0.695*T))
+        - (1.0 - step(J_max, 4.0)) * exp(-sq(x*100.0 - 10.0*B)/0.01) * 9.0 * exp(-20.0*B/(0.695*T))
+        - (1.0 - step(J_max, 5.0)) * exp(-sq(x*100.0 - 12.0*B)/0.01) * 11.0 * exp(-30.0*B/(0.695*T))
+        - intensity_threshold);
 }
 
 // --- Espectro Vibracional (Oscilador Anarmónico) ---
+// 8 bandas (v, v+Δv) para v=0..3, Δv=1,2; compuerta v+dv ≤ v_max
 def "vibrational_spectrum_3d"(omega_e, omega_e_chi_e, T, v_max, intensity_threshold) {
-    // Bandas v→v+1, v→v+2, ...
-    let nu = x * 100.0;
-    
-    fn "sum_vibrational_bands"() {
-        let total = 0.0;
-        for v_lower in range(0, v_max) {
-            for delta_v in range(1, 3) {  // Δv = 1, 2
-                let v_upper = v_lower + delta_v;
-                if v_upper <= v_max {
-                    let band_nu = vibrational_transition_frequency(omega_e, omega_e_chi_e, v_lower, delta_v);
-                    let intensity = vibrational_band_intensity(v_lower, v_upper, 1.0) * 
-                                    exp(-anharmonic_oscillator_energy(omega_e, omega_e_chi_e, v_lower)/(0.695*T));
-                    total = total + exp(-(nu - band_nu)*(nu - band_nu) / 0.1) * intensity;
-                }
-            }
-        }
-        total
-    }
-    
-    sdf: custom(y - sum_vibrational_bands() - intensity_threshold);
+    sdf: custom(y 
+        - (1.0 - step(v_max + 0.5, 1.0)) * exp(-sq(x*100.0 - (anharmonic_oscillator_energy(omega_e, omega_e_chi_e, 1.0) - anharmonic_oscillator_energy(omega_e, omega_e_chi_e, 0.0)))/0.1) * exp(-1.0) * exp(-anharmonic_oscillator_energy(omega_e, omega_e_chi_e, 0.0)/(0.695*T))
+        - (1.0 - step(v_max + 0.5, 2.0)) * exp(-sq(x*100.0 - (anharmonic_oscillator_energy(omega_e, omega_e_chi_e, 2.0) - anharmonic_oscillator_energy(omega_e, omega_e_chi_e, 0.0)))/0.1) * exp(-2.0) * exp(-anharmonic_oscillator_energy(omega_e, omega_e_chi_e, 0.0)/(0.695*T))
+        - (1.0 - step(v_max + 0.5, 2.0)) * exp(-sq(x*100.0 - (anharmonic_oscillator_energy(omega_e, omega_e_chi_e, 2.0) - anharmonic_oscillator_energy(omega_e, omega_e_chi_e, 1.0)))/0.1) * exp(-1.0) * exp(-anharmonic_oscillator_energy(omega_e, omega_e_chi_e, 1.0)/(0.695*T))
+        - (1.0 - step(v_max + 0.5, 3.0)) * exp(-sq(x*100.0 - (anharmonic_oscillator_energy(omega_e, omega_e_chi_e, 3.0) - anharmonic_oscillator_energy(omega_e, omega_e_chi_e, 1.0)))/0.1) * exp(-2.0) * exp(-anharmonic_oscillator_energy(omega_e, omega_e_chi_e, 1.0)/(0.695*T))
+        - (1.0 - step(v_max + 0.5, 3.0)) * exp(-sq(x*100.0 - (anharmonic_oscillator_energy(omega_e, omega_e_chi_e, 3.0) - anharmonic_oscillator_energy(omega_e, omega_e_chi_e, 2.0)))/0.1) * exp(-1.0) * exp(-anharmonic_oscillator_energy(omega_e, omega_e_chi_e, 2.0)/(0.695*T))
+        - (1.0 - step(v_max + 0.5, 4.0)) * exp(-sq(x*100.0 - (anharmonic_oscillator_energy(omega_e, omega_e_chi_e, 4.0) - anharmonic_oscillator_energy(omega_e, omega_e_chi_e, 2.0)))/0.1) * exp(-2.0) * exp(-anharmonic_oscillator_energy(omega_e, omega_e_chi_e, 2.0)/(0.695*T))
+        - (1.0 - step(v_max + 0.5, 4.0)) * exp(-sq(x*100.0 - (anharmonic_oscillator_energy(omega_e, omega_e_chi_e, 4.0) - anharmonic_oscillator_energy(omega_e, omega_e_chi_e, 3.0)))/0.1) * exp(-1.0) * exp(-anharmonic_oscillator_energy(omega_e, omega_e_chi_e, 3.0)/(0.695*T))
+        - (1.0 - step(v_max + 0.5, 5.0)) * exp(-sq(x*100.0 - (anharmonic_oscillator_energy(omega_e, omega_e_chi_e, 5.0) - anharmonic_oscillator_energy(omega_e, omega_e_chi_e, 3.0)))/0.1) * exp(-2.0) * exp(-anharmonic_oscillator_energy(omega_e, omega_e_chi_e, 3.0)/(0.695*T))
+        - intensity_threshold);
 }
 
 // --- Espectro Vibración-Rotación (Ramas R y P) ---
+// R: J=0..5 (ΔJ=+1); P: J=1..6 (ΔJ=−1); compuertas por J_max
 def "vibration_rotation_spectrum_3d"(nu0, B_prime, B_double_prime, T, J_max, intensity_threshold) {
-    let nu = x * 100.0;
-    
-    fn "sum_vibration_rotation_lines"() {
-        let total = 0.0;
-        
-        // Rama R (ΔJ = +1)
-        for J in range(0, J_max) {
-            let line_nu_R = vibration_rotation_R_branch(nu0, B_prime, B_double_prime, J);
-            let energy_lower = rotational_energy_level(B_double_prime, J);
-            let intensity = (2.0*J + 1.0) * exp(-energy_lower/(0.695*T));
-            total = total + exp(-(nu - line_nu_R)*(nu - line_nu_R) / 0.005) * intensity;
-        }
-        
-        // Rama P (ΔJ = -1, J comienza en 1)
-        for J in range(1, J_max+1) {
-            let line_nu_P = vibration_rotation_P_branch(nu0, B_prime, B_double_prime, J);
-            let energy_lower = rotational_energy_level(B_double_prime, J);
-            let intensity = (2.0*J + 1.0) * exp(-energy_lower/(0.695*T));
-            total = total + exp(-(nu - line_nu_P)*(nu - line_nu_P) / 0.005) * intensity;
-        }
-        
-        total
-    }
-    
-    sdf: custom(y - sum_vibration_rotation_lines() - intensity_threshold);
+    sdf: custom(y 
+        - (1.0 - step(J_max, 0.0)) * exp(-sq(x*100.0 - (nu0 + 2.0*B_prime))/0.005)
+        - (1.0 - step(J_max, 1.0)) * exp(-sq(x*100.0 - (nu0 + 4.0*B_prime + 2.0*(B_prime - B_double_prime)))/0.005) * 3.0 * exp(-2.0*B_double_prime/(0.695*T))
+        - (1.0 - step(J_max, 2.0)) * exp(-sq(x*100.0 - (nu0 + 6.0*B_prime + 6.0*(B_prime - B_double_prime)))/0.005) * 5.0 * exp(-6.0*B_double_prime/(0.695*T))
+        - (1.0 - step(J_max, 3.0)) * exp(-sq(x*100.0 - (nu0 + 8.0*B_prime + 12.0*(B_prime - B_double_prime)))/0.005) * 7.0 * exp(-12.0*B_double_prime/(0.695*T))
+        - (1.0 - step(J_max, 4.0)) * exp(-sq(x*100.0 - (nu0 + 10.0*B_prime + 20.0*(B_prime - B_double_prime)))/0.005) * 9.0 * exp(-20.0*B_double_prime/(0.695*T))
+        - (1.0 - step(J_max, 5.0)) * exp(-sq(x*100.0 - (nu0 + 12.0*B_prime + 30.0*(B_prime - B_double_prime)))/0.005) * 11.0 * exp(-30.0*B_double_prime/(0.695*T))
+        - (1.0 - step(J_max + 0.5, 1.0)) * exp(-sq(x*100.0 - (nu0 - 2.0*B_double_prime))/0.005) * 3.0 * exp(-2.0*B_double_prime/(0.695*T))
+        - (1.0 - step(J_max + 0.5, 2.0)) * exp(-sq(x*100.0 - (nu0 - 4.0*B_double_prime + 2.0*(B_prime - B_double_prime)))/0.005) * 5.0 * exp(-6.0*B_double_prime/(0.695*T))
+        - (1.0 - step(J_max + 0.5, 3.0)) * exp(-sq(x*100.0 - (nu0 - 6.0*B_double_prime + 6.0*(B_prime - B_double_prime)))/0.005) * 7.0 * exp(-12.0*B_double_prime/(0.695*T))
+        - (1.0 - step(J_max + 0.5, 4.0)) * exp(-sq(x*100.0 - (nu0 - 8.0*B_double_prime + 12.0*(B_prime - B_double_prime)))/0.005) * 9.0 * exp(-20.0*B_double_prime/(0.695*T))
+        - (1.0 - step(J_max + 0.5, 5.0)) * exp(-sq(x*100.0 - (nu0 - 10.0*B_double_prime + 20.0*(B_prime - B_double_prime)))/0.005) * 11.0 * exp(-30.0*B_double_prime/(0.695*T))
+        - (1.0 - step(J_max + 0.5, 6.0)) * exp(-sq(x*100.0 - (nu0 - 12.0*B_double_prime + 30.0*(B_prime - B_double_prime)))/0.005) * 13.0 * exp(-42.0*B_double_prime/(0.695*T))
+        - intensity_threshold);
 }
 
 // --- Progresión Vibracional (Bandas Electrónicas) ---
+// 9 bandas v"→v' (v", v' = 0..2); compuertas por v_max
 def "vibrational_progression_3d"(Te, omega_e, omega_e_chi_e, B, displacement, T, v_max, intensity_threshold) {
-    // Bandas v"→v' para transición electrónica
-    let nu = x * 100.0;
-    
-    fn "sum_vibrational_progression"() {
-        let total = 0.0;
-        let v_prime_opt = floor(displacement * displacement);  // v' óptimo
-        
-        for v_double_prime in range(0, v_max) {
-            for v_prime in range(0, v_max) {
-                let band_nu = Te + anharmonic_oscillator_energy(omega_e, omega_e_chi_e, v_prime) - 
-                              anharmonic_oscillator_energy(omega_e, omega_e_chi_e, v_double_prime);
-                let fc_factor = frank_condon_factor(v_prime, v_double_prime, displacement);
-                let boltzmann = exp(-anharmonic_oscillator_energy(omega_e, omega_e_chi_e, v_double_prime)/(0.695*T));
-                total = total + exp(-(nu - band_nu)*(nu - band_nu) / 1.0) * fc_factor * boltzmann;
-            }
-        }
-        total
-    }
-    
-    sdf: custom(y - sum_vibrational_progression() - intensity_threshold);
+    sdf: custom(y 
+        - (1.0 - step(v_max, 0.0)) * (1.0 - step(v_max, 0.0)) * exp(-sq(x*100.0 - (Te + anharmonic_oscillator_energy(omega_e, omega_e_chi_e, 0.0) - anharmonic_oscillator_energy(omega_e, omega_e_chi_e, 0.0)))/(1.0 + 0.01*B)) * exp(-0.0*displacement*displacement) * exp(-anharmonic_oscillator_energy(omega_e, omega_e_chi_e, 0.0)/(0.695*T))
+        - (1.0 - step(v_max, 0.0)) * (1.0 - step(v_max, 1.0)) * exp(-sq(x*100.0 - (Te + anharmonic_oscillator_energy(omega_e, omega_e_chi_e, 1.0) - anharmonic_oscillator_energy(omega_e, omega_e_chi_e, 0.0)))/(1.0 + 0.01*B)) * exp(-1.0*displacement*displacement) * exp(-anharmonic_oscillator_energy(omega_e, omega_e_chi_e, 0.0)/(0.695*T))
+        - (1.0 - step(v_max, 0.0)) * (1.0 - step(v_max, 2.0)) * exp(-sq(x*100.0 - (Te + anharmonic_oscillator_energy(omega_e, omega_e_chi_e, 2.0) - anharmonic_oscillator_energy(omega_e, omega_e_chi_e, 0.0)))/(1.0 + 0.01*B)) * exp(-2.0*displacement*displacement) * exp(-anharmonic_oscillator_energy(omega_e, omega_e_chi_e, 0.0)/(0.695*T))
+        - (1.0 - step(v_max, 1.0)) * (1.0 - step(v_max, 0.0)) * exp(-sq(x*100.0 - (Te + anharmonic_oscillator_energy(omega_e, omega_e_chi_e, 0.0) - anharmonic_oscillator_energy(omega_e, omega_e_chi_e, 1.0)))/(1.0 + 0.01*B)) * exp(-1.0*displacement*displacement) * exp(-anharmonic_oscillator_energy(omega_e, omega_e_chi_e, 1.0)/(0.695*T))
+        - (1.0 - step(v_max, 1.0)) * (1.0 - step(v_max, 1.0)) * exp(-sq(x*100.0 - (Te + anharmonic_oscillator_energy(omega_e, omega_e_chi_e, 1.0) - anharmonic_oscillator_energy(omega_e, omega_e_chi_e, 1.0)))/(1.0 + 0.01*B)) * exp(-0.0*displacement*displacement) * exp(-anharmonic_oscillator_energy(omega_e, omega_e_chi_e, 1.0)/(0.695*T))
+        - (1.0 - step(v_max, 1.0)) * (1.0 - step(v_max, 2.0)) * exp(-sq(x*100.0 - (Te + anharmonic_oscillator_energy(omega_e, omega_e_chi_e, 2.0) - anharmonic_oscillator_energy(omega_e, omega_e_chi_e, 1.0)))/(1.0 + 0.01*B)) * exp(-1.0*displacement*displacement) * exp(-anharmonic_oscillator_energy(omega_e, omega_e_chi_e, 1.0)/(0.695*T))
+        - (1.0 - step(v_max, 2.0)) * (1.0 - step(v_max, 0.0)) * exp(-sq(x*100.0 - (Te + anharmonic_oscillator_energy(omega_e, omega_e_chi_e, 0.0) - anharmonic_oscillator_energy(omega_e, omega_e_chi_e, 2.0)))/(1.0 + 0.01*B)) * exp(-2.0*displacement*displacement) * exp(-anharmonic_oscillator_energy(omega_e, omega_e_chi_e, 2.0)/(0.695*T))
+        - (1.0 - step(v_max, 2.0)) * (1.0 - step(v_max, 1.0)) * exp(-sq(x*100.0 - (Te + anharmonic_oscillator_energy(omega_e, omega_e_chi_e, 1.0) - anharmonic_oscillator_energy(omega_e, omega_e_chi_e, 2.0)))/(1.0 + 0.01*B)) * exp(-1.0*displacement*displacement) * exp(-anharmonic_oscillator_energy(omega_e, omega_e_chi_e, 2.0)/(0.695*T))
+        - (1.0 - step(v_max, 2.0)) * (1.0 - step(v_max, 2.0)) * exp(-sq(x*100.0 - (Te + anharmonic_oscillator_energy(omega_e, omega_e_chi_e, 2.0) - anharmonic_oscillator_energy(omega_e, omega_e_chi_e, 2.0)))/(1.0 + 0.01*B)) * exp(-0.0*displacement*displacement) * exp(-anharmonic_oscillator_energy(omega_e, omega_e_chi_e, 2.0)/(0.695*T))
+        - intensity_threshold);
 }
 
 // --- Espectro de Absorción (Ley de Beer-Lambert 3D) ---
-def "absorption_spectrum_3d"(nu0, epsilon_max, gamma, concentration, path_length, I0, intensity_threshold) {
-    let nu = x * 100.0;
-    let epsilon = spectral_extinction_coefficient(nu, nu0, epsilon_max, gamma, 0.5);
-    let transmission = beer_lambert_absorption(I0, epsilon, concentration, path_length);
-    let absorbance = -log(transmission / I0 + 1e-6);
-    
-    sdf: custom(y - absorbance - intensity_threshold);
+// A(ν) = −log(exp(−ε(ν)·c·l) + 1e-6)
+def "absorption_spectrum_3d"(nu0, epsilon_max, gamma, concentration, path_length, intensity_threshold) {
+    sdf: custom(y 
+        + log(exp(-spectral_extinction_coefficient(x*100.0, nu0, epsilon_max, gamma, 0.5) 
+                  * concentration * path_length) + 1e-6)
+        - intensity_threshold);
 }
 
-// --- Espectro de Emisión Térmica (Cuerpo Negro × Línea) ---
+// --- Espectro de Emisión Térmica (Línea × Envolvente Térmica) ---
+// I(ν) = (ε_max/50)·P(ν)·exp(−hν/kT), P = perfil lorentz/gauss compuesto;
+// acotado para ε_max ≈ 50 (antes ε·B_ν·1e30 → ~436 en el centro de línea)
 def "thermal_emission_line_3d"(nu0, epsilon_max, gamma, T, intensity_threshold) {
-    let nu = x * 100.0;
-    let emission = thermal_emission_spectrum(nu, T, nu0, epsilon_max, gamma);
-    
-    sdf: custom(y - emission - intensity_threshold);
+    sdf: custom(y 
+        - (epsilon_max / 50.0)
+          * (0.5 * (gamma/(2.0*pi))/(sq(x*100.0 - nu0) + gamma*gamma/4.0) 
+             + 0.5 * exp(-0.5*sq((x*100.0 - nu0)/(gamma/2.354)))/(gamma/2.354 * sqrt(2.0*pi)))
+          * exp(-6.626e-34*(x*100.0)/(1.380649e-23*T))
+        - intensity_threshold);
 }
 
 // ============================================================
@@ -328,69 +299,32 @@ def "thermal_emission_line_3d"(nu0, epsilon_max, gamma, T, intensity_threshold) 
 // ============================================================
 
 // --- Espectro de la Molécula de CO (Monóxido de Carbono) ---
-// B₀ ≈ 1.93 cm⁻¹, ωₑ ≈ 2170 cm⁻¹
+// B₀ ≈ 1.93 cm⁻¹, ωₑ ≈ 2170 cm⁻¹, ωₑχₑ = 13 cm⁻¹
 def "CO_molecular_spectrum"(T, intensity_threshold) {
-    let B_CO = 1.93;
-    let omega_e_CO = 2170.0;
-    let omega_e_chi_e_CO = 13.0;
-    
-    let nu = x * 10.0;
-    
-    fn "CO_spectrum"() {
-        // Contribución rotacional
-        let rot = pure_rotational_spectrum_intensity(nu, B_CO, T, 20) * 0.1;
-        
-        // Contribución vibracional (banda fundamental)
-        let vib_nu = vibrational_transition_frequency(omega_e_CO, omega_e_chi_e_CO, 0, 1);
-        let vib = exp(-(nu - vib_nu)*(nu - vib_nu) / 100.0) * 0.5;
-        
-        rot + vib
-    }
-    
-    sdf: custom(y - CO_spectrum() - intensity_threshold);
+    sdf: custom(y 
+        - 0.1 * (2.0*floor(x*10.0/3.86 - 0.5) + 1.0) * exp(-1.93*floor(x*10.0/3.86 - 0.5)*(floor(x*10.0/3.86 - 0.5) + 1.0)/(0.695*T))
+        - exp(-sq(x*10.0 - (anharmonic_oscillator_energy(2170.0, 13.0, 1.0) - anharmonic_oscillator_energy(2170.0, 13.0, 0.0)))/100.0) * 0.5
+        - intensity_threshold);
 }
 
 // --- Espectro de la Molécula de H₂O (Agua) ---
-// Múltiples modos vibracionales
+// Modos vibracionales (cm⁻¹): 3657, 1595, 3756; ensanchamiento térmico ∝ T
 def "H2O_molecular_spectrum"(T, intensity_threshold) {
-    // Modos vibracionales del agua (cm⁻¹)
-    let nu1 = 3657.0;  // Estiramiento simétrico OH
-    let nu2 = 1595.0;  // Flexión HOH
-    let nu3 = 3756.0;  // Estiramiento asimétrico OH
-    
-    let nu = x * 10.0;
-    
-    fn "H2O_spectrum"() {
-        let band1 = exp(-(nu - nu1)*(nu - nu1) / 50.0);
-        let band2 = exp(-(nu - nu2)*(nu - nu2) / 50.0) * 0.8;
-        let band3 = exp(-(nu - nu3)*(nu - nu3) / 50.0) * 0.6;
-        
-        band1 + band2 + band3
-    }
-    
-    sdf: custom(y - H2O_spectrum() - intensity_threshold);
+    sdf: custom(y 
+        - exp(-sq(x*10.0 - 3657.0)/(50.0*(1.0 + T*0.001)))
+        - exp(-sq(x*10.0 - 1595.0)/(50.0*(1.0 + T*0.001))) * 0.8
+        - exp(-sq(x*10.0 - 3756.0)/(50.0*(1.0 + T*0.001))) * 0.6
+        - intensity_threshold);
 }
 
 // --- Espectro de la Molécula de CO₂ (Dióxido de Carbono) ---
-// Bandas características de gases de efecto invernadero
+// Bandas IR: 667 cm⁻¹ (flexión) y 2349 cm⁻¹ (estiramiento asimétrico)
 def "CO2_molecular_spectrum"(T, intensity_threshold) {
-    // Bandas IR del CO₂
-    let nu1 = 667.0;   // Modo de flexión
-    let nu2 = 2349.0;  // Modo de estiramiento asimétrico
-    
-    let nu = x * 10.0;
-    
-    fn "CO2_spectrum"() {
-        let band1 = exp(-(nu - nu1)*(nu - nu1) / 20.0) * 1.0;
-        let band2 = exp(-(nu - nu2)*(nu - nu2) / 20.0) * 0.7;
-        
-        // Bandas de rotación-vibración
-        let rotation_envelope = exp(-abs(nu - 500.0)/1000.0) * 0.3;
-        
-        band1 + band2 + rotation_envelope
-    }
-    
-    sdf: custom(y - CO2_spectrum() - intensity_threshold);
+    sdf: custom(y 
+        - exp(-sq(x*10.0 - 667.0)/(20.0*(1.0 + T*0.001))) * 1.0
+        - exp(-sq(x*10.0 - 2349.0)/(20.0*(1.0 + T*0.001))) * 0.7
+        - exp(-abs(x*10.0 - 500.0)/1000.0) * 0.3
+        - intensity_threshold);
 }
 
 // ============================================================
@@ -422,7 +356,7 @@ node "electronic_band_progression" {
 // EJEMPLO 4: Espectro de absorción con línea ancha
 node "absorption_line_spectrum" {
     position: [-2, 3, 0];
-    sdf: absorption_spectrum_3d(5000.0, 100.0, 10.0, 0.1, 1.0, 1.0, 0.1);
+    sdf: absorption_spectrum_3d(5000.0, 100.0, 10.0, 0.1, 1.0, 0.1);
     material: "absorption";
 }
 
@@ -450,6 +384,18 @@ node "CO2_spectrum_example" {
 // 3. Los espectros 3D usan eje x para frecuencia, eje y para intensidad
 // 4. Las temperaturas están en Kelvin escaladas
 // 5. Las constantes espectroscópicas son valores típicos escalados
+// 6. Corregido 2026-10-17: `<` léxico (L241) y `if` eliminados; `for` dentro
+//    de `fn` anidadas en defs → sumas desplegadas con compuertas
+//    `1-step(LIMITE, i)` que emulan range(0, N) (R: 6 líneas; P: 6; bandas
+//    vibracionales: 8; progresión: 9); `thermal_emission_line_3d` inlina el
+//    perfil compuesto (antes llamaba fn que a su vez llamaba otra fn:
+//    anidamiento transitivo no garantizado en la expansión); defs sin `let`
+//    ni `fn` anidadas; `absorption_spectrum_3d` pierde `I0` (se cancelaba en
+//    A = −log(T/I0)); ensanchamiento térmico ∝ (1+T·0.001) en espectros
+//    específicos (T antes sin uso); `floor` se mantiene (existe en GLSL);
+//    `thermal_emission_line_3d` reescrito: (ε_max/50)·P(ν)·exp(−hν/kT),
+//    acotado para ε_max≈50 (V1 usaba ε·B_ν·1e30 → ~436 en el centro de línea;
+//    V2 con ratio de Planck normalizado en x=10 → crecía ∝x² fuera).
 
 // ============================================================
 // "Cada molécula canta su propia canción espectral,

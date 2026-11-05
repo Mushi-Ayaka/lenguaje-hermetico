@@ -1,98 +1,69 @@
 // ============================================================
 // LIBRERÍA: std_chem_coordination.hm
 // CAPA:     Química (4.3 - Química de Coordinación)
-// VERSIÓN:  1.0
+// VERSIÓN:  1.1
 // FUENTE:   "Coordination Chemistry" by Cotton & Wilkinson
-// DEPS:     std_math_core.hm, std_math_algebra.hm, std_bridge_quantchem.hm
-// DEPS:     std_chem_inorganic.hm, std_phys_condensed.hm
-// FECHA:    6 de junio de 2026
+// DEPS:     std_math_core.hm, std_bridge_atomic.hm
+// FECHA:    6 de junio de 2026 (reescrita 2026-10-17)
 // ============================================================
 
 // QUÍMICA DE COORDINACIÓN: Estudio de complejos metálicos, ligandos,
-// teoría del campo cristalino, teoría del orbital molecular, propiedades magnéticas
+// teoría del campo cristalino, teoría del orbital molecular, propiedades magnéticas.
+// Convenciones numéricas (el lenguaje no tiene strings/arrays/for):
+//   - ligand_index:            0=I- 1=Br- 2=Cl- 3=F- 4=OH- 5=H2O 6=NH3 7=en 8=NO2- 9=CN- 10=CO
+//   - metal_index (campo/iones): 0=Ti 1=V 2=Cr 3=Mn 4=Fe 5=Co 6=Ni 7=Cu 8=otro
+//   - geometry_index:          0=octaédrico 1=tetraédrico (otros códigos en coordination_number_geometry)
+//   - field_strength:          0=campo débil (alto espín) 1=campo fuerte (bajo espín)
+
+import "std_math_core.hm";
+import "std_bridge_atomic.hm";
 
 // ============================================================
 // CONSTANTES FUNDAMENTALES
 // ============================================================
 
 let BOHR_MAGNETON_COORD = 9.2740100783e-24;    // μ_B (J/T)
-let PLANCK_COORD = 6.62607015e-34;             // h (J·s)
-let BOLTZMANN_COORD = 1.380649e-23;            // k_B (J/K)
 
 // ============================================================
 // INTERFAZ PÚBLICA - LIGANDOS Y DENTICIDAD (fn)
 // ============================================================
 
 // --- Clasificación de Ligandos ---
+// Devuelve: parte entera = denticidad (1 mono, 2 bi, 3 tri, 4 poli);
+//           décimas = (hapticity-1) si η>1 (η² → +0.1);
+//           centésimas = bite_angle/180 si quelante (donor_atoms>1)
 fn "ligand_classification"(donor_atoms, hapticity, bite_angle) {
-    let classification = [];
-    
-    // Monodentado vs polidentado
-    if donor_atoms == 1 {
-        classification = append(classification, "monodentate");
-    } else if donor_atoms == 2 {
-        classification = append(classification, "bidentate");
-    } else if donor_atoms == 3 {
-        classification = append(classification, "tridentate");
-    } else if donor_atoms >= 4 {
-        classification = append(classification, "polydentate");
-    }
-    
-    // Hapticidad (η^n)
-    if hapticity > 1 {
-        classification = append(classification, "hapticity_" + hapticity);
-    }
-    
-    // Quelación
-    if donor_atoms > 1 {
-        classification = append(classification, "chelating");
-        classification = append(classification, "bite_angle_" + bite_angle);
-    }
-    
-    classification
+    let denticity = 1.0 + step(1.5, donor_atoms) + step(2.5, donor_atoms) + step(3.5, donor_atoms);
+    let hapto = max(0.0, hapticity - 1.0) * 0.1;
+    let bite = step(1.5, donor_atoms) * sat(bite_angle / 180.0) * 0.01;
+    denticity + hapto + bite
 }
 
-// --- Campo de Ligando (Fuerza) ---
-fn "ligand_field_strength"(ligand_type) {
-    // Serie espectroquímica
-    let strength = 0.0;
-    
-    if ligand_type == "I-" { strength = 0.1; }
-    else if ligand_type == "Br-" { strength = 0.15; }
-    else if ligand_type == "Cl-" { strength = 0.2; }
-    else if ligand_type == "F-" { strength = 0.25; }
-    else if ligand_type == "OH-" { strength = 0.3; }
-    else if ligand_type == "H2O" { strength = 0.35; }
-    else if ligand_type == "NH3" { strength = 0.4; }
-    else if ligand_type == "en" { strength = 0.5; }
-    else if ligand_type == "NO2-" { strength = 0.6; }
-    else if ligand_type == "CN-" { strength = 0.8; }
-    else if ligand_type == "CO" { strength = 0.9; }
-    else { strength = 0.3; }
-    
-    strength
+// --- Campo de Ligando (Fuerza) — serie espectroquímica ---
+// I- < Br- < Cl- < F- < OH- < H2O < NH3 < en < NO2- < CN- < CO
+fn "ligand_field_strength"(ligand_index) {
+    let i = ligand_index;
+    select(step(9.5, i), 0.9,
+    select(step(8.5, i), 0.8,
+    select(step(7.5, i), 0.6,
+    select(step(6.5, i), 0.5,
+    select(step(5.5, i), 0.4,
+    select(step(4.5, i), 0.35,
+    select(step(3.5, i), 0.3,
+    select(step(2.5, i), 0.25,
+    select(step(1.5, i), 0.2,
+    select(step(0.5, i), 0.15, 0.1))))))))))
 }
 
-// --- Número de Coordinación ---
-fn "coordination_number_geometry"(coordination_number, ligand_types) {
-    if coordination_number == 2 {
-        "linear"
-    } else if coordination_number == 3 {
-        "trigonal_planar"
-    } else if coordination_number == 4 {
-        if contains(ligand_types, "strong_field") { "square_planar" }
-        else { "tetrahedral" }
-    } else if coordination_number == 5 {
-        "trigonal_bipyramidal"  // o square_pyramidal
-    } else if coordination_number == 6 {
-        "octahedral"
-    } else if coordination_number == 7 {
-        "pentagonal_bipyramidal"
-    } else if coordination_number == 8 {
-        "square_antiprismatic"
-    } else {
-        "other"
-    }
+// --- Número de Coordinación → Geometría ---
+// Devuelve código: 2=lineal 3=trigonal_planar 4=tetraédrico 5=bipirámide_trigonal
+// 6=octaédrico 7=bipirámide_pentagonal 8=antiprisma_cuadrado; +30 si cn=4 y campo fuerte (34=cuadrado_plano)
+fn "coordination_number_geometry"(coordination_number, strong_field) {
+    let cn = coordination_number;
+    let base = 2.0 * step(1.5, cn) + step(2.5, cn) + step(3.5, cn) + step(4.5, cn) +
+               step(5.5, cn) + step(6.5, cn) + step(7.5, cn);
+    let square_planar = 30.0 * step(0.5, strong_field) * (step(3.5, cn) - step(4.5, cn));
+    base + square_planar
 }
 
 // ============================================================
@@ -100,77 +71,50 @@ fn "coordination_number_geometry"(coordination_number, ligand_types) {
 // ============================================================
 
 // --- Desdoblamiento del Campo Cristalino (Octaédrico) ---
-fn "crystal_field_splitting_octahedral"(metal_ion, oxidation_state, ligands) {
-    // Δ_oct = 10Dq
-    let base_splitting = 0.0;
-    
-    // Depende del metal y estado de oxidación
-    if metal_ion == "Cr" && oxidation_state == 3 {
-        base_splitting = 21500.0;  // cm⁻¹
-    } else if metal_ion == "Co" && oxidation_state == 3 {
-        base_splitting = 23000.0;
-    } else if metal_ion == "Fe" && oxidation_state == 3 {
-        base_splitting = 14000.0;
-    } else if metal_ion == "Ni" && oxidation_state == 2 {
-        base_splitting = 8500.0;
-    } else {
-        base_splitting = 15000.0;
-    }
-    
-    // Factor de ligando
-    let ligand_factor = 0.0;
-    for i in range(0, len(ligands)) {
-        ligand_factor = ligand_factor + ligand_field_strength(ligands[i]);
-    }
-    ligand_factor = ligand_factor / len(ligands);
-    
-    base_splitting * ligand_factor * 2.0
+// Δ_oct = base(metal, oxidación) · strength_promedio · 2.0  [cm⁻¹]
+fn "crystal_field_splitting_octahedral"(metal_index, oxidation_state, average_ligand_strength) {
+    let m = metal_index;
+    let is2 = step(1.5, m) - step(2.5, m);   // Cr
+    let is4 = step(3.5, m) - step(4.5, m);   // Fe
+    let is5 = step(4.5, m) - step(5.5, m);   // Co
+    let is6 = step(5.5, m) - step(6.5, m);   // Ni
+    let ox3 = step(2.5, oxidation_state) - step(3.5, oxidation_state);
+    let base = 15000.0 + is2 * ox3 * 6500.0 - is4 * ox3 * 1000.0 +
+               is5 * ox3 * 8000.0 - is6 * (1.0 - ox3) * 6500.0;
+    base * average_ligand_strength * 2.0
 }
 
 // --- Desdoblamiento del Campo Cristalino (Tetraédrico) ---
-fn "crystal_field_splitting_tetrahedral"(metal_ion, oxidation_state, ligands) {
-    // Δ_tet = (4/9)·Δ_oct
-    let delta_oct = crystal_field_splitting_octahedral(metal_ion, oxidation_state, ligands);
-    delta_oct * 4.0 / 9.0
+// Δ_tet = (4/9)·Δ_oct
+fn "crystal_field_splitting_tetrahedral"(metal_index, oxidation_state, average_ligand_strength) {
+    crystal_field_splitting_octahedral(metal_index, oxidation_state, average_ligand_strength) * 4.0 / 9.0
 }
 
 // --- Energía de Estabilización del Campo Cristalino (EECC) ---
-fn "crystal_field_stabilization_energy"(electron_count, geometry, splitting, pairing_energy) {
-    let t2g_electrons = 0;
-    let eg_electrons = 0;
-    let pairing_count = 0;
-    
-    // Configuración electrónica según geometría y campo
-    if geometry == "octahedral" {
-        if electron_count <= 3 {
-            t2g_electrons = electron_count;
-        } else if electron_count <= 6 {
-            t2g_electrons = min(6, electron_count);
-            if electron_count > 3 {
-                pairing_count = electron_count - 3;
-            }
-        } else {
-            t2g_electrons = 6;
-            eg_electrons = electron_count - 6;
-            pairing_count = electron_count - 4;
-        }
-    }
-    
-    // EECC = (0.4·n_t2g - 0.6·n_eg)·Δ_oct - n_pair·P
-    let energy = (0.4 * t2g_electrons - 0.6 * eg_electrons) * splitting - pairing_count * pairing_energy;
-    
-    energy
+// EECC = (0.4·n_t2g - 0.6·n_eg)·Δ - n_pair·P   [cm⁻¹]
+// Octaédrico: 3 orbitales t2g abajo, 2 eg arriba; tetraédrico: invertido (e abajo)
+fn "crystal_field_stabilization_energy"(electron_count, geometry_index, splitting, pairing_energy) {
+    let ec = electron_count;
+    let oct = 1.0 - step(0.5, geometry_index);
+
+    let n_t2g_oct = min(6.0, ec);
+    let n_eg_oct = max(0.0, ec - 6.0);
+    let pair_oct = max(0.0, ec - 3.0) - step(6.5, ec);
+
+    let n_e_tet = min(4.0, ec);
+    let n_t2_tet = max(0.0, ec - 4.0);
+    let pair_tet = max(0.0, ec - 5.0);
+
+    oct * ((0.4 * n_t2g_oct - 0.6 * n_eg_oct) * splitting - pair_oct * pairing_energy) +
+    (1.0 - oct) * ((0.6 * n_e_tet - 0.4 * n_t2_tet) * splitting - pair_tet * pairing_energy)
 }
 
 // --- Configuración de Alto Espín vs Bajo Espín ---
+// Devuelve: 0=configuración única (d0-d3, d8-d10) 1=bajo espín (Δ>P) 2=alto espín (Δ<P)
 fn "high_spin_low_spin_prediction"(splitting_energy, pairing_energy, electron_count) {
-    // Si Δ > P, bajo espín; si Δ < P, alto espín
-    if electron_count <= 3 || electron_count >= 8 {
-        "unique_config"  // No hay ambigüedad
-    } else {
-        if splitting_energy > pairing_energy { "low_spin" }
-        else { "high_spin" }
-    }
+    let ec = electron_count;
+    let unique = (1.0 - step(3.5, ec)) + step(7.5, ec);
+    (1.0 - unique) * select(step(pairing_energy, splitting_energy), 1.0, 2.0)
 }
 
 // ============================================================
@@ -178,329 +122,222 @@ fn "high_spin_low_spin_prediction"(splitting_energy, pairing_energy, electron_co
 // ============================================================
 
 // --- Momento Magnético Efectivo ---
+// μ_eff = √(n(n+2))·μ_B (spin-only); ×1.05 si spin_only=0 (aprox. contribución orbital)
 fn "effective_magnetic_moment"(unpaired_electrons, spin_only) {
-    if spin_only {
-        // μ_eff = √(4S(S+1))·μ_B = √(n(n+2))·μ_B
-        sqrt(unpaired_electrons * (unpaired_electrons + 2.0))
-    } else {
-        // Incluye contribución orbital
-        sqrt(unpaired_electrons * (unpaired_electrons + 2.0)) * 1.05  // Factor aproximado
-    }
+    sqrt(unpaired_electrons * (unpaired_electrons + 2.0)) *
+    (1.0 + (1.0 - step(0.5, spin_only)) * 0.05)
 }
 
-// --- Susceptibilidad Magnética ---
+// --- Susceptibilidad Magnética (Ley de Curie) ---
+// χ = N_A·μ_eff²/(3k_B·T), μ_eff en μ_B
 fn "magnetic_susceptibility"(magnetic_moment, temperature) {
-    // Ley de Curie: χ = C/T = N_A·μ_eff²/(3k_B·T)
-    let C = AVOGADRO * magnetic_moment * magnetic_moment * BOHR_MAGNETON_COORD * BOHR_MAGNETON_COORD / 
-            (3.0 * BOLTZMANN_COORD);
-    
-    C / temperature
+    let C = AVOGADRO_NUMBER * magnetic_moment * magnetic_moment *
+            BOHR_MAGNETON_COORD * BOHR_MAGNETON_COORD / (3.0 * BOLTZMANN_CONSTANT);
+    C / (temperature + 1e-6)
 }
 
 // --- Número de Electrones Desapareados ---
-fn "unpaired_electron_count"(metal_ion, oxidation_state, geometry, field_strength) {
-    let d_electrons = 0;
-    
-    // Electrones d del metal
-    let metal_d_electrons = [0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10];
-    
-    if metal_ion == "Ti" { d_electrons = metal_d_electrons[oxidation_state + 2]; }
-    else if metal_ion == "V" { d_electrons = metal_d_electrons[oxidation_state + 3]; }
-    else if metal_ion == "Cr" { d_electrons = metal_d_electrons[oxidation_state + 4]; }
-    else if metal_ion == "Mn" { d_electrons = metal_d_electrons[oxidation_state + 5]; }
-    else if metal_ion == "Fe" { d_electrons = metal_d_electrons[oxidation_state + 6]; }
-    else if metal_ion == "Co" { d_electrons = metal_d_electrons[oxidation_state + 7]; }
-    else if metal_ion == "Ni" { d_electrons = metal_d_electrons[oxidation_state + 8]; }
-    else if metal_ion == "Cu" { d_electrons = metal_d_electrons[oxidation_state + 9]; }
-    
-    // Configuración según campo
-    if d_electrons <= 3 || d_electrons >= 8 {
-        if d_electrons <= 3 { d_electrons }
-        else if d_electrons == 8 { 2.0 }
-        else if d_electrons == 9 { 1.0 }
-        else { 0.0 }
-    } else {
-        // d^4 a d^7: depende del campo
-        if field_strength == "strong" {
-            if d_electrons == 4 { 2.0 }
-            else if d_electrons == 5 { 1.0 }
-            else if d_electrons == 6 { 0.0 }
-            else { 1.0 }
-        } else {
-            if d_electrons == 4 { 4.0 }
-            else if d_electrons == 5 { 5.0 }
-            else if d_electrons == 6 { 4.0 }
-            else { 3.0 }
-        }
-    }
+// d^n = 4 + metal_index - oxidation_state (Ti³⁺→d1 ... Cu²⁺→d9);
+// field_strength: 0=débil (alto espín) 1=fuerte (bajo espín); geometry no altera el conteo (aprox.)
+fn "unpaired_electron_count"(metal_index, oxidation_state, geometry_index, field_strength) {
+    let d = min(10.0, max(0.0, 4.0 + metal_index - oxidation_state));
+    let strong = step(0.5, field_strength);
+    let weak = 1.0 - strong;
+    let low = 1.0 - step(3.5, d);
+    let mid = step(3.5, d) - step(7.5, d);
+    let high = step(7.5, d);
+
+    low * d +
+    mid * (weak * (5.0 - abs(d - 5.0)) + strong * abs(d - 6.0)) +
+    high * (10.0 - d)
 }
 
 // ============================================================
 // INTERFAZ PÚBLICA - ESPECTROS ELECTRÓNICOS (fn)
 // ============================================================
 
-// --- Transiciones d-d (Tanabe-Sugano) ---
-fn "dd_transition_energies"(d_electron_count, geometry, splitting, racah_B) {
-    let transitions = [];
-    
-    if d_electron_count == 2 && geometry == "octahedral" {
-        // V(III), d²
-        transitions = append(transitions, splitting * 0.8);      // ³T₂g ← ³T₁g
-        transitions = append(transitions, splitting * 1.5);      // ³T₁g ← ³T₁g
-        transitions = append(transitions, splitting * 2.5);      // ³A₂g ← ³T₁g
-    } else if d_electron_count == 3 && geometry == "octahedral" {
-        // Cr(III), d³
-        transitions = append(transitions, splitting * 0.9);      // ⁴T₂g ← ⁴A₂g
-        transitions = append(transitions, splitting * 1.5);      // ⁴T₁g ← ⁴A₂g
-    } else if d_electron_count == 8 && geometry == "octahedral" {
-        // Ni(II), d⁸
-        transitions = append(transitions, splitting * 0.9);      // ³T₂g ← ³A₂g
-        transitions = append(transitions, splitting * 1.5);      // ³T₁g ← ³A₂g
-        transitions = append(transitions, splitting * 2.5);      // ³T₁g(P) ← ³A₂g
-    }
-    
-    transitions
+// --- Transición d-d principal (Tanabe-Sugano) ---
+// Devuelve la energía de la transición más baja (cm⁻¹):
+// d² oct: 0.8Δ; d³ oct: 0.9Δ; d⁸ oct: 0.9Δ
+fn "dd_transition_energies"(d_electron_count, geometry_index, splitting) {
+    let d = d_electron_count;
+    let oct = 1.0 - step(0.5, geometry_index);
+    let d2 = step(1.5, d) - step(2.5, d);
+    let d3 = step(2.5, d) - step(3.5, d);
+    let d8 = step(7.5, d) - step(8.5, d);
+    splitting * oct * (0.8 * d2 + 0.9 * (d3 + d8))
 }
 
 // --- Color del Complejo ---
+// Devuelve código del color observado (complementario al absorbido):
+// 0=incoloro(UV) 1=amarillo 2=naranja 3=rojo 4=púrpura 5=azul 6=verde 7=incoloro(IR)
 fn "complex_color_prediction"(absorption_wavelength) {
-    // Complementario al absorbido
-    if absorption_wavelength < 400 {
-        "colorless"  // UV
-    } else if absorption_wavelength < 450 {
-        "yellow"  // Absorbe azul
-    } else if absorption_wavelength < 490 {
-        "orange"  // Absorbe azul-verde
-    } else if absorption_wavelength < 560 {
-        "red"  // Absorbe verde
-    } else if absorption_wavelength < 590 {
-        "purple"  // Absorbe amarillo
-    } else if absorption_wavelength < 630 {
-        "blue"  // Absorbe naranja
-    } else if absorption_wavelength < 700 {
-        "green"  // Absorbe rojo
-    } else {
-        "colorless"  // IR
-    }
+    let l = absorption_wavelength;
+    step(399.5, l) + step(449.5, l) + step(489.5, l) + step(559.5, l) +
+    step(589.5, l) + step(629.5, l) + step(699.5, l)
 }
 
-// --- Regla de Selección (Laporte) ---
+// --- Regla de Selección de Laporte ---
+// orbital: 0=t2g 1=eg; en complejos centrosimétricos las transiciones g→g están prohibidas.
+// Devuelve 1=permitida 0=prohibida
 fn "laporte_selection_rule_allowed"(initial_orbital, final_orbital, centrosymmetric) {
-    // Transiciones g→g o u→u prohibidas en centrosimétricos
-    if centrosymmetric {
-        if (initial_orbital == "t2g" && final_orbital == "eg") ||
-           (initial_orbital == "eg" && final_orbital == "t2g") {
-            false  // Prohibida (g→g)
-        } else {
-            true
-        }
-    } else {
-        true  // Relajada en no centrosimétricos
-    }
+    let different = step(0.5, abs(initial_orbital - final_orbital));
+    1.0 - step(0.5, centrosymmetric) * different
 }
 
 // ============================================================
 // INTERFAZ PÚBLICA - SDFs DE COMPLEJOS (def)
+// (todos centrados en el origen; usar position: en la instancia)
 // ============================================================
 
 // --- Complejo Octaédrico ---
-def "octahedral_complex"(metal_position, metal_radius, ligand_positions, ligand_radii, intensity_threshold) {
-    // Metal central
-    let metal = sphere(metal_position, metal_radius);
-    
-    // Ligandos y enlaces
-    let ligands_and_bonds = [];
-    
-    for i in range(0, len(ligand_positions)) {
-        // Ligando
-        let ligand = sphere(ligand_positions[i], ligand_radii[i]);
-        ligands_and_bonds = append(ligands_and_bonds, ligand);
-        
-        // Enlace metal-ligando
-        let bond = cylinder(metal_position, ligand_positions[i], 0.015);
-        ligands_and_bonds = append(ligands_and_bonds, bond);
-    }
-    
-    // Orbitales d visualizados (t2g y eg)
-    let t2g_orbitals = [];
-    let eg_orbitals = [];
-    
-    // t2g en planos (dxy, dyz, dxz)
-    for i in range(0, 3) {
-        let orbital_angle = i * 2.0 * pi / 3.0;
-        let orbital = torus(metal_position, 
-                           [cos(orbital_angle), sin(orbital_angle), 0],
-                           0.06, 0.008);
-        t2g_orbitals = append(t2g_orbitals, orbital);
-    }
-    
-    // eg en ejes (dx²-y², dz²)
-    for i in range(0, 3) {
-        let axis = [0, 0, 0];
-        axis[i] = 1.0;
-        let lobe1 = sphere([metal_position[0] + axis[0]*0.04,
-                           metal_position[1] + axis[1]*0.04,
-                           metal_position[2] + axis[2]*0.04], 0.02);
-        let lobe2 = sphere([metal_position[0] - axis[0]*0.04,
-                           metal_position[1] - axis[1]*0.04,
-                           metal_position[2] - axis[2]*0.04], 0.02);
-        eg_orbitals = append(eg_orbitals, lobe1);
-        eg_orbitals = append(eg_orbitals, lobe2);
-    }
-    
-    sdf: union(union(metal, union_array(ligands_and_bonds)), 
-               union(union_array(t2g_orbitals), union_array(eg_orbitals)));
+// Metal + 6 ligandos en ejes ±d + enlaces cápsula + 3 anillos t2g (planos xy/xz/yz) + 4 lóbulos eg (±x, ±y)
+def "octahedral_complex"(ligand_distance, metal_radius, ligand_radius, bond_radius) {
+    sdf: union(
+        union(
+            sphere(metal_radius),
+            custom(min(min(min(min(min(min(min(min(min(min(min(
+                sqrt(sq(x - ligand_distance) + sq(y) + sq(z)) - ligand_radius,
+                sqrt(sq(x + ligand_distance) + sq(y) + sq(z)) - ligand_radius), 
+                sqrt(sq(x) + sq(y - ligand_distance) + sq(z)) - ligand_radius), 
+                sqrt(sq(x) + sq(y + ligand_distance) + sq(z)) - ligand_radius), 
+                sqrt(sq(x) + sq(y) + sq(z - ligand_distance)) - ligand_radius), 
+                sqrt(sq(x) + sq(y) + sq(z + ligand_distance)) - ligand_radius), 
+                segment_distance(x, y, z, 0.0, 0.0, 0.0, ligand_distance, 0.0, 0.0) - bond_radius), 
+                segment_distance(x, y, z, 0.0, 0.0, 0.0, -ligand_distance, 0.0, 0.0) - bond_radius), 
+                segment_distance(x, y, z, 0.0, 0.0, 0.0, 0.0, ligand_distance, 0.0) - bond_radius), 
+                segment_distance(x, y, z, 0.0, 0.0, 0.0, 0.0, -ligand_distance, 0.0) - bond_radius), 
+                segment_distance(x, y, z, 0.0, 0.0, 0.0, 0.0, 0.0, ligand_distance) - bond_radius), 
+                segment_distance(x, y, z, 0.0, 0.0, 0.0, 0.0, 0.0, -ligand_distance) - bond_radius)
+            )),
+        custom(min(min(min(min(min(min(
+            sqrt(sq(sqrt(sq(x) + sq(z)) - 0.06) + sq(y)) - 0.008,
+            sqrt(sq(sqrt(sq(x) + sq(y)) - 0.06) + sq(z)) - 0.008), 
+            sqrt(sq(sqrt(sq(y) + sq(z)) - 0.06) + sq(x)) - 0.008), 
+            sqrt(sq(x - 0.05) + sq(y) + sq(z)) - 0.02), 
+            sqrt(sq(x + 0.05) + sq(y) + sq(z)) - 0.02), 
+            sqrt(sq(x) + sq(y - 0.05) + sq(z)) - 0.02), 
+            sqrt(sq(x) + sq(y + 0.05) + sq(z)) - 0.02)
+        ));
 }
 
 // --- Complejo Tetraédrico ---
-def "tetrahedral_complex"(metal_position, metal_radius, ligand_distance, intensity_threshold) {
-    // Metal central
-    let metal = sphere(metal_position, metal_radius);
-    
-    // Vértices de tetraedro
-    let tetrahedral_vertices = [
-        [1, 1, 1],
-        [1, -1, -1],
-        [-1, 1, -1],
-        [-1, -1, 1]
-    ];
-    
-    let ligands_and_bonds = [];
-    
-    for i in range(0, 4) {
-        let direction = normalize(tetrahedral_vertices[i]);
-        let ligand_pos = [metal_position[0] + direction[0] * ligand_distance,
-                         metal_position[1] + direction[1] * ligand_distance,
-                         metal_position[2] + direction[2] * ligand_distance];
-        
-        let ligand = sphere(ligand_pos, 0.03);
-        ligands_and_bonds = append(ligands_and_bonds, ligand);
-        
-        let bond = cylinder(metal_position, ligand_pos, 0.012);
-        ligands_and_bonds = append(ligands_and_bonds, bond);
-    }
-    
-    sdf: union(metal, union_array(ligands_and_bonds));
+// Metal + 4 ligandos en vértices (1,1,1)/√3 + enlaces cápsula
+def "tetrahedral_complex"(ligand_distance, metal_radius, ligand_radius, bond_radius) {
+    sdf: union(
+        sphere(metal_radius),
+        custom(min(min(min(min(min(min(min(
+            sqrt(sq(x - 0.5773502692 * ligand_distance) + sq(y - 0.5773502692 * ligand_distance) + sq(z - 0.5773502692 * ligand_distance)) - ligand_radius,
+            sqrt(sq(x - 0.5773502692 * ligand_distance) + sq(y + 0.5773502692 * ligand_distance) + sq(z + 0.5773502692 * ligand_distance)) - ligand_radius), 
+            sqrt(sq(x + 0.5773502692 * ligand_distance) + sq(y - 0.5773502692 * ligand_distance) + sq(z + 0.5773502692 * ligand_distance)) - ligand_radius), 
+            sqrt(sq(x + 0.5773502692 * ligand_distance) + sq(y + 0.5773502692 * ligand_distance) + sq(z - 0.5773502692 * ligand_distance)) - ligand_radius), 
+            segment_distance(x, y, z, 0.0, 0.0, 0.0, 0.5773502692 * ligand_distance, 0.5773502692 * ligand_distance, 0.5773502692 * ligand_distance) - bond_radius), 
+            segment_distance(x, y, z, 0.0, 0.0, 0.0, 0.5773502692 * ligand_distance, -0.5773502692 * ligand_distance, -0.5773502692 * ligand_distance) - bond_radius), 
+            segment_distance(x, y, z, 0.0, 0.0, 0.0, -0.5773502692 * ligand_distance, 0.5773502692 * ligand_distance, -0.5773502692 * ligand_distance) - bond_radius), 
+            segment_distance(x, y, z, 0.0, 0.0, 0.0, -0.5773502692 * ligand_distance, -0.5773502692 * ligand_distance, 0.5773502692 * ligand_distance) - bond_radius)
+        ));
 }
 
 // --- Complejo Cuadrado Plano ---
-def "square_planar_complex"(metal_position, metal_radius, ligand_distance, intensity_threshold) {
-    // Metal central
-    let metal = sphere(metal_position, metal_radius);
-    
-    // Ligandos en plano cuadrado
-    let ligands_and_bonds = [];
-    
-    for i in range(0, 4) {
-        let angle = i * pi / 2.0;
-        let ligand_pos = [metal_position[0] + ligand_distance * cos(angle),
-                         metal_position[1],
-                         metal_position[2] + ligand_distance * sin(angle)];
-        
-        let ligand = sphere(ligand_pos, 0.03);
-        ligands_and_bonds = append(ligands_and_bonds, ligand);
-        
-        let bond = cylinder(metal_position, ligand_pos, 0.015);
-        ligands_and_bonds = append(ligands_and_bonds, bond);
-    }
-    
-    // Orbital dx²-y² (alto en energía)
-    let dx2_y2 = torus(metal_position, [0, 1, 0], ligand_distance * 0.5, 0.01);
-    
-    sdf: union(union(metal, union_array(ligands_and_bonds)), dx2_y2);
+// Metal + 4 ligandos en plano xz + enlaces + 4 lóbulos dx²-y² sobre los ejes
+def "square_planar_complex"(ligand_distance, metal_radius, ligand_radius, bond_radius) {
+    sdf: union(
+        union(
+            sphere(metal_radius),
+            custom(min(min(min(min(min(min(min(
+                sqrt(sq(x - ligand_distance) + sq(y) + sq(z)) - ligand_radius,
+                sqrt(sq(x) + sq(y) + sq(z - ligand_distance)) - ligand_radius), 
+                sqrt(sq(x + ligand_distance) + sq(y) + sq(z)) - ligand_radius), 
+                sqrt(sq(x) + sq(y) + sq(z + ligand_distance)) - ligand_radius), 
+                segment_distance(x, y, z, 0.0, 0.0, 0.0, ligand_distance, 0.0, 0.0) - bond_radius), 
+                segment_distance(x, y, z, 0.0, 0.0, 0.0, 0.0, 0.0, ligand_distance) - bond_radius), 
+                segment_distance(x, y, z, 0.0, 0.0, 0.0, -ligand_distance, 0.0, 0.0) - bond_radius), 
+                segment_distance(x, y, z, 0.0, 0.0, 0.0, 0.0, 0.0, -ligand_distance) - bond_radius)
+            )),
+        custom(min(min(min(
+            sqrt(sq(x - 0.05) + sq(y) + sq(z)) - 0.02,
+            sqrt(sq(x + 0.05) + sq(y) + sq(z)) - 0.02), 
+            sqrt(sq(x) + sq(y) + sq(z - 0.05)) - 0.02), 
+            sqrt(sq(x) + sq(y) + sq(z + 0.05)) - 0.02)
+        )
+    );
 }
 
-// --- Campo Cristalino Octaédrico Visualizado ---
-def "crystal_field_splitting_visualization"(splitting_energy, electron_config, intensity_threshold) {
-    // Niveles de energía
-    let eg_level = 0.06;  // Arriba
-    let t2g_level = -0.02;  // Abajo
-    
-    // Líneas de niveles
-    let eg_line = cylinder([-0.2, eg_level, 0], [0.2, eg_level, 0], 0.01);
-    let t2g_line = cylinder([-0.2, t2g_level, 0], [0.2, t2g_level, 0], 0.01);
-    
-    // Electrones en t2g (hasta 6)
-    let t2g_electrons = [];
-    for i in range(0, min(electron_config[0], 6)) {
-        let spin = (i % 2 == 0) ? 1.0 : -1.0;
-        let electron = sphere([-0.15 + (i/2) * 0.1, t2g_level, spin * 0.02], 0.015);
-        t2g_electrons = append(t2g_electrons, electron);
-    }
-    
-    // Electrones en eg (hasta 4)
-    let eg_electrons = [];
-    for i in range(0, min(electron_config[1], 4)) {
-        let spin = (i % 2 == 0) ? 1.0 : -1.0;
-        let electron = sphere([-0.15 + (i/2) * 0.1, eg_level, spin * 0.02], 0.015);
-        eg_electrons = append(eg_electrons, electron);
-    }
-    
-    // Separación Δ
-    let delta_arrow = cylinder([0.25, t2g_level, 0], [0.25, eg_level, 0], 0.005);
-    
-    sdf: union(union(union(eg_line, t2g_line), union(union_array(t2g_electrons), union_array(eg_electrons))), delta_arrow);
+// --- Campo Cristalino Visualizado ---
+// Líneas de nivel t2g (y=-0.02) y eg (y=+0.06) + electrones (spin alternado ±0.02)
+// + flecha Δ. t2g_electrons: 0..6, eg_electrons: 0..4
+def "crystal_field_splitting_visualization"(t2g_electrons, eg_electrons) {
+    sdf: union(
+        custom(min(
+            min(
+                segment_distance(x, y, z, -0.2, 0.06, 0.0, 0.2, 0.06, 0.0) - 0.01,
+                segment_distance(x, y, z, -0.2, -0.02, 0.0, 0.2, -0.02, 0.0) - 0.01),
+            segment_distance(x, y, z, 0.25, -0.02, 0.0, 0.25, 0.06, 0.0) - 0.005
+        )),
+        custom(min(min(min(min(min(min(min(min(min(
+            sqrt(sq(x + 0.15) + sq(y - 0.02) + sq(z)) - 0.015 * step(0.5, t2g_electrons),
+            sqrt(sq(x + 0.10) + sq(y + 0.02) + sq(z)) - 0.015 * step(1.5, t2g_electrons)), 
+            sqrt(sq(x + 0.05) + sq(y - 0.02) + sq(z)) - 0.015 * step(2.5, t2g_electrons)), 
+            sqrt(sq(x) + sq(y + 0.02) + sq(z)) - 0.015 * step(3.5, t2g_electrons)), 
+            sqrt(sq(x - 0.05) + sq(y - 0.02) + sq(z)) - 0.015 * step(4.5, t2g_electrons)), 
+            sqrt(sq(x - 0.10) + sq(y + 0.02) + sq(z)) - 0.015 * step(5.5, t2g_electrons)), 
+            sqrt(sq(x + 0.15) + sq(y - 0.08) + sq(z)) - 0.015 * step(0.5, eg_electrons)), 
+            sqrt(sq(x + 0.05) + sq(y - 0.04) + sq(z)) - 0.015 * step(1.5, eg_electrons)), 
+            sqrt(sq(x - 0.05) + sq(y - 0.08) + sq(z)) - 0.015 * step(2.5, eg_electrons)), 
+            sqrt(sq(x - 0.15) + sq(y - 0.04) + sq(z)) - 0.015 * step(3.5, eg_electrons))
+        ));
 }
 
-// --- Quelación (Bidentado) ---
-def "chelation_bidentate_ligand"(metal_position, ligand_positions, bite_angle, intensity_threshold) {
-    // Metal central
-    let metal = sphere(metal_position, 0.04);
-    
-    // Ligando bidentado (ej: etilendiamina)
-    let donor1 = sphere(ligand_positions[0], 0.025);
-    let donor2 = sphere(ligand_positions[1], 0.025);
-    
-    // Puente del ligando
-    let bridge = cylinder(ligand_positions[0], ligand_positions[1], 0.01);
-    
-    // Enlaces metal-donador
-    let bond1 = cylinder(metal_position, ligand_positions[0], 0.012);
-    let bond2 = cylinder(metal_position, ligand_positions[1], 0.012);
-    
-    // Ángulo de mordida visualizado
-    let bite_arc = torus(metal_position, [0, 1, 0], 0.08, 0.003);
-    
-    sdf: union(union(union(metal, union(donor1, donor2)), union(bridge, union(bond1, bond2))), bite_arc);
+// --- Quelación (Ligando Bidentado) ---
+// Metal (r=metal_radius) + 2 donadores + puente + 2 enlaces + arco de mordida (anillo en plano x=0.15, r=0.10)
+// bite_angle en grados: rota el segundo donador alrededor del eje x de contacto
+def "chelation_bidentate_ligand"(metal_radius, bite_angle) {
+    sdf: union(
+        union(
+            sphere(metal_radius),
+            custom(min(min(min(min(
+                sqrt(sq(x - 0.15) + sq(y - 0.1) + sq(z)) - 0.025,
+                sqrt(sq(x - 0.15) + sq(y - 0.1 * cos(bite_angle * DEG2RAD)) + sq(z - 0.1 * sin(bite_angle * DEG2RAD))) - 0.025), 
+                segment_distance(x, y, z, 0.15, 0.1, 0.0, 0.15, 0.1 * cos(bite_angle * DEG2RAD), 0.1 * sin(bite_angle * DEG2RAD)) - 0.01), 
+                segment_distance(x, y, z, 0.0, 0.0, 0.0, 0.15, 0.1, 0.0) - 0.012), 
+                segment_distance(x, y, z, 0.0, 0.0, 0.0, 0.15, 0.1 * cos(bite_angle * DEG2RAD), 0.1 * sin(bite_angle * DEG2RAD)) - 0.012)
+            )),
+        custom(sqrt(sq(sqrt(sq(y) + sq(z)) - 0.10) + sq(x - 0.15)) - 0.003)
+    );
 }
 
 // ============================================================
-// EJEMPLOS DE USO CON custom(expr)
+// EJEMPLOS DE USO (instanciar defs parametrizados)
 // ============================================================
 
 /*
-// EJEMPLO 1: Complejo octaédrico [Co(NH3)6]³⁺
-node "octahedral_complex_example" {
+// EJEMPLO 1: Complejo octaédrico [Co(NH3)6]³⁺ (d=0.2, metal 0.04, ligando 0.025, enlace 0.015)
+instance "octahedral_complex"(0.2, 0.04, 0.025, 0.015) {
     position: [-4, 0, 0];
-    sdf: octahedral_complex([0, 0, 0], 0.04, [[0.2,0,0], [-0.2,0,0], [0,0.2,0], [0,-0.2,0], [0,0,0.2], [0,0,-0.2]], [0.025, 0.025, 0.025, 0.025, 0.025, 0.025], 0.12);
     material: "coordination_complex";
 }
 
 // EJEMPLO 2: Complejo tetraédrico [CoCl4]²⁻
-node "tetrahedral_complex_example" {
+instance "tetrahedral_complex"(0.18, 0.04, 0.03, 0.012) {
     position: [0, 0, 0];
-    sdf: tetrahedral_complex([0, 0, 0], 0.04, 0.18, 0.15);
     material: "tetrahedral_complex";
 }
 
 // EJEMPLO 3: Complejo cuadrado plano [Pt(NH3)4]²⁺
-node "square_planar_example" {
+instance "square_planar_complex"(0.18, 0.04, 0.03, 0.015) {
     position: [4, 0, 0];
-    sdf: square_planar_complex([0, 0, 0], 0.04, 0.18, 0.12);
     material: "square_planar";
 }
 
-// EJEMPLO 4: Campo cristalino d³ (Cr³⁺)
-node "crystal_field_example" {
+// EJEMPLO 4: Campo cristalino d³ (Cr³⁺): 3 electrones en t2g, 0 en eg
+instance "crystal_field_splitting_visualization"(3.0, 0.0) {
     position: [-2, 3, 0];
-    sdf: crystal_field_splitting_visualization(21500, [3, 0], 0.1);
     material: "crystal_field";
 }
 
-// EJEMPLO 5: Quelación bidentada
-node "chelation_example" {
+// EJEMPLO 5: Quelación bidentada con ángulo de mordida 90°
+instance "chelation_bidentate_ligand"(0.04, 90.0) {
     position: [2, 3, 0];
-    sdf: chelation_bidentate_ligand([0, 0, 0], [[0.15, 0.1, 0], [0.15, -0.1, 0]], 90, 0.1);
     material: "chelate_complex";
 }
 */
@@ -513,8 +350,9 @@ node "chelation_example" {
 // 2. La geometría depende del número de coordinación y tipo de ligando
 // 3. La teoría del campo cristalino explica propiedades ópticas y magnéticas
 // 4. El desdoblamiento Δ determina configuraciones de alto/bajo espín
-// 5. Los ligandos se clasifican por fuerza (serie espectroquímica)
+// 5. Los ligandos se clasifican por fuerza (serie espectroquímica, índice 0..10)
 // 6. La quelación aumenta estabilidad (efecto quelato)
+// 7. Los fns devuelven códigos numéricos (sin strings) — ver convenciones arriba
 
 // ============================================================
 // "Los complejos de coordinación son las joyas de la química inorgánica,

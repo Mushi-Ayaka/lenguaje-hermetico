@@ -3,7 +3,7 @@
 **Capa:** Intermediario Química-Biología (5.7 — Genómica Química y Metabolómica)
 **Versión:** 1.0
 **Fuente:** "Chemical Genomics" & "Metabolomics: From Fundamentals to Clinical Applications"
-**Dependencias:** std_math_core.hm, std_math_algebra.hm, std_chem_organic.hm, std_bridge_biochem.hm, std_bridge_molbio.hm, std_bridge_chembio.hm
+**Dependencias:** std_math_core.hm, std_bridge_atomic.hm
 **Fecha:** 6 de junio de 2026
 
 ## Cómo
@@ -16,7 +16,7 @@ Integrar química y genómica para descubrimiento de fármacos y análisis siste
 Usada para modelar interacciones molecular-genoma, pantallas quimiogenómicas, perfiles metabólicos, flujos metabólicos y diseño de herramientas CRISPR-químicas.
 
 ## Funciones principales
-- `gc_content_density(gc_fraction, position, scale)` — Densidad GC genómica
+- `gc_content_density(gc_fraction, sequence_position, scale)` — Densidad GC genómica (`position` es keyword, por eso `sequence_position`)
 - `dna_drug_binding_score(intercalation, groove, charge)` — Score de unión a ADN
 - `sequence_specificity(target, off_target, penalty)` — Especificidad de secuencia
 - `chemical_tf_activation(ligand, affinity, cooperativity, basal)` — Activación Hill-like de TF
@@ -24,23 +24,26 @@ Usada para modelar interacciones molecular-genoma, pantallas quimiogenómicas, p
 - `chemical_phenotype_screen_score(hit_rate, effect, reproducibility)` — Score de pantalla
 - `chemical_expression_profile(up, down, threshold)` — Perfil de expresión inducida
 - `metabolic_ratio(A, B)` — Ratio entre metabolitos
-- `metabolic_fold_change(treated, control)` — Fold change log2
+- `metabolic_fold_change(treated, control)` — Fold change log2 (ln x / ln 2)
 - `metabolic_stress_index(lactate, pyruvate, NADH_NAD)` — Índice de estrés
 - `cellular_energy_ratio(ATP, ADP, AMP)` — Ratio energético
-- `metabolic_pattern_similarity(profile_a, profile_b)` — Similitud coseno
+- `metabolic_profile_normalized(m1, m2, ref1, ref2)` — Perfil normalizado (2 metabolitos)
+- `metabolic_pattern_similarity(a1, a2, a3, b1, b2, b3)` — Similitud coseno (3 componentes)
 - `metabolic_pathway_enrichment(pathway, background, size)` — Enriquecimiento de ruta
 - `metabolic_biomarker_score(specificity, sensitivity, FC, reproducibility)` — Score de biomarcador
 - `metabolic_flux(S, enzyme, kcat, km)` — Flujo Michaelis-Menten
 - `metabolic_flux_control_coefficient(flux_change, enzyme_change)` — Coeficiente de control
-- `metabolic_stability_analysis(jacobian, eigenvalues)` — Análisis de estabilidad
+- `metabolic_stability_analysis(eigenvalue1, eigenvalue2)` — Estabilidad (producto de 2 eigenvalores)
 
 ## SDFs definidas
-- `dna_sequence_visualization(pattern, position, threshold)` — Secuencia de ADN
-- `drug_dna_interaction_visualization(dna, drug, strength, threshold)` — Fármaco-ADN
-- `metabolic_network_visualization(positions, fluxes, threshold)` — Red metabólica
-- `metabolic_profile_visualization(levels, time_points, threshold)` — Perfil metabólico 3D
-- `crispr_chemical_system_visualization(target, guide, cas, effector, threshold)` — CRISPR-Chem
-- `chemical_phenotype_screen_visualization(wells, scores, threshold)` — Pantalla de fenotipo
+- `dna_sequence_visualization(n_bases, base_rise, threshold)` — Secuencia de ADN (doble hélice paramétrica + peldaños periódicos)
+- `drug_dna_interaction_visualization(dx..dz, px..pz, strength, threshold)` — Fármaco-ADN (cápsula real)
+- `metabolic_network_visualization(n_nodes, mean_flux, threshold)` — Red metabólica (anillo de nodos + disco)
+- `metabolic_profile_visualization(n_series, n_points, time_span, threshold)` — Perfil metabólico 3D + ejes
+- `crispr_chemical_system_visualization(tx..tz, gx..gz, cx..cz, ex..ez, threshold)` — CRISPR-Chem (4 cápsulas de interacción)
+- `chemical_phenotype_screen_visualization(n_wells, mean_hit, threshold)` — Pantalla (anillo + burbujas + leyenda 5 puntos)
 
 ## Notas
 La genómica química integra química y genómica para descubrimiento de fármacos. La metabolómica estudia perfiles de metabolitos como biomarcadores. El análisis de flujos metabólicos modela dinámicas de redes bioquímicas. Los sistemas CRISPR-Chem combinan edición genómica con modulación química.
+
+Corregido 2026-10-17: `position` es keyword (campo de nodo) → `sequence_position`; `log(2, x)` (2 args) no existe → log2 = ln x/ln 2; `<` léxico eliminado; arrays/`for` → normalización a 2 metabolitos, similitud coseno a 3 componentes, estabilidad = producto de 2 eigenvalores; los 6 defs pasan a parámetros escalares con hélices/anillos paramétricos (`cos(n·atan(z,x))`, `sin(pi·y/paso)`) y cápsulas `segment_distance`; el "sitio de interacción" invertido (−r²+0.04, no era superficie válida) se reemplazó por cápsula fármaco-DNA.

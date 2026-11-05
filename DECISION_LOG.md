@@ -400,6 +400,102 @@ Para esos casos, se usa SDF en runtime. Pero son minoría.
 
 ---
 
+## DL-22 — Intersección analítica para composiciones de primitivas puras (Paso 5.14).
+
+**Estado:** DECIDIDO (registrado en PLAN.md)
+**Contexto:** Fase 5.11 resuelve primitivas puras individuales analíticamente. Las composiciones `union`/`intersect`/`subtract` de primitivas puras también tienen solución cerrada pero hoy usan ray marching. Extender la intersección analítica a esas composiciones elimina el ray marching para ellas.
+**Decisión:** Implementar como Paso 5.14 (sub-pasos 5.14.1–5.14.6) en orden estricto:
+1. `RayHit` + funciones de intersección en `contrato/sdf.h`.
+2. Detección de subárboles analíticos en compilador.
+3. Flags en `.sem`.
+4. `intersectLeaf` en `glsl_gen.cpp`.
+5. Integración en `bvhEval`.
+6. Medición de rendimiento.
+
+**Restricciones:**
+- Solo `union`/`intersect`/`subtract` de primitivas puras.
+- `smooth_union` con `k>0`, `repeat`, `twist`, `elongate`, `displace` → NO se resuelven (siguen con ray marching).
+- Fallback a ray marching siempre funcional.
+- No se toca el lenguaje. Flags del compilador y motor.
+
+**Dependencias:** Fase 3 (`.sem`), DL-09 (fold + memo + CSE), Pasos 5.1–5.5.
+**Riesgos:** Detección conservadora (aceptable), shader más grande, ganancia depende de la escena.
+
+---
+
+## DL-23 — Política de decisión de pipeline.
+
+**Estado:** PENDIENTE.
+**Contexto:** El motor tendrá dos pipelines (SDF + rasterización). Hay que decidir qué geometría va por cuál.
+**Opciones:**
+
+- **A) Compilador decide por defecto, game dev sobrescribe.**
+- **B) Game dev decide siempre** (más control, más trabajo).
+- **C) Motor decide en runtime** (más adaptativo, menos predecible).
+
+**Recomendación:** A. Es lo que hace Unreal con Nanite.
+
+---
+
+## DL-24 — Compositing unificado.
+
+**Estado:** PENDIENTE.
+**Contexto:** Los dos pipelines deben componerse en el píxel final.
+**Propuesta:** depth buffer compartido + UBO compartido (luces, cámara, shading).
+**Depende de:** DL-16, DL-23.
+
+---
+
+## DL-25 — Sistema de shading unificado.
+
+**Estado:** PENDIENTE.
+**Contexto:** Los dos pipelines deben verse como parte del mismo mundo.
+**Propuesta:** mismo modelo PBR, mismas luces, mismas sombras (o aproximación), mismo anti-aliasing.
+**Depende de:** DL-24.
+
+---
+
+## DL-26 — `substExprText` trata `_` como carácter de palabra (fix de corrección).
+
+**Estado:** DECIDIDO e IMPLEMENTADO (2026-10-23).
+**Contexto:** `substExprText` (`herm_resolver.cpp:507`) sustituye parámetros de `def`/`fn` en expresiones por texto. La BNF permite `_` en identificadores: `[A-Za-z_][A-Za-z0-9_]*`. La versión anterior usaba `std::isalnum` para detectar límites de palabra, y `isalnum` **no incluye `_`**.
+
+**Bug:** con `param="ancho"`, `texto="ancho_2 + ancho"`, `arg="0.5"`:
+- Versión vieja: `"0.5_2 + 0.5"` — corrupción silenciosa del identificador `ancho_2`.
+- Versión nueva: `"ancho_2 + 0.5"` — correcto, `_` no rompe la palabra.
+
+**Fix:** el límite de palabra ahora es `isalnum(c) || c == '_'`. Criterio estándar de C/C++/Rust/Python: `_` es carácter de palabra, no separador. No tocar este `|| c == '_'` — quitarlo reintroduce la corrupción.
+
+**Tests mínimos que validan el fix (verificar en cualquier refactor):**
+1. `substExprText("ancho_2 + ancho", {"ancho":"0.5"})` → `"ancho_2 + 0.5"` (`_` no rompe)
+2. `substExprText("_ancho + ancho", {"ancho":"1"})` → `"_ancho + 1"` (`_` al inicio)
+3. `substExprText("ancho2 + ancho", {"ancho":"1"})` → `"ancho2 + 1"` (dígitos al final)
+4. `substExprText("(ancho)+(ancho)", {"ancho":"2"})` → `"(2)+(2)"` (múltiples ocurrencias)
+
+**Bug latente pre-existente (NO de este fix, pendiente):** `subst` es `std::unordered_map` — iteración en orden arbitrario. Con `subst["a"]="b"; subst["b"]="1"; texto="a + b"`, si `b` se procesa primero queda `b + 1` sin sustituir. Rompe determinismo. Fix futuro: segunda pasada que verifique que no quedan parámetros sin sustituir; si quedan, error explícito. Detecta el caso y obliga a corregir la librería o el orden.
+
+**Disciplina:** es un fix de corrección, no de arquitectura. Registrado aquí porque el cambio de `isalnum` a `isalnum || '_'` no es obvio y un próximo agente podría quitarlo "porque no hacía falta". También patrón general: fallo silencioso = deuda invisible (ver Paso 2.0 — misma causa raíz que las funciones faltantes en `herm_eval`).
+
+---
+
+## DL-27 — `materiales.hm` archivado fuera de `libreria/` (limpieza de legado).
+
+**Estado:** DECIDIDO e IMPLEMENTADO (2026-11-04). Decisión del usuario ("archívalo"), no del agente.
+
+**Contexto:** tras cerrar la reescritura de las 55 librerías estándar (55/55 compilan), el único `.hm` que seguía fallando era `libreria/materiales.hm`: catálogo de ~55 materiales PBR escrito antes de la migración al Plano Tensorial 1x8 (v0.14). Usa `ior` y `transmission` como campos de `material`, y `parse_material` (`herm_parser.cpp:357`) solo acepta `tensor`, `blend_mode`, `base_color`, `roughness`, `metallic`, `emission` y `opacity`. El lexer sí define `ior`/`transmission` (`herm_lexer.cpp:45-46`), pero el parser no los consume: el error es ruidoso y correcto.
+
+**Decisión:** no convertirlo al tensor (el mapeo `ior`/`transmission` → tensor 1x8 no está definido y exigiría una decisión de diseño propia) y no borrarlo (se pierden los valores de referencia). Se mueve a `archived/libreria/materiales.hm`, siguiendo la convención `archived/<categoría>/` ya usada por `archived/docs_antiguas/` y `archived/root/`.
+
+**Consecuencias:**
+- `libreria/` contiene solo las 55 `std_*.hm` + `tests/`. El barrido 55/55 pasa a ser el estado real del protocolo.
+- `ejemplos/teclado.herm` importaba el catálogo y solo usaba `cobre`: se añadió la definición local de `cobre` (mismos valores) y se quitó el import. Vuelve a compilar (33 fotogramas, 3 materiales, 40 nodos).
+- `ejemplos/bodegon.herm` sigue fallando por un `ior` dentro de un `material` inline (L29). **No lo causa este archivado**: es la misma carencia del parser, documentada aquí y pendiente de decisión.
+- `docs/04-guia-uso.md` usa ahora `import "std_math_core.hm"` como ejemplo de imports.
+
+**Lo que NO se decide aquí:** si el lenguaje debe soportar `ior`/`transmission` en `material`. Eso es diseño de lenguaje y requiere decisión explícita del usuario.
+
+---
+
 ### Cómo queda el lenguaje después de estas decisiones
 
 Sin cambios. Ni una línea de sintaxis nueva. Exactamente como está hoy. El parser solo se extiende para aceptar let internos en fn (DL-14), que es una extensión del parser, no de la sintaxis visible.
@@ -565,6 +661,54 @@ Hoy el shader es uno `ray_march.comp` o el especializado. Con bake, es dos rutas
 **Objetivo:** que las 55 librerías compilen y que la RAM bomb se resuelva.
 
 **Pasos (en orden):**
+
+### Paso 2.0 — Funciones faltantes en `herm_eval.cpp` (bug de corrección, PRIORIDAD ALTA).
+
+**Objetivo:** que `evalExpression()` soporte todas las funciones que el lenguaje reconoce, y que falle ruidosamente ante funciones desconocidas.
+
+**Contexto:** `herm_eval.cpp` solo reconoce 16 funciones. Cualquier otra devuelve `0.0f` silenciosamente. Eso corrompe silenciosamente:
+- `herm_render.cpp` — PNG output.
+- `herm_rih.cpp` — transforms y params por frame.
+- `herm_ont.cpp:1073` — `d_min` del BVH (afecta rendimiento GPU).
+- `herm_ont.cpp:564` — AABB de nodos CUSTOM (path hoy inactivo, bug latente).
+
+**Causa raíz:** el fallback es silencioso (`return 0.0f`). Si fuera error, se habría detectado el primer día. "35/55 PASS" = 35/55 **compilan**, no 35/55 **correctas**. En CPU, cualquier lib usando `exp`/`acos`/`atan2`/`step`/`sign` produce valores incorrectos sin aviso.
+
+**Sub-pasos:**
+
+**2.0.1 — Añadir funciones faltantes.**
+- `step`, `smoothstep`, `exp`, `log`, `log2`, `log10`, `acos`, `asin`, `atan`, `atan2`, `sign`, `mod`, `fract`.
+- Tests unitarios de cada una contra valores conocidos.
+
+**2.0.2 — Cambiar fallback a error.**
+- `return 0.0f` → `throw std::runtime_error("herm_eval: función no soportada: " + name)`.
+- Verificar que ningún test existente se rompe (si alguno usaba funciones no soportadas, ese test estaba mal).
+
+**2.0.3 — Test de paridad CPU/GPU.**
+- Para cada librería en `libreria/`, compilar una escena que use sus funciones y comparar valores CPU vs GPU.
+- Sin tolerancia. Divergencia = error.
+
+**2.0.4 — Re-ejecutar benchmarks obsoletos.**
+- Marcar como obsoletos todos los `--render` anteriores.
+- Re-ejecutar con el evaluador corregido.
+- Comparar: los resultados deben ser distintos (más correctos).
+
+**Criterio de aceptación de Paso 2.0:**
+- Las 13 funciones nuevas se evalúan correctamente en CPU.
+- Función desconocida → error explícito, no 0.
+- Test de paridad CPU/GPU pasa para las 55 librerías.
+- Los benchmarks de `--render` re-ejecutados son válidos.
+
+**Archivos afectados:**
+- `lenguaje-hermetico/herm/herm_eval.cpp`
+- `lenguaje-hermetico/herm/herm_eval.h` (si cambia la firma)
+- `tests/test_eval_parity.cpp` (nuevo)
+
+**Prioridad:** antes de DL-09 (Paso 2.3–2.5). Es un bug de corrección, no de rendimiento. **Incorrecto > lento.** Independiente de DL-14. Se puede hacer en paralelo con las libs.
+
+**Disciplina derivada:** todo fallo debe ser ruidoso. Si algo no se soporta → error. Si algo no existe → error. Si algo diverge → error. El silencio es deuda invisible.
+
+---
 
 **Paso 2.1 — Fix `fn` multi-statement.**
 - Extender `parse_fn` (`herm_parser.cpp:297`) para aceptar `let` internos.
@@ -738,10 +882,97 @@ Paso 5.13 (nuevo) — Gradiente analítico.
 - Newton-Raphson en el último paso.
 - Menos iteraciones de convergencia.
 
+### Paso 5.14 — Intersección analítica para composiciones de primitivas puras.
+
+**Objetivo:** extender la intersección analítica de Fase 5.11 (primitivas puras individuales) a composiciones de primitivas puras que también tienen solución cerrada. Eliminar el ray marching para `union`/`intersect`/`subtract` de primitivas puras.
+
+**Dependencias:**
+- Paso 5.1–5.5 cerrados (static/dynamic, `def_id`, AABBs, normales, operadores SDF).
+- Fase 3 cerrada (`.sem` con `analytic_flags`).
+- DL-09 cerrado (fold + memo + CSE).
+
+**Sub-pasos (en orden estricto):**
+
+**5.14.1 — Añadir `RayHit` y funciones de intersección a `contrato/sdf.h`.**
+- `struct RayHit { bool hit; float t; Vec3 normal; };`
+- `RayHit intersectSphere(Ray r, Vec3 center, float radius);`
+- `RayHit intersectBox(Ray r, Vec3 min, Vec3 max);`
+- `RayHit intersectCylinder(Ray r, Vec3 base, Vec3 axis, float radius, float height);`
+- Tests unitarios de cada función contra casos conocidos.
+
+**5.14.2 — Detección de subárboles analíticos en el compilador.**
+- En `herm_ont.cpp` (o `herm_bridge.cpp`), al compilar cada nodo, recorrer el subárbol y clasificar:
+  - `ANALYTIC_FULL`: todas las hojas son primitivas puras y todos los operadores son `union`/`intersect`/`subtract`.
+  - `ANALYTIC_PARTIAL`: mezcla de analítico y no analítico.
+  - `NON_ANALYTIC`: contiene `smooth_union` con `k>0`, `repeat`, `twist`, `elongate`, `displace`.
+- Tests con escenas de prueba que cubran los tres casos.
+
+**5.14.3 — Emitir flags en el `.sem`.**
+- Añadir a `analytic_flags`:
+  - `bit 0`: primitiva pura individual (ya en Fase 5.11).
+  - `bit 1`: subárbol analítico completo.
+  - `bit 2`: subárbol analítico parcial.
+  - `bit 3`: tiene gradiente analítico.
+- Verificar que el `.sem` se emite correctamente para escenas de prueba.
+
+**5.14.4 — Generar `intersectLeaf` en `glsl_gen.cpp`.**
+- Para nodos con `bit 1`: generar `intersectLeaf(node_idx, ray)` que resuelve analíticamente. Sin `evalLeaf` para ese nodo.
+- Para nodos con `bit 2`: generar `intersectLeaf` que resuelve las hojas analíticas y hace ray marching sobre las no analíticas.
+- Para nodos sin `bit 1` ni `bit 2`: seguir con `evalLeaf` (ray marching).
+- Tests de compilación del shader. Verificar que el shader compila y produce resultados correctos.
+
+**5.14.5 — Integrar en `bvhEval`.**
+- Añadir `bvhIntersect(ray)` que, para nodos analíticos, resuelve directamente; para el resto, delega en `bvhEval`.
+- El dispatcher decide según los flags del `.sem`.
+- Tests visuales: comparar render con y sin la optimización. Deben ser idénticos (la intersección analítica es exacta).
+
+**5.14.6 — Medir rendimiento.**
+- Benchmark antes/después en escenas con:
+  - Muchas esferas puras.
+  - Muchas cajas puras.
+  - Composiciones `union` de primitivas puras.
+  - Composiciones `intersect` de primitivas puras.
+  - Composiciones `subtract` de primitivas puras.
+  - Escenas con `smooth_union` con `k>0` (deben seguir igual, sin ganancia).
+  - Escenas con `displace` (deben seguir igual, sin ganancia).
+- Documentar ganancia real por tipo de escena.
+
+**Criterio de aceptación de Paso 5.14:**
+- Una escena con 10 esferas puras renderiza sin ray marching (verificable con contador de pasos en el shader).
+- Una escena con `union(esfera, caja)` renderiza sin ray marching.
+- Una escena con `subtract(caja, esfera)` renderiza sin ray marching.
+- Una escena con `smooth_union(esfera, caja, 0.5)` sigue usando ray marching (correcto).
+- Ganancia medida vs. estado actual: 5–20× en escenas con muchas primitivas puras.
+- Sin artefactos visuales. Las normales se calculan analíticamente.
+- El fallback a ray marching funciona siempre. Ninguna escena deja de renderizar.
+
+**Archivos afectados:**
+- `contrato/sdf.h` — añadir `RayHit` y funciones de intersección.
+- `deps/lenguaje-hermetico/herm/herm_ont.cpp` — detección de subárboles analíticos.
+- `render/glsl_gen.cpp` — generación de `intersectLeaf`.
+- `render/scene.h` — leer `analytic_flags` (del `.sem` o del `.ont`).
+- `core/herm_bridge.cpp` — propagar flags al `.ont` o al `.sem`.
+- `tests/test_f5_14_*.cpp` — tests nuevos.
+
+**Lo que NO se hace:**
+- No se resuelve `smooth_union` con `k>0`.
+- No se resuelve `displace`, `twist`, `elongate`.
+- No se reemplaza el ray marching. Se complementa.
+- No se toca el lenguaje. Los flags son del compilador y del motor.
+
+**Riesgos:**
+- **R1.** Detección conservadora. Aceptable: fallback es ray marching.
+- **R2.** El shader crece. Más casos que testear. Mantener fallback siempre funcional.
+- **R3.** La ganancia depende de la escena. Medir antes de prometer.
+- **R4.** Requiere `.sem` implementado. Sin eso, no hay flags.
+
 **Criterio de aceptación de Fase 5:**
 - `teclado.herm` con 38 teclas renderiza con 1 SDF en el shader.
 - Escenas con `displace` funcionan.
 - Benchmarks de rendimiento mejoran respecto a Fase 3.
+- Escenas con composiciones de primitivas puras renderizan sin ray marching. Ganancia medida de 5–20× en esas escenas. Fallback a ray marching siempre funcional.
+
+**Dependencias de Fase 5:** Fase 3 (`.sem`). Paso 5.14 depende además de DL-09. No se puede implementar antes. Si el harness intenta hacerlo, parar y consultar.
 
 **Archivos afectados:** `render/glsl_gen.cpp`, `render/spirv_gen.cpp`, `render/ri_optimizer.cpp`, `core/herm_bridge.cpp`.
 
@@ -789,9 +1020,9 @@ Paso 5.13 (nuevo) — Gradiente analítico.
 
 ## Estado actual
 
-- **Fase 0:** lista para ejecutar.
-- **Fase 1:** pendiente de las decisiones DL-07 a DL-14.
-- **Fase 2:** pendiente de Fase 1.
+- **Fase 0:** cerrada — tag `pre-reforma`, 55 librerías migradas (v0.15). La cola de reescritura se cerró el 2026-11-04 (55/55 compilan, v0.20).
+- **Fase 1:** cerrada — DL-07 a DL-21 decididas y registradas (v0.16–v0.18). DL-22 a DL-25 son decisiones de Fase 5, marcadas PENDIENTE a propósito.
+- **Fase 2:** es la siguiente. **No se abre hasta aprobación explícita del usuario.** Primer paso: **Paso 2.0** (13 funciones faltantes en `herm_eval.cpp` + fallback silencioso convertido en error), después DL-09 (fold + memo + CSE).
 - **Fases 3–6:** pendientes.
 
 ---

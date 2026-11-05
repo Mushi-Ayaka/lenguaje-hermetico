@@ -3,7 +3,7 @@
 **Capa:** Intermediario: Física-Química (3.8 - Electroquímica)
 **Versión:** 1.0
 **Fuente:** Bard & Faulkner "Electrochemical Methods", Bockris & Reddy "Modern Electrochemistry"
-**Dependencias:** std_math_core.hm, std_math_algebra.hm, std_math_calculus.hm, std_bridge_atomic.hm, std_bridge_spectral.hm
+**Dependencias:** std_math_core.hm
 **Fecha:** 6 de junio de 2026
 
 ## Cómo
@@ -19,8 +19,8 @@ Modelar potenciales de electrodo (Nernst), cinética de transferencia de carga (
 - **nernst_equation(E₀, n, a_ox, a_red)** — E = Eº - (RT/nF)·ln(Q)
 - **cell_emf(E_cathode, E_anode)** — FEM = E_cátodo - E_ánodo
 - **galvanic_cell_potential(E₀_cell, n, Q)** — Potencial de celda con concentración
-- **butler_volmer_current(i₀, α, n, η)** — i = i₀[exp(αnFη/RT) - exp(-(1-α)nFη/RT)]
-- **tafel_equation(i, i₀, α, n)** — η = a + b·log|i|
+- **butler_volmer_current(i₀, α_transfer, n, η)** — i = i₀[exp(αnFη/RT) - exp(-(1-α)nFη/RT)]
+- **tafel_equation(i, i₀, α_transfer, n)** — η = a + b·log|i|
 - **randles_sevcik_current(n, A, C, D, scan_rate)** — i_p ∝ √(scan_rate) (voltametría cíclica)
 - **kohlrausch_conductivity(Λ₀, K, c)** — Λ = Λ₀ - K√c
 - **ionic_mobility_einstein(z, D, T)** — u = zeD/k_BT
@@ -30,7 +30,7 @@ Modelar potenciales de electrodo (Nernst), cinética de transferencia de carga (
 - **corrosion_potential(E₀_a, i₀_a, α_a, E₀_c, i₀_c, α_c, n)** — Intersección Tafel
 - **pH_electrode_response(E₀, pH)** — E = E₀ + (RT·ln10/F)·pH
 - **liquid_junction_potential(t⁺, t⁻, a₁, a₂)** — Potencial de unión líquida (Henderson)
-- **ion_selective_electrode_potential(E₀, z, a_primary, K_ij, a_interferences)** — ISE con interferencias
+- **ion_selective_electrode_potential(E₀, z, a_primary, k1, a_j1, k2, a_j2)** — ISE con 2 interferentes (Σ desplegada)
 
 ## SDFs definidas
 - **nernst_potential_surface(E₀, n, a_ox, a_red, potential_value)** — Superficie isopotencial de Nernst
@@ -50,3 +50,4 @@ Modelar potenciales de electrodo (Nernst), cinética de transferencia de carga (
 - Los potenciales estándar incluidos (H₂, O₂, Zn, Cu, Ag, Li) son valores reales vs SHE.
 - Las geometrías de baterías y celdas son representaciones simplificadas.
 - Incluye cinética de corrosión con protección catódica.
+- Corregido 2026-10-17: `alpha` es keyword (no puede ser nombre de parámetro) → `alpha_transfer` en Butler-Volmer/Tafel/sobretención; sin arrays/`for` (ISE desplegado a 2 interferentes); los 11 defs sin `let`/`fn` anidada: `box` toma 3 half-extents escalares centrados en origen y `sphere`/`cylinder` también, así que las geometrías posicionadas usan `custom` con coordenadas relativas; uniones binarias anidadas; fases de burbujas Cl₂/H₂ distintas (π/2 vs π).

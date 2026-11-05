@@ -41,4 +41,5 @@ Simular frecuencias alélicas en poblaciones, calcular probabilidades de cruzami
 - Las constantes (AVOGADRO_GENETICS, BASE_PAIR_MASS, GENOME_SIZE_HUMAN, etc.) son valores típicos para visualización y simulación pedagógica.
 - Los modelos mendelianos asumen dominancia completa y segregación independiente.
 - Para organismos no humanos, ajustar constantes y tasas específicas.
-- La SDF de cromosoma combina cilindros y esferas para representar cromátidas y centrómero.
+- La SDF de cromosoma usa cápsulas vía `custom` (cilindros con extremos redondeados) y esfera para el centrómero.
+- Corregido 2026-10-17: `cylinder` con extremos vectoriales no existe en el lenguaje (era error de sintaxis; reescrito con `custom`), `atan2` → `atan(y, x)`, y la matriz monohíbrida ahora usa doble umbral → Aa×Aa da 0.75 (antes daba 1.0) y aa×aa da 0 (antes 0.25).
