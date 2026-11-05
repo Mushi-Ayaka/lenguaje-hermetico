@@ -1,5 +1,42 @@
 # Changelog
 
+## 2026-11-04 — v0.21 — Paso 2.0a + 2.0b: `evalExpr` evalúa de verdad y las 13 funciones existen (Paso 2.0 **no cerrado**: faltan 2.0c y 2.0d)
+
+### Arreglado (2.0a, DL-29)
+- **`Resolver::evalExpr`** (`herm_resolver.cpp:83`): ya no usa solo `std::stof`. Si el texto no es un número puro, evalúa con `evalExpression` (el mismo evaluador del runtime). Antes devolvía `0.0f` en silencio para cualquier expresión.
+- **Guardas nuevas:** si el valor cambia al variar `(x,y,z,w)` → `ResolverError` ("depende de x/y/z/w y se usa en un campo escalar constante"). Si el resultado es `inf`/`nan` → error (el `.rih` es JSON y no admite esos literales).
+- Campos que ahora se evalúan: `axes.X/Y`, `fov`, `aperture`, `focal_dist`, `density_scale`, `intensity`, `falloff`, `roughness`, `metallic`, `opacity`, `k`/`spacing`. Antes, cualquier expresión daba 0.
+- Verificado: `density_scale: 1.0 + 1.0` → `2.0000`; `sqrt(4.0)` → `2.0000`; `exp(1.0)` → `2.7183`; `step(0.5, 0.7)` → `1.0000`.
+
+### Añadido (2.0b)
+- **13 funciones** en `herm_eval.cpp`: `step`, `smoothstep`, `exp`, `log`, `log2`, `log10`, `acos`, `asin`, `atan`, `atan2`, `sign`, `mod`, `fract`. Semántica GLSL: `mod` usa `x - y*floor(x/y)` (no `fmod`), `step(edge,x)` devuelve 0 si `x < edge`.
+- **Sin fallback silencioso:** función o variable desconocida, paréntesis sin cerrar, `)` sin abrir, carácter inesperado, `sample` anidado y expresión inválida lanzan `std::runtime_error` con el texto de la expresión. Se eliminaron los `catch(...) { return 0.0f; }` de `evalExpression`.
+- **División IEEE:** `/` ya no devuelve 0 cuando el divisor es 0; produce `inf`/`nan` como la GPU (necesario para la paridad). El `.rih` lo rechaza en campos escalares.
+- **`docs/12-guia-sintaxis-completa.md` §5.4** corregido: afirmaba que el path GPU soportaba todas las funciones GLSL. No es cierto — el bytecode ONT no tiene esos opcodes.
+- **`libreria/tests/test_paso2_funciones.herm`**: test permanente. Escena que usa las 13 funciones en campos escalares; el `.rih` debe dar `fov=32`, `density_scale=14.2661`, `intensity=1.5`, `falloff=0.25`, `tensor[7]=1.0`.
+
+### Verificación (16 expresiones + 5 fallos)
+| Expresión | Emitido |
+|---|---|
+| `1.0 + 1.0` | 2.0000 |
+| `sqrt(4.0)` | 2.0000 |
+| `exp(1.0)` | 2.7183 |
+| `smoothstep(0.0, 1.0, 0.25)` | 0.1562 |
+| `log(e)` / `log2(8)` / `log10(1000)` | 1.0000 / 3.0000 / 3.0000 |
+| `acos(0.5)` / `asin(0.5)` / `atan(1.0)` / `atan2(1,1)` | 1.0472 / 0.5236 / 0.7854 / 0.7854 |
+| `sign(-3.5)` / `mod(-1.5,1)` / `fract(2.75)` | -1.0000 / 0.5000 / 0.7500 |
+| `max(0, 1 - abs(0.5-0.25)) * 4.0` | 3.0000 |
+
+Fallos ruidosos verificados (exit 1): `foo(1.0)`, `sqrt(4.0`, `w * 2.0`, `x + 1.0`, `1.0 +`, `sample` anidado, `1.0 / 0.0`.
+
+### Criterio 2.0a cumplido
+- `ejemplos/teclado.herm`: **33 fotogramas**, cámara `[0, 4.5, 9]` fov 32, materiales `cobre [0.95,0.64,0.38]`, `plateado [0.85,0.85,0.88]`, `plastico_negro [0.08,0.08,0.10]`, y la animación varía: la tecla 1 pasa de `y=0.2000` (frame 0) a `y=0.0800` (frame 30).
+- 55/55 librerías siguen compilando. 12/13 ejemplos compilan; `bodegon.herm` sigue fallando por `ior` (DL-28).
+
+### Pendiente (bloquea el cierre del Paso 2.0)
+- **2.0c — paridad CPU/GPU:** el bytecode ONT no tiene opcodes para 12 de las 13 funciones nuevas, y `ONT_DIV`/`ONT_MOD` devuelven 0 cuando el divisor es 0. Extender `OntOpcode` + sus 5 consumidores (VM, VM SIMD, GLSL, SPIR-V, JIT) es trabajo previo al test de paridad.
+- **2.0d — re-ejecutar benchmarks `--render`:** no se localizaron los PNG previos en los repos; hay que fijar dónde viven o regenerarlos.
+
 ## 2026-11-04 — v0.20 — Cierre de la reescritura: 55/55 librerías compilan + `materiales.hm` archivado (DL-27)
 
 ### Resultado

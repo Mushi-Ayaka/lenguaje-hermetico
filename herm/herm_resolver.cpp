@@ -1,5 +1,7 @@
 #include <stdexcept>
+#include <cmath>
 #include "herm_resolver.h"
+#include "herm_eval.h"
 
 namespace herm {
 
@@ -88,7 +90,23 @@ f32 Resolver::evalExpr(const ExprNode& expr) const {
         float val = std::stof(text, &pos);
         if (pos == text.size()) return val;
     } catch (...) {}
-    return 0.0f;
+
+    // No es un literal: evaluar con el mismo evaluador que usa el runtime
+    // (DL-29). Antes se devolvia 0.0f en silencio.
+    float a = evalExpression(text, 0.0f, 0.0f, 0.0f, 0.0f);
+    float b = evalExpression(text, 1.0f, 2.0f, 3.0f, 7.0f);
+    // Un campo escalar de escena se pliega a constante en el .rih: si el valor
+    // cambia al cambiar el contexto espacial/temporal, no es una constante.
+    if (!(a == b)) {
+        throw ResolverError("la expresion '" + text + "' depende de x/y/z/w y se usa "
+                            "en un campo escalar constante");
+    }
+    // El .rih es JSON: 'inf'/'nan' lo rompen. Un campo escalar debe ser finito.
+    if (!std::isfinite(a)) {
+        throw ResolverError("la expresion '" + text + "' no da un numero finito "
+                            "(inf/nan) y se usa en un campo escalar");
+    }
+    return a;
 }
 
 Vec3 Resolver::evalVec3(const Vec3Expr& vec) const {

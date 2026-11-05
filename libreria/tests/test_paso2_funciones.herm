@@ -1,0 +1,60 @@
+// test_paso2_funciones.herm
+// Regresion del Paso 2.0a (DL-29) y 2.0b: los campos escalares se evaluan
+// de verdad y las 13 funciones existen. Antes de 2.0a todo esto emitia 0.0f.
+//
+// Compilar: build\herm.exe libreria\tests\test_paso2_funciones.herm -o %TEMP%\paso2
+// Esperado en el .rih:
+//   fov            = 32.0000      (30.0 + 2.0)
+//   density_scale  = 14.2661      (suma de las 13 funciones, ver abajo)
+//   intensity      = 1.5000       (1.0 + 0.5)
+//   falloff        = 0.2500       (1.0 / 4.0)
+//   tensor[7]      = 1.0000       (alpha; opacity 0.9 + 0.1)
+
+scene "paso2" {
+    axes { X: 64, Y: 64, W: 1 }
+    camera {
+        position: [0.0 + 0.0, 2.0, 5.0];
+        target:   [0, 0, 0];
+        up:       [0, 1, 0];
+        fov:      30.0 + 2.0;
+    }
+    background: [0, 0, 0];
+}
+
+light "clave" {
+    type: point;
+    position: [3, 4, 5];
+    color: [1, 1, 1];
+    intensity: 1.0 + 0.5;
+    falloff: 1.0 / 4.0;
+}
+
+material "prueba" {
+    base_color: [0.8, 0.8, 0.8];
+    opacity: 0.9 + 0.1;
+}
+
+// Suma de las 13 funciones del Paso 2.0b:
+//   step(0.5,0.7)=1        smoothstep(0,1,0.25)=0.15625
+//   exp(1)=2.71828         log(e)=1            log2(8)=3        log10(1000)=3
+//   acos(0.5)=1.04720      asin(0.5)=0.52360
+//   atan(1)=0.78540        atan2(1,1)=0.78540
+//   sign(-3.5)=-1          mod(-1.5,1)=0.5     fract(2.75)=0.75
+//   total = 14.2661
+node "n" {
+    sdf: sphere(0.5);
+    material: "prueba";
+    density_scale: step(0.5, 0.7)
+                 + smoothstep(0.0, 1.0, 0.25)
+                 + exp(1.0)
+                 + log(2.718281828459045)
+                 + log2(8.0)
+                 + log10(1000.0)
+                 + acos(0.5)
+                 + asin(0.5)
+                 + atan(1.0)
+                 + atan2(1.0, 1.0)
+                 + sign(-3.5)
+                 + mod(-1.5, 1.0)
+                 + fract(2.75);
+}

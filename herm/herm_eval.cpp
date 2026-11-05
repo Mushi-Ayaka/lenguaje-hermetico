@@ -9,7 +9,12 @@ namespace herm {
 // ============================================================================
 // Simple recursive-descent expression evaluator
 // Supports: + - * / % ^ sin cos tan abs sqrt floor ceil
-//           min max pow clamp lerp mix, variable t, constants pi/e
+//           exp log log2 log10 acos asin atan atan2 sign mod fract
+//           min max pow clamp lerp mix step smoothstep sample
+//           variable t (x,y,z,w), shading vars (nx..lz), constants pi/e
+// Fallos: funcion o variable desconocida, parentesis sin cerrar y
+//         expresion invalida lanzan std::runtime_error (Paso 2.0b).
+//         No hay fallback silencioso a 0.0f.
 // ============================================================================
 
 class ExprParser {
@@ -79,7 +84,7 @@ private:
             skipWs();
             float rhs = unary();
             if (op == '*') r *= rhs;
-            else if (op == '/') r = (rhs != 0) ? r / rhs : 0.0f;
+            else if (op == '/') r /= rhs;   // IEEE: inf/NaN como en GPU, sin fallback a 0
             else r = std::fmod(r, rhs);
         }
         return r;
@@ -155,51 +160,82 @@ private:
             if (hasParen) advance(); // consume '('
 
             auto parseArg = [&]() -> float { skipWs(); return expr(); };
+            auto closeParen = [&]() {
+                skipWs();
+                if (hasParen) {
+                    if (peek() != ')')
+                        throw std::runtime_error("falta ')' en '" + s + "'");
+                    advance();
+                }
+            };
 
             float arg, arg2, arg3;
 
-            if (name == "sin")   { arg = parseArg(); if (hasParen && peek() == ')') advance(); return std::sin(arg); }
-            if (name == "cos")   { arg = parseArg(); if (hasParen && peek() == ')') advance(); return std::cos(arg); }
-            if (name == "tan")   { arg = parseArg(); if (hasParen && peek() == ')') advance(); return std::tan(arg); }
-            if (name == "abs")   { arg = parseArg(); if (hasParen && peek() == ')') advance(); return std::abs(arg); }
-            if (name == "sqrt")  { arg = parseArg(); if (hasParen && peek() == ')') advance(); return std::sqrt(arg); }
-            if (name == "floor") { arg = parseArg(); if (hasParen && peek() == ')') advance(); return std::floor(arg); }
-            if (name == "ceil")  { arg = parseArg(); if (hasParen && peek() == ')') advance(); return std::ceil(arg); }
+            // One-arg functions
+            if (name == "sin")   { arg = parseArg(); closeParen(); return std::sin(arg); }
+            if (name == "cos")   { arg = parseArg(); closeParen(); return std::cos(arg); }
+            if (name == "tan")   { arg = parseArg(); closeParen(); return std::tan(arg); }
+            if (name == "abs")   { arg = parseArg(); closeParen(); return std::abs(arg); }
+            if (name == "sqrt")  { arg = parseArg(); closeParen(); return std::sqrt(arg); }
+            if (name == "floor") { arg = parseArg(); closeParen(); return std::floor(arg); }
+            if (name == "ceil")  { arg = parseArg(); closeParen(); return std::ceil(arg); }
+            if (name == "exp")   { arg = parseArg(); closeParen(); return std::exp(arg); }
+            if (name == "log")   { arg = parseArg(); closeParen(); return std::log(arg); }
+            if (name == "log2")  { arg = parseArg(); closeParen(); return std::log2(arg); }
+            if (name == "log10") { arg = parseArg(); closeParen(); return std::log10(arg); }
+            if (name == "acos")  { arg = parseArg(); closeParen(); return std::acos(arg); }
+            if (name == "asin")  { arg = parseArg(); closeParen(); return std::asin(arg); }
+            if (name == "atan")  { arg = parseArg(); closeParen(); return std::atan(arg); }
+            if (name == "sign")  { arg = parseArg(); closeParen();
+                                   return (arg > 0.0f) ? 1.0f : ((arg < 0.0f) ? -1.0f : 0.0f); }
+            if (name == "fract") { arg = parseArg(); closeParen(); return arg - std::floor(arg); }
 
             // Two-arg functions
-            if (name == "pow" || name == "min" || name == "max") {
+            if (name == "pow" || name == "min" || name == "max" ||
+                name == "atan2" || name == "mod" || name == "step") {
                 arg = parseArg();
                 skipWs(); if (peek() == ',') advance();
                 arg2 = parseArg();
-                if (hasParen && peek() == ')') advance();
-                if (name == "min") return std::fmin(arg, arg2);
-                if (name == "max") return std::fmax(arg, arg2);
-                if (name == "pow") return std::pow(arg, arg2);
+                closeParen();
+                if (name == "min")   return std::fmin(arg, arg2);
+                if (name == "max")   return std::fmax(arg, arg2);
+                if (name == "pow")   return std::pow(arg, arg2);
+                if (name == "atan2") return std::atan2(arg, arg2);
+                // GLSL mod: x - y*floor(x/y), no fmod (difiere en negativos)
+                if (name == "mod")   return arg - arg2 * std::floor(arg / arg2);
+                // GLSL step(edge, x): 0 si x < edge, 1 si x >= edge
+                if (name == "step")  return (arg2 < arg) ? 0.0f : 1.0f;
             }
 
             // Three-arg functions
-            if (name == "clamp" || name == "lerp" || name == "mix" || name == "sample") {
+            if (name == "clamp" || name == "lerp" || name == "mix" ||
+                name == "sample" || name == "smoothstep") {
                 arg = parseArg();
                 skipWs(); if (peek() == ',') advance();
                 arg2 = parseArg();
                 skipWs(); if (peek() == ',') advance();
                 arg3 = parseArg();
-                if (hasParen && peek() == ')') advance();
+                closeParen();
                 if (name == "clamp") return std::fmax(std::fmin(arg3, arg2), arg);
                 if (name == "lerp" || name == "mix") return arg + (arg2 - arg) * arg3;
+                if (name == "smoothstep") {
+                    float t = (arg3 - arg) / (arg2 - arg);
+                    t = std::fmax(0.0f, std::fmin(1.0f, t));
+                    return t * t * (3.0f - 2.0f * t);
+                }
                 if (name == "sample") {
-                    if (depth >= 1) return 0.0f;
+                    if (depth >= 1)
+                        throw std::runtime_error("sample anidado (profundidad > 1) en '" + s + "'");
                     return evalExpression(s, x + arg, y + arg2, z + arg3, w,
                                           nx, ny, nz, vx, vy, vz, lx, ly, lz, depth + 1);
                 }
             }
 
-            // Unknown — try to consume any remaining ')'
-            if (hasParen) { while (peek() != ')' && pos < s.size()) advance(); if (peek() == ')') advance(); }
-            return 0.0f;
+            // Desconocido: fallo ruidoso. Antes devolvia 0.0f en silencio (Paso 2.0b).
+            throw std::runtime_error("funcion o variable desconocida '" + name + "' en '" + s + "'");
         }
 
-        return 0.0f;
+        throw std::runtime_error("caracter inesperado '" + std::string(1, c) + "' en '" + s + "'");
     }
 
     float number() {
@@ -222,12 +258,8 @@ private:
 
 float evalExpression(const std::string& expr, float t) {
     if (expr.empty()) return 0.0f;
-    try {
-        ExprParser parser(expr, t);
-        return parser.parse();
-    } catch (...) {
-        return 0.0f;
-    }
+    ExprParser parser(expr, t);
+    return parser.parse();
 }
 
 float evalExpression(const std::string& expr, float x, float y, float z, float w,
@@ -236,12 +268,8 @@ float evalExpression(const std::string& expr, float x, float y, float z, float w
                      float lx, float ly, float lz,
                      int depth) {
     if (expr.empty()) return 0.0f;
-    try {
-        ExprParser parser(expr, x, y, z, w, nx, ny, nz, vx, vy, vz, lx, ly, lz, depth);
-        return parser.parse();
-    } catch (...) {
-        return 0.0f;
-    }
+    ExprParser parser(expr, x, y, z, w, nx, ny, nz, vx, vy, vz, lx, ly, lz, depth);
+    return parser.parse();
 }
 
 } // namespace herm

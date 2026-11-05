@@ -173,21 +173,25 @@ sample(expr, dx, dy, dz)  // Evalúa expr en (x+dx, y+dy, z+dz)
 pi, e
 ```
 
-### 5.4 Funciones GLSL (solo en path GPU/ray_march)
+### 5.4 Funciones matemáticas y estado por backend
 
-El path de render Vulkan (`--render` o pipeline motor) usa GLSL que soporta **todas** las funciones nativas de GLSL:
+Desde el Paso 2.0b (2026-11-04) el evaluador del lenguaje (`evalExpression`, usado por `--render` y por los campos que conservan expresión) soporta:
 
 ```herm
-step(edge, x)           // H(x >= edge) → 0 o 1
-smoothstep(a, b, x)     // Interpolación suave
-exp(x), log(x)          // Exponencial / logaritmo
-atan(y, x)              // Arco tangente 2 args
-sign(x)                 // Signo -1, 0, 1
-fract(x)                // Parte fractional
-mod(x, y)               // Módulo
-length(v), dot(a, b), cross(a, b)  // Operaciones vectoriales
-normalize(v)
+step(edge, x)           // 0 si x < edge, 1 si x >= edge
+smoothstep(a, b, x)     // Interpolación suave (Hermite)
+exp(x), log(x), log2(x), log10(x)
+acos(x), asin(x), atan(x), atan2(y, x)
+sign(x)                 // -1, 0, 1
+fract(x)                // parte fraccionaria
+mod(x, y)               // módulo estilo GLSL: x - y*floor(x/y)
 ```
+
+Más las que ya existían: `sin cos tan abs sqrt floor ceil min max pow clamp lerp mix sample`, y las constantes `pi`, `e`.
+
+**Importante — el pipeline `.ont` del motor todavía no las soporta.** El bytecode ONT (`OntOpcode` en `render/scene.h`) solo tiene `sin cos tan abs sqrt floor ceil min max pow clamp lerp mix mod` y aritmética. `step`, `smoothstep`, `exp`, `log*`, `acos`, `asin`, `atan*`, `sign` y `fract` **no tienen opcode**, así que el path GPU no puede representarlas. Extender el bytecode + sus 5 consumidores (VM, VM SIMD, GLSL, SPIR-V, JIT) es el Paso 2.0c.
+
+Tampoco existen `length/dot/cross/normalize` como funciones nativas: las librerías las construyen a partir de `fn` en `.hm`.
 
 **⚠ Importante:** `step` y `smoothstep` **NO** están en el evaluador CPU. Solo funcionan en el path GPU. Si usas `--render` de herm.exe (PNG directo), esas funciones retornarán 0.0.
 
