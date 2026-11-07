@@ -272,4 +272,29 @@ float evalExpression(const std::string& expr, float x, float y, float z, float w
     return parser.parse();
 }
 
+std::string findUnsupportedOntFn(const std::string& expr) {
+    static const char* names[] = {
+        "smoothstep", "atan2", "log10", "step", "exp", "log2",
+        "log", "acos", "asin", "atan", "sign", "fract"
+    };
+    auto isIdent = [](char c) {
+        return std::isalnum((unsigned char)c) || c == '_';
+    };
+    for (const char* name : names) {
+        std::string fn(name);
+        size_t pos = 0;
+        while ((pos = expr.find(fn, pos)) != std::string::npos) {
+            size_t end = pos + fn.size();
+            bool left_ok = (pos == 0) || !isIdent(expr[pos - 1]);
+            bool right_ok = (end >= expr.size()) || !isIdent(expr[end]);
+            size_t p = end;
+            while (p < expr.size() && std::isspace((unsigned char)expr[p])) p++;
+            if (left_ok && right_ok && p < expr.size() && expr[p] == '(')
+                return fn;
+            pos = end;
+        }
+    }
+    return "";
+}
+
 } // namespace herm

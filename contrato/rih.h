@@ -35,9 +35,10 @@ struct ColorRGB { f32 r, g, b; };
 // ---------------------------------------------------------------------------
 
 struct Expr {
-    bool is_expr;         // false = valor fijo, true = expresión
-    f32  constant;        // valor cuando is_expr = false
+    bool is_expr = false; // false = valor fijo, true = expresión
+    f32  constant = 0.0f; // valor cuando is_expr = false
     std::string expression; // "sin(t*2)*3" cuando is_expr = true
+    int  line = 0;        // línea de origen, solo diagnóstico (no se serializa)
 };
 
 // ---------------------------------------------------------------------------

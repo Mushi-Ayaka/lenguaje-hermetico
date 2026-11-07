@@ -1,5 +1,44 @@
 # Changelog
 
+## 2026-11-07 — v0.22 — Paso 2.0c.1: el `.ont` deja de mentir con los parámetros SDF (DL-31)
+
+### Cambiado
+- **`ExprNode.line` y `Expr.line`** (`herm_ast.h`, `contrato/rih.h`): guardan la línea de origen de la expresión. Solo viven en memoria; no se serializan en `.rih` ni en `.ont`. El layout de `Expr` cambia, así que el motor debe recompilarse con el nuevo contrato.
+- **`Parser::parse_expr`** captura la línea inicial; **`Resolver::toExpr`** la propaga; **`sdfPrimToBytecode`** la usa en los mensajes.
+- **`validateOntCompatibility(rih)`** (`herm_ont.h/.cpp`): recorre los `sdf_nodes` de nodos y defs. Si un parámetro SDF es una expresión:
+  - rechaza las variables por muestra (`nx/ny/nz/vx/vy/vz/lx/ly/lz`);
+  - evalúa la expresión en tres puntos distintos de `(x,y,z)`. Si el valor cambia, la declara dependiente del espacio y falla;
+  - si el resultado no es finito, falla;
+  - si el evaluador lanza, propaga el error con la expresión y la línea.
+- **`main.cpp`** llama a `validateOntCompatibility` solo cuando `emit_ont` está activo, **antes** de `evaluateFrame`. En la rama de un solo fotograma, `writeOnt` recibe `evaluateFrame(rih, 0.0f)` para poder plegar expresiones constantes o solo dependientes de `w`.
+- **`SdfType::CUSTOM`** se rechaza explícitamente: antes emitía `ONT_CONST 1e9` (un "miss" silencioso). El `default` de tipo desconocido también lanza.
+- **`cf()`** (`herm_ont.cpp:47`) deja de devolver el valor por defecto: cualquier `is_expr` que llegue ahí (llamada directa o desde el puente del motor) lanza.
+
+### Aceptación
+`sphere(1.0 + exp(x))` con `--ont`:
+```
+Error: el parametro 0 de 'sphere' depende de x/y/z ('1.0 + exp ( x )') y el
+bytecode ONT no puede representarlo; funcion sin opcode: 'exp' (linea 8)
+```
+exit 1, sin `.ont` ni `.obs`. También fallan `sphere(1.0+x)`, `sphere(1.0+step(0.5,x))` y `custom(y-...)`. Compilan y pliegan: `sphere(1.5*0.5)` → radio 0.75, `sphere(0.65+sin(w*2)*0.35)` → 0.65 en el fotograma 0, `sphere(exp(1.0))` → 2.7183.
+
+### Medición (2026-11-07, 55 librerías, 1070 funciones)
+- **P1 estática:** 46/55 usan directamente alguna de las 12 funciones sin opcode; 46/55 también de forma transitiva. Las 9 limpias: `std_astro_cosmology`, `std_astro_mechanics`, `std_astro_stellar`, `std_bio_physiology`, `std_bio_systems`, `std_geo_landscape`, `std_geo_ocean`, `std_phys_kinematics`, `std_phys_relativity`.
+- **P2 dinámica:** 261/1070 funciones fallan, en 32/55 librerías. Desglose: **13 funciones en 3 librerías** son parámetros espaciales reales (lo que 2.0c.1 debe rechazar); **243 en 29 librerías** son el bug de notación científica (`1e-6` → `1 e -6`, DL-33), que también falla sin `--ont`; **5 en 4 librerías** dan `inf` con los argumentos del probe.
+- **P3 formato:** `sizeof(OntHeader)` real = **120 bytes** (el documento decía 80). `reserved[7]` ocupa los bytes 64–119.
+
+### Consecuencia
+2.0c.1 rompe 3/55 librerías, por debajo del umbral de 5 fijado por el usuario. Pero el criterio de 2.0c.3 ("55/55 idénticas CPU/GPU") no es alcanzable todavía: 29/55 fallan antes de emitir bytecode por DL-33, los 6 operadores SDF de DL-32 siguen degradando en silencio en el path `--render`, y `plane`/`capsule`/`cone` no significan lo mismo en bytecode que en CPU.
+
+### Pendiente
+- **2.0c.2:** decidir formato (v1→v2 vs `reserved[7]`) antes de tocar opcodes.
+- **2.0c.3:** 12 opcodes nuevos + compilar expresiones de parámetro + unificar `plane`/`capsule`/`cone` con el render CPU + actualizar los 5 consumidores.
+- **2.0c.4:** división IEEE vs 0-silencioso en GLSL.
+- **DL-32/DL-33:** registrar decisión y, si se aprueba, arreglar el lexer antes de 2.0c.3.
+
+### Evidencia adicional (DL-32, 2026-11-07)
+`--render` con `sphere(1.5 * 0.5)` y con `sphere(0.75 + x)` da el **mismo PNG de 257 B** (hash idéntico) y exit 0; `sphere(0.75)` da 862 B. Cualquier expresión de parámetro se renderiza como `sphere(0)` sin avisar.
+
 ## 2026-11-04 — v0.21 — Paso 2.0a + 2.0b: `evalExpr` evalúa de verdad y las 13 funciones existen (Paso 2.0 **no cerrado**: faltan 2.0c y 2.0d)
 
 ### Arreglado (2.0a, DL-29)

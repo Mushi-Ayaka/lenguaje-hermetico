@@ -119,6 +119,7 @@ ColorRGB Resolver::evalColor3(const Color3& col) const {
 
 Expr Resolver::toExpr(const ExprNode& node, f32 default_val) const {
     Expr e;
+    e.line = node.line;
     if (node.text.empty()) {
         e.is_expr = false;
         e.constant = default_val;

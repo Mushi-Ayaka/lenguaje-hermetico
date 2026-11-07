@@ -96,6 +96,7 @@ ExprNode Parser::parse_expr() {
     if (peek().type == TokenType::END) {
         throw ParseError("se esperaba expresion pero se llego al final del archivo");
     }
+    int start_line = peek().line;
     std::string t;
     int depth = 0;
     while (peek().type != TokenType::END) {
@@ -110,7 +111,7 @@ ExprNode Parser::parse_expr() {
         advance();
     }
     while (!t.empty() && t.back() == ' ') t.pop_back();
-    return {t};
+    return {t, start_line};
 }
 
 // ============================================================================

@@ -538,9 +538,9 @@ Para esos casos, se usa SDF en runtime. Pero son minoría.
 **Bug:** `OntOpcode` (`render/scene.h:266-278`) solo define: `CONST, VAR_*, ADD, SUB, MUL, DIV, MOD, NEG, POW, SIN, COS, TAN, ABS, SQRT, FLOOR, CEIL, MIN, MAX, CLAMP, LERP, MIX, SAMPLE, END`. No hay opcode para `step`, `smoothstep`, `exp`, `log`, `log2`, `log10`, `acos`, `asin`, `atan`, `atan2`, `sign` ni `fract`.
 
 **Verificación (2026-11-04):** tres escenas con `sdf: sphere(...)`:
-- `sphere(1.0 + x)`, `sphere(1.0 + exp(x))` y `sphere(1.0 + step(0.5, x))` generan **bytecode idéntico** (48 instrucciones, mismas ops; el `.ont` solo difiere en bytes ajenos al bytecode). La llamada a `exp`/`step` se descarta y queda solo `VAR_X`. El compilador no avisa.
+- `sphere(1.0 + x)`, `sphere(1.0 + exp(x))` y `sphere(1.0 + step(0.5, x))` generan **bytecode idéntico**. La causa exacta es `cf()` (`herm_ont.cpp:47`): si `Expr::is_expr` es true devuelve el valor por defecto (`1.0` para el radio) y no emite nada. El `VAR_X` que aparece en el bytecode es la fórmula del propio `sphere`, no la expresión del parámetro. El compilador no avisa.
 
-**Consecuencia:** cualquier escena que use esas funciones se renderiza en GPU con un valor distinto al de CPU, sin error. La paridad exigida en el Paso 2.0c **no puede pasar** hasta que existan los opcodes (o hasta que el compilador rechace esas funciones).
+**Consecuencia:** cualquier expresión en un parámetro SDF se renderiza en GPU con el valor por defecto, sin error. No es solo un problema de 12 funciones: `sphere(1.0 + x)`, `sphere(1.5 * 0.5)` y `sphere(exp(x))` se comportan igual. La paridad exigida en el Paso 2.0c **no puede pasar** hasta que existan los opcodes y, además, un compilador de expresiones a bytecode (o hasta que el compilador rechace esas expresiones).
 
 **Segundo desajuste:** `ONT_DIV` y `ONT_MOD` (`render/bytecode_vm.h:59-60`) devuelven 0 cuando el divisor es 0, mientras el CPU ya usa IEEE (`inf`/`nan`, v0.21). Divergencia garantizada en ese caso.
 
@@ -550,6 +550,93 @@ Para esos casos, se usa SDF en runtime. Pero son minoría.
 3. **Limitar el lenguaje** a las funciones que el bytecode ya soporta y retirar las 13 del CPU. Contradice 2.0b.
 
 **Recomendación del agente:** 1 ahora mismo (es un fallo ruidoso, no un cambio de arquitectura) y 2 como paso propio con su decisión de formato. Sin 1, cualquier test de paridad mide una mentira.
+
+---
+
+## DL-31 — 2.0c.1: rechazo ruidoso de parámetros SDF que el bytecode ONT no puede representar.
+
+**Estado:** IMPLEMENTADO en v0.22 (2026-11-07; mandato del usuario del 2026-11-04). Secuencia 2.0c.1 → 2.0c.2 → 2.0c.3 → 2.0c.4.
+
+**Contexto (corrige el alcance de DL-30):** el compilador `.ont` no compila **ninguna** expresión de parámetro SDF. `sdfPrimToBytecode` usa `cf(i, def)` (`herm_ont.cpp:47`), que devuelve `def` cuando `n.params[i].is_expr` es true. No es únicamente que falten opcodes para 12 funciones: `sphere(1.0 + x)` también se convierte en `sphere(1.0)`. `SdfType::CUSTOM` emite `ONT_CONST, 1e9` (un "miss" silencioso), y `smooth_union`, `smooth_subtract`, `repeat`, `twist`, `elongate` y `displace` degradan sin avisar. Este paso cierra el silencio de los parámetros SDF; las degradaciones de operadores se registran aparte y no se tocan aquí.
+
+**Decisión (2.0c.1):**
+- Sin cambio de formato `.ont`. Sin opcodes nuevos.
+- Si un parámetro SDF es una expresión, `herm.exe --ont` falla con `std::runtime_error`: primitiva, índice de parámetro, línea del archivo y, si se detecta, la función sin opcode.
+- `SdfType::CUSTOM` se rechaza explícitamente: hoy renderiza un "miss" silencioso.
+- El error se propaga hasta `main`, que ya captura `std::exception`, imprime `Error: ...` y devuelve código distinto de 0.
+
+**Implementación (solo memoria, sin serializar):**
+- `ExprNode` (`herm_ast.h`) y `Expr` (`contrato/rih.h`) ganan `int line = 0`. No se escribe en `.rih` (JSON ni binario) ni en `.ont`; no cambia el contrato de archivos.
+- `Parser::parse_expr` registra la línea inicial de la expresión.
+- `Resolver::toExpr` propaga `line`.
+- `sdfPrimToBytecode` rechaza `is_expr` y `CUSTOM` con nombre y línea.
+
+**No entra en este paso:** compilar expresiones a bytecode, añadir los 12 opcodes, decidir versión de formato (2.0c.2) ni semántica de división (2.0c.4).
+
+**Medición (2026-11-07).** Tres pruebas independientes, ejecutadas sobre el árbol de v0.22.
+
+**P1 — estática, sobre las 55 librerías.** Se recorren los cuerpos de todos los `fn` y se busca una llamada a `step`, `smoothstep`, `exp`, `log`, `log2`, `log10`, `acos`, `asin`, `atan`, `atan2`, `sign` o `fract`.
+- **46/55** la usan directamente en al menos un `fn` propio.
+- **46/55** la alcanzan de forma transitiva (llamando a otras `fn`).
+- **9/55 no la usan de ninguna forma:** `std_astro_cosmology`, `std_astro_mechanics`, `std_astro_stellar`, `std_bio_physiology`, `std_bio_systems`, `std_geo_landscape`, `std_geo_ocean`, `std_phys_kinematics`, `std_phys_relativity`.
+
+**P2 — dinámica, 1070 funciones.** Por cada `fn` de cada librería se genera una escena `sphere(1.2345 + fn(1.2345, ...))` y se compila con `--ont --frames 0-0`. Se probaron **1070 funciones** (las que tienen firma regular).
+- **261/1070 funciones fallan; 32/55 librerías tienen al menos una.**
+- El número bruto **no** mide el coste de 2.0c.1. Separado por causa:
+  - **13 funciones en 3 librerías** dependen de `x`/`y`/`z` en un parámetro SDF. Es el caso que 2.0c.1 rechaza. Librerías: `std_geo_terrain` (3), `std_phys_condensed` (5), `std_phys_sdf` (5). De las 13, **5 usan `exp`** (`bloch_wave`, `fcc_density`, `bcc_density`, `gravity_wave`, `breaking_wave`) y **8 son solo `x`/`y`/`z`** (`sediment_layer`, `volcano_profile`, `caldera_depth`, `bloch_envelope`, `cubic_lattice_potential`, `standing_wave3d`, `vibrating_membrane`, `wave_with_current`). Las 8 se podrían compilar con los opcodes actuales si el compilador emitiera la expresión del parámetro; las 5 necesitan además el opcode de `exp`.
+  - **243 funciones en 29 librerías** fallan por una causa ajena a 2.0c.1: el lexer no reconoce la notación científica. `1e-6` se tokeniza como `1`, `e`, `-6`; `parse_expr` los une con espacios y `evalExpression` recibe `1 e -6` y lanza "expresion invalida (pos ...)". Se reproduce **sin `--ont`**, con `--frames 0-0`: no es una regresión de este paso (DL-33).
+  - **5 funciones en 4 librerías** dan `inf` con los argumentos del probe (`1.2345`): `equilibrium_constant_from_potential`, `butler_volmer_current`, `activation_energy_from_arrhenius`, `flory_huggins_dG`, `saturation_pressure`. El rechazo es correcto; la fórmula desborda con esos valores.
+  - Dentro de las 243, además de la notación científica hay **constantes no definidas** (`LN2`, `PLANCK`, `tanh`) que el evaluador no conoce.
+
+**Conclusión de la medición.** La opción 1 sola rompe **3/55** librerías por parámetros SDF no representables, por debajo del umbral de 5 que el usuario fijó para descartarla. Pero eso no cierra el problema: 2.0c.1 solo convierte el silencio en error. Las 8 funciones puramente espaciales y las 5 con `exp` siguen sin poder compilarse, y el criterio de 2.0c.3 ("55/55 con valores idénticos CPU/GPU") **es inalcanzable mientras exista DL-33**, porque 29/55 librerías ni siquiera llegan al bytecode.
+
+**P3 — formato real de `.ont`.** `sizeof(OntHeader)` es **120 bytes**, no 80 como afirma `render/ont_format_v1.md`. Layout verificado: `magic` 0, `version` 4, `epsilon` 8, `node_count` 12, `bvh_count` 16, `material_count` 20, `bytecode_size` 24, `tensor_buffer_size` 28, `scene_aabb_min[4]` 32–47, `scene_aabb_max[4]` 48–63, `reserved[7]` 64–119 (56 bytes). Comprobación empírica: un `.ont` de 423 B = 120 de cabecera + 52 de BVH + 116 de graph node + 75 de bytecode + 60 de material. `reserved` está libre y alineado; cualquier extensión futura cabe ahí sin cambiar el tamaño de la cabecera.
+
+**Aceptación verificada (2026-11-07).** `sphere(1.0 + exp(x))` con `--ont` sale con código 1 y el mensaje `el parametro 0 de 'sphere' depende de x/y/z ('1.0 + exp ( x )') y el bytecode ONT no puede representarlo; funcion sin opcode: 'exp' (linea 8)`. No se escribe `.ont` ni `.obs`. Los casos plegables sí compilan: `1.5*0.5` da radio 0.75, `0.65 + sin(w*2)*0.35` da 0.65 en el fotograma 0, `exp(1.0)` da 2.7183. `1.0+x`, `1.0+step(0.5,x)` y `custom(y-...)` fallan ruidosamente.
+
+---
+
+## DL-32 — Fallbacks silenciosos que quedan en el compilador `.ont` y en `--render`.
+
+**Estado:** REGISTRADO, PENDIENTE DE DECISIÓN (2026-11-07). No se toca en 2.0c.1.
+
+DL-31 cierra el silencio de los **parámetros** SDF. Quedan cinco degradaciones que siguen renderizando otra cosa sin avisar:
+
+| Caso | Qué hace hoy | Qué debería hacer |
+|---|---|---|
+| `smooth_union(a, b, k)` | emite `min(a, b)`; ignora `k` (`herm_ont.cpp:287`) | fallar, o emitir la fórmula suave con un opcode nuevo |
+| `smooth_subtract(a, b, k)` | emite la resta sharp (`herm_ont.cpp:298`) | fallar |
+| `smooth_intersect(a, b, k)` | emite `max(a, b)` | fallar |
+| `repeat`, `twist`, `elongate`, `displace` | pass-through del hijo A (`herm_ont.cpp:307-310`) | fallar |
+| `--render` con primitiva integrada | usa `params[i].constant` (`herm_render.cpp:152-160`); la expresión del parámetro nunca se evalúa | validar igual que `--ont` o evaluar por muestra |
+
+El path `--render` es el más grave: `validateOntCompatibility` solo se llama con `emit_ont`. Una escena como `sphere(1.0 + x)` renderizada con `--render` (sin `--ont`) **sale con código 0 y una imagen incorrecta**. Con `--ont` ahora falla; con `--render` no.
+
+**Prueba (2026-11-07, 64×64, `--render`):** `sphere(0.75)` produce un PNG de 862 B; `sphere(1.5 * 0.5)` y `sphere(0.75 + x)` producen **el mismo PNG de 257 B** (hash MD5 idéntico, `8591307...`). Es decir, cualquier expresión de parámetro se renderiza como `sphere(0)` — ni siquiera se pliega una expresión constante. Exit code 0 en los tres casos.
+
+**Hallazgo adicional (misma auditoría, 2026-11-07):** aunque los parámetros sean constantes, tres primitivas no significan lo mismo en el bytecode que en el render CPU:- `plane`: el bytecode emite `y + d` usando `params[0]` como distancia (`herm_ont.cpp:185-189`); el render CPU usa `params[0..2]` como normal y `params[3]` como distancia (`herm_render.cpp:157`).
+- `capsule`: el bytecode emite una esfera de radio `params[0]` e ignora la altura (`herm_ont.cpp:162-170`).
+- `cone`: el bytecode usa `max(sqrt(x²+z²) - r*(1-y/h), y)` (`herm_ont.cpp:190-201`), que no es el `sdCone` del render CPU.
+
+Esto también rompe la paridad y no lo arregla ningún opcode nuevo. Debe entrar en el alcance de 2.0c.3 o registrarse como paso propio.
+
+**Opcodes desconocidos (relevante para 2.0c.2):** los cinco consumidores reaccionan de forma silenciosa ante un opcode que no conocen: el VM escalar hace `default: break` (`bytecode_vm.h:83`), el SIMD devuelve el resultado parcial (`ray_march_simd.h:205`), GLSL y SPIR-V empujan `"0.0"` (`glsl_gen.cpp:360`, `spirv_gen.cpp:100`) y el JIT hace `default: break` (`jit_compiler.cpp:380`). Si se añaden opcodes sin tocar esto, un lector viejo convierte la instrucción nueva en 0 sin avisar. Cualquier decisión de formato debe incluir el endurecimiento de los cinco.
+
+**Opciones para 2.0c.3:** (a) rechazar los seis operadores y el path `--render` hasta que exista opcode, o (b) implementarlos en el bytecode. La decisión corresponde al usuario; este registro no la toma.
+
+---
+
+## DL-33 — El lexer no acepta notación científica; 29/55 librerías no llegan al bytecode.
+
+**Estado:** REGISTRADO, PENDIENTE DE DECISIÓN (2026-11-07). Encontrado al medir P2 de DL-31.
+
+**Bug:** `Lexer::read_number` (`herm_lexer.cpp:263-278`) lee signo, dígitos y punto decimal, pero no `e`/`E` con exponente. `1e-6` se tokeniza como `1`, `e`, `-6`. `Parser::parse_expr` une los tokens con espacios (`herm_parser.cpp:95-118`) y produce `1 e -6`. `evalExpression` no reconoce `e` como número y lanza `expresion invalida (pos ...)`.
+
+**Alcance medido (2026-11-07):** 243 de las 1070 funciones del probe P2 (29/55 librerías) fallan por esta causa. Se reproduce **sin `--ont`** con `--frames 0-0`, así que no es una regresión de 2.0c.1: cualquier path que pliegue expresiones (`--frames`, `--render`, `--ont`) tropieza con ella. La librería `std_bio_genetics.hm` es el caso mínimo (`... + 1e-6`).
+
+**Casos relacionados, misma prueba:** `1e6` se convierte en `1` + identificador `e6` (constante desconocida); `LN2`, `PLANCK` y `tanh` tampoco existen en `herm_eval.cpp`. Son 5 funciones adicionales dentro de las 243.
+
+**Consecuencia para 2.0c.3:** el criterio "las 55 librerías dan valores idénticos CPU/GPU" no se puede cumplir con opcodes: 29/55 fallan antes de emitir bytecode. Hay que decidir si se arregla el lexer (bugfix pequeño, sin sintaxis nueva) y se añaden las constantes/funciones que faltan **antes** de 2.0c.3, o si el criterio se limita a las librerías que hoy son representables. Recomendación del agente: arreglar el lexer y las constantes como paso 2.0c.2b, antes de los opcodes.
 
 ---
 
@@ -1079,9 +1166,9 @@ Paso 5.13 (nuevo) — Gradiente analítico.
 
 - **Fase 0:** cerrada — tag `pre-reforma`, 55 librerías migradas (v0.15). La cola de reescritura se cerró el 2026-11-04 (55/55 compilan, v0.20).
 - **Fase 1:** cerrada — DL-07 a DL-21 decididas y registradas (v0.16–v0.18). DL-22 a DL-25 son decisiones de Fase 5, marcadas PENDIENTE a propósito.
-- **Fase 2:** es la siguiente. **No se abre hasta aprobación explícita del usuario.** Primer paso: **Paso 2.0** (13 funciones faltantes en `herm_eval.cpp` + fallback silencioso convertido en error), después DL-09 (fold + memo + CSE).
+- **Fase 2:** abierta por mandato del usuario (2026-11-04), en curso. **Paso 2.0a/2.0b:** implementados (v0.21, DL-29). **Paso 2.0c.1:** implementado (v0.22, DL-31). **Paso 2.0c.2:** pendiente de decisión de formato (v1→v2 vs `reserved[7]`). **Paso 2.0c.3:** bloqueado hasta 2.0c.2 y hasta resolver DL-33. **Paso 2.0d:** pendiente de localizar los PNG de referencia. El Paso 2.0 **no está cerrado**.
 - **Fases 3–6:** pendientes.
-- **Decisiones abiertas:** DL-23, DL-24, DL-25 (Fase 5); DL-28 (`ior`/`transmission` en `material`); DL-30 (opcodes ONT / rechazo ruidoso).
+- **Decisiones abiertas:** DL-23, DL-24, DL-25 (Fase 5); DL-28 (`ior`/`transmission` en `material`); DL-32 (fallbacks de operadores SDF y `--render`); DL-33 (notación científica y constantes del evaluador); 2.0c.2 (formato `.ont`) y 2.0c.4 (división IEEE vs 0-silencioso).
 
 ---
 

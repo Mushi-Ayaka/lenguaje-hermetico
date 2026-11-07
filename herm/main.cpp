@@ -127,6 +127,11 @@ int main(int argc, char* argv[]) {
         herm::Resolver resolver(ast);
         auto rih = resolver.resolve();
 
+        // 2.0c.1: el .ont no puede representar parametros SDF que dependan de
+        // x/y/z. evaluateFrame() los plegaria con x=y=z=0 y la GPU dibujaria
+        // otra cosa. Fallar antes de escribir cualquier archivo.
+        if (emit_ont) herm::validateOntCompatibility(rih);
+
         auto parse_end = std::chrono::high_resolution_clock::now();
         auto parse_ms = std::chrono::duration_cast<std::chrono::milliseconds>(parse_end - start).count();
 
@@ -278,9 +283,13 @@ int main(int argc, char* argv[]) {
                             dot3 = std::string::npos;
                         auto ont_path = (dot3 != std::string::npos) ? output_prefix.substr(0, dot3) : output_prefix;
                         ont_path += ".ont";
-                        bool ont_ok = herm::writeOnt(rih, ont_path);
+                        // W=1: no hay bucle de fotogramas. evaluateFrame(.,0)
+                        // pliega las expresiones que solo dependen de w (las
+                        // espaciales ya las rechazo validateOntCompatibility).
+                        auto ont_rih = herm::evaluateFrame(rih, 0.0f);
+                        bool ont_ok = herm::writeOnt(ont_rih, ont_path);
                         if (ont_ok) {
-                            herm::writeObs(rih, ont_path);
+                            herm::writeObs(ont_rih, ont_path);
                             std::cout << "  " << ont_path << "\n";
                         } else {
                             std::cerr << "Error: no se pudo escribir '" << ont_path << "'\n";

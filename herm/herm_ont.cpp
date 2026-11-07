@@ -8,6 +8,8 @@
 #include <unordered_map>
 #include <stack>
 #include <sstream>
+#include <stdexcept>
+#include <cctype>
 
 namespace herm {
 
@@ -43,8 +45,90 @@ struct BytecodeBuilder {
 // Forward: recursive SDF tree → bytecode
 static void sdfTreeToBytecode(const std::vector<SdfNode>& nodes, u32 idx, BytecodeBuilder& bb);
 
+static const char* sdfTypeName(SdfType t) {
+    switch (t) {
+        case SdfType::SPHERE:      return "sphere";
+        case SdfType::BOX:         return "box";
+        case SdfType::CYLINDER:    return "cylinder";
+        case SdfType::CAPSULE:     return "capsule";
+        case SdfType::TORUS:       return "torus";
+        case SdfType::PLANE:       return "plane";
+        case SdfType::CONE:        return "cone";
+        case SdfType::ROUNDED_BOX: return "rounded_box";
+        case SdfType::OCTAHEDRON:  return "octahedron";
+        case SdfType::TESSERACT:   return "tesseract";
+        case SdfType::SPHERE4D:    return "sphere4d";
+        case SdfType::CUSTOM:      return "custom";
+        default:                   return "sdf";
+    }
+}
+
+static std::string lineSuffix(int line) {
+    return (line > 0) ? " (linea " + std::to_string(line) + ")" : "";
+}
+
+static bool isIdentChar(char c) {
+    return std::isalnum((unsigned char)c) || c == '_';
+}
+
+static bool hasIdent(const std::string& s, const std::string& name) {
+    size_t pos = 0;
+    while ((pos = s.find(name, pos)) != std::string::npos) {
+        size_t end = pos + name.size();
+        bool left_ok = (pos == 0) || !isIdentChar(s[pos - 1]);
+        bool right_ok = (end >= s.size()) || !isIdentChar(s[end]);
+        if (left_ok && right_ok) return true;
+        pos = end;
+    }
+    return false;
+}
+
+// Variables que solo tienen sentido por muestra. Si aparecen en un parametro
+// SDF, el valor no se puede plegar a un escalar por fotograma.
+static bool usesPerSampleVars(const std::string& expr) {
+    static const char* names[] = {
+        "nx", "ny", "nz", "vx", "vy", "vz", "lx", "ly", "lz"
+    };
+    for (const char* n : names)
+        if (hasIdent(expr, n)) return true;
+    return false;
+}
+
+// Numero de parametros que el bytecode ONT usa de verdad por primitiva.
+static int ontParamCount(SdfType t) {
+    switch (t) {
+        case SdfType::SPHERE:      return 1;
+        case SdfType::BOX:         return 3;
+        case SdfType::CYLINDER:    return 2;
+        case SdfType::CAPSULE:     return 1; // el bytecode solo usa el radio
+        case SdfType::TORUS:       return 2;
+        case SdfType::PLANE:       return 1;
+        case SdfType::CONE:        return 2;
+        case SdfType::ROUNDED_BOX: return 4;
+        case SdfType::OCTAHEDRON:  return 1;
+        case SdfType::TESSERACT:   return 1;
+        case SdfType::SPHERE4D:    return 1;
+        case SdfType::CUSTOM:      return 1;
+        default:                   return 0;
+    }
+}
+
 static void sdfPrimToBytecode(const SdfNode& n, BytecodeBuilder& bb) {
-    auto cf = [&](int i, float def) { return n.params[i].is_expr ? def : n.params[i].constant; };
+    auto cf = [&](int i, float def) {
+        const Expr& p = n.params[i];
+        if (p.is_expr) {
+            // Antes se devolvia `def` en silencio y la GPU renderizaba otra
+            // cosa (DL-30/DL-31). Ahora es un fallo ruidoso.
+            std::string fn = findUnsupportedOntFn(p.expression);
+            std::string msg = "el parametro " + std::to_string(i) + " de '" +
+                              sdfTypeName(n.type) + "' es una expresion ('" +
+                              p.expression + "') que el bytecode ONT no puede representar";
+            if (!fn.empty()) msg += "; funcion sin opcode: '" + fn + "'";
+            msg += lineSuffix(p.line);
+            throw std::runtime_error(msg);
+        }
+        return p.constant;
+    };
 
     switch (n.type) {
         case SdfType::SPHERE: {
@@ -154,13 +238,19 @@ static void sdfPrimToBytecode(const SdfNode& n, BytecodeBuilder& bb) {
             return;
         }
         case SdfType::CUSTOM: {
-            // Fallback: emit a miss (far away) for unknown custom SDFs
-            bb.emit(ONT_CONST, 1e9f);
-            return;
+            // Antes emitia ONT_CONST 1e9 (un "miss" silencioso). El bytecode
+            // ONT no tiene opcode para SDF definidos por expresion.
+            std::string msg = "el SDF 'custom' no esta soportado por el bytecode ONT";
+            if (n.params[0].is_expr) {
+                std::string fn = findUnsupportedOntFn(n.params[0].expression);
+                msg += " ('" + n.params[0].expression + "')";
+                if (!fn.empty()) msg += "; funcion sin opcode: '" + fn + "'";
+            }
+            msg += lineSuffix(n.params[0].line);
+            throw std::runtime_error(msg);
         }
         default:
-            bb.emit(ONT_CONST, 1e9f);
-            return;
+            throw std::runtime_error("tipo de SDF desconocido en el bytecode ONT");
     }
 }
 
@@ -1161,6 +1251,68 @@ static uint32_t linearizeBvh(BvhBuildNode* node,
 // ============================================================================
 // Write .ont binary
 // ============================================================================
+
+// ---------------------------------------------------------------------------
+// 2.0c.1 — validacion previa a emitir .ont
+//
+// evaluateFrame() pliega los parametros SDF con evalExpression(expr, frame),
+// es decir, con x=y=z=0 y w=frame. Una expresion que dependa de x/y/z se
+// convierte en una constante espuria y la GPU (y el render CPU del lenguaje)
+// dibujan otra cosa. Aqui se detecta antes de escribir nada.
+// ---------------------------------------------------------------------------
+static void checkOntSdfParam(const Expr& e, SdfType type, int idx) {
+    if (!e.is_expr) return;
+
+    std::string where = "el parametro " + std::to_string(idx) + " de '" +
+                        sdfTypeName(type) + "'";
+    if (usesPerSampleVars(e.expression)) {
+        throw std::runtime_error(where + " usa variables por muestra ('" +
+                                 e.expression + "') y el bytecode ONT no puede representarlo" +
+                                 lineSuffix(e.line));
+    }
+
+    float a = 0.0f, b = 0.0f, c = 0.0f;
+    try {
+        a = evalExpression(e.expression, 0.0f, 0.0f, 0.0f, 0.0f);
+        b = evalExpression(e.expression, 1.2345f, 2.3456f, 3.4567f, 0.0f);
+        c = evalExpression(e.expression, -2.345f, 0.789f, 4.567f, 0.0f);
+    } catch (const std::exception& ex) {
+        throw std::runtime_error("expresion SDF invalida en " + where + " ('" +
+                                 e.expression + "'): " + ex.what() + lineSuffix(e.line));
+    }
+
+    if (!std::isfinite(a)) {
+        throw std::runtime_error(where + " no da un numero finito ('" +
+                                 e.expression + "')" + lineSuffix(e.line));
+    }
+    if (!(a == b) || !(a == c)) {
+        std::string fn = findUnsupportedOntFn(e.expression);
+        std::string msg = where + " depende de x/y/z ('" + e.expression +
+                          "') y el bytecode ONT no puede representarlo";
+        if (!fn.empty()) msg += "; funcion sin opcode: '" + fn + "'";
+        msg += lineSuffix(e.line);
+        throw std::runtime_error(msg);
+    }
+}
+
+static void validateNodeSdfForOnt(const Node& n) {
+    for (const auto& s : n.sdf_nodes) {
+        int count = ontParamCount(s.type);
+        for (int i = 0; i < count && i < 4; i++)
+            checkOntSdfParam(s.params[i], s.type, i);
+
+        if (s.type == SdfType::CUSTOM) {
+            throw std::runtime_error(
+                "el SDF 'custom' no esta soportado por el bytecode ONT" +
+                lineSuffix(s.params[0].line));
+        }
+    }
+}
+
+void validateOntCompatibility(const Rih& rih) {
+    for (const auto& n : rih.nodes) validateNodeSdfForOnt(n);
+    for (const auto& n : rih.defs)  validateNodeSdfForOnt(n);
+}
 
 bool writeOnt(const Rih& rih, const std::string& path) {
     // --- Step 1: Flatten scene graph ---

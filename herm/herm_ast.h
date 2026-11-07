@@ -19,6 +19,7 @@ struct AstSdf;
 // --- Expression node ---
 struct ExprNode {
     std::string text; // textual expression (parsed as string, resolved later)
+    int line = 0;     // linea de origen, solo para diagnostico (no se serializa)
 };
 
 // --- Colors ---
