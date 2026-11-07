@@ -5,7 +5,7 @@
 
 // ============================================================================
 // Formato .ont — Ontológico Binario
-// Versión 1
+// Versión 1 (v2 comparte layout; ver feature_flags más abajo)
 //
 // Layout del archivo:
 //   [OntHeader]
@@ -31,7 +31,7 @@ struct OntHeader {
     uint32_t tensor_buffer_size;        // (N_nodos + 1) * 8 * 4 bytes (+1 = cámara slot 0)
     float    scene_aabb_min[4];         // AABB global de la escena (para ray start)
     float    scene_aabb_max[4];
-    uint64_t reserved[7];               // MUST BE 0. Reservado para v2+.
+    uint64_t reserved[7] = {};          // [0] = feature_flags (v2+); [1..6] = 0
 };
 
 // Nodo del BVH linealizado (para traversal con skip_index)
@@ -191,6 +191,23 @@ enum OntOpcode : uint8_t {
 };
 
 // ============================================================================
+// Versionado y feature_flags (2.0c.2, DL-34)
+// ============================================================================
+
+static constexpr uint32_t ONT_VERSION_V1 = 1;
+static constexpr uint32_t ONT_VERSION_V2 = 2;
+static constexpr uint32_t ONT_VERSION_MAX_SUPPORTED = ONT_VERSION_V2;
+
+// reserved[0] de OntHeader. Solo tiene significado en v2+.
+static constexpr uint64_t ONT_FEATURE_MATH_EXTENDED   = 1ull << 0;
+static constexpr uint64_t ONT_FEATURE_SDF_EXPR_PARAMS = 1ull << 1;
+static constexpr uint64_t ONT_FEATURE_KNOWN_MASK =
+    ONT_FEATURE_MATH_EXTENDED | ONT_FEATURE_SDF_EXPR_PARAMS;
+
+// Primer opcode nuevo. ONT_END = 35; los nuevos empiezan en 36.
+static constexpr uint8_t ONT_FIRST_NEW_OPCODE = (uint8_t)(ONT_END + 1);
+
+// ============================================================================
 // Nombre de opcode para debug
 // ============================================================================
 
@@ -233,6 +250,11 @@ inline const char* ontOpcodeName(OntOpcode op) {
         case ONT_END:      return "END";
         default: return "?";
     }
+}
+
+// Un opcode es v1 si cabe hasta ONT_END. Los nuevos viven detrás.
+inline bool ontOpcodeIsV1(uint8_t op) {
+    return op <= (uint8_t)ONT_END;
 }
 
 // ============================================================================

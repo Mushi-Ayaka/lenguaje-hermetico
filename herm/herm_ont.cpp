@@ -1314,6 +1314,25 @@ void validateOntCompatibility(const Rih& rih) {
     for (const auto& n : rih.defs)  validateNodeSdfForOnt(n);
 }
 
+// 2.0c.2 (DL-34): version = 2 SOLO si el bytecode usa opcodes nuevos.
+// El formato canonico es 5 bytes por instruccion, asi que se avanza de 5 en 5
+// sin confundir el payload de ONT_CONST con un opcode.
+static uint32_t ontVersionForBytecode(const std::vector<uint8_t>& bc,
+                                      uint64_t& feature_flags) {
+    if (bc.size() % 5 != 0)
+        throw std::runtime_error(
+            "bytecode ONT invalido: " + std::to_string(bc.size()) +
+            " bytes no es multiplo de 5");
+    bool uses_new = false;
+    for (size_t i = 0; i < bc.size(); i += 5) {
+        if (!ontOpcodeIsV1(bc[i])) { uses_new = true; break; }
+    }
+    // 2.0c.2 no emite opcodes nuevos. 2.0c.3 mapeara cada opcode nuevo a
+    // ONT_FEATURE_MATH_EXTENDED o ONT_FEATURE_SDF_EXPR_PARAMS.
+    feature_flags = 0;
+    return uses_new ? ONT_VERSION_V2 : ONT_VERSION_V1;
+}
+
 bool writeOnt(const Rih& rih, const std::string& path) {
     // --- Step 1: Flatten scene graph ---
     std::vector<OntFlatNode> flat_nodes;
@@ -1410,9 +1429,11 @@ bool writeOnt(const Rih& rih, const std::string& path) {
     if (!out) return false;
 
     // Header
-    OntHeader hdr;
+    OntHeader hdr = {};
     hdr.magic = ONT_MAGIC;
-    hdr.version = 1;
+    uint64_t feature_flags = 0;
+    hdr.version = ontVersionForBytecode(bytecode_block, feature_flags);
+    hdr.reserved[0] = feature_flags;
     hdr.epsilon = rih.pipeline.trace_hit_threshold;
     hdr.node_count = (uint32_t)flat_nodes.size();
     hdr.bvh_count = (uint32_t)bvh_flat.size();

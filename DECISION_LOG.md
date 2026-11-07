@@ -598,7 +598,7 @@ Para esos casos, se usa SDF en runtime. Pero son minoría.
 
 ## DL-32 — Fallbacks silenciosos que quedan en el compilador `.ont` y en `--render`.
 
-**Estado:** REGISTRADO, PENDIENTE DE DECISIÓN (2026-11-07). No se toca en 2.0c.1.
+**Estado:** MEDIDO (2026-11-07). La condición dura del usuario no se cumple: 0/55 librerías usan `smooth_union` o `displace`. Orden pendiente de confirmación; no se toca en 2.0c.1 ni en 2.0c.2.
 
 DL-31 cierra el silencio de los **parámetros** SDF. Quedan cinco degradaciones que siguen renderizando otra cosa sin avisar:
 
@@ -614,7 +614,18 @@ El path `--render` es el más grave: `validateOntCompatibility` solo se llama co
 
 **Prueba (2026-11-07, 64×64, `--render`):** `sphere(0.75)` produce un PNG de 862 B; `sphere(1.5 * 0.5)` y `sphere(0.75 + x)` producen **el mismo PNG de 257 B** (hash MD5 idéntico, `8591307...`). Es decir, cualquier expresión de parámetro se renderiza como `sphere(0)` — ni siquiera se pliega una expresión constante. Exit code 0 en los tres casos.
 
-**Hallazgo adicional (misma auditoría, 2026-11-07):** aunque los parámetros sean constantes, tres primitivas no significan lo mismo en el bytecode que en el render CPU:- `plane`: el bytecode emite `y + d` usando `params[0]` como distancia (`herm_ont.cpp:185-189`); el render CPU usa `params[0..2]` como normal y `params[3]` como distancia (`herm_render.cpp:157`).
+**Medición de alcance (2026-11-07).** Se recorrieron las 59 escenas del repositorio (46 de `libreria/tests` + 13 de `ejemplos`), resolviendo cada una a `.rih` y contando operadores, primitivas y expresiones de parámetro en el árbol SDF resultante.
+
+- **Librerías (55):** **0** usan `smooth_union`, `smooth_subtract`, `smooth_intersect`, `repeat`, `elongate` o `displace` como operador. `twist` aparece en dos líneas, ambas comentarios (`std_bridge_molbio.hm:56`, `std_chem_supramolecular.hm:252`); no hay ninguna llamada.
+- **Escenas:** 49 resuelven a `.rih`, 10 fallan por causas preexistentes (`translate` en `test_phys_sdf`, `ior` en `bodegon`, etc.). De las 49:
+  - **1** usa un operador DL-32: `libreria/tests/test_physics_lib.herm`, nodo `complex_shape_2`, `smooth_union(sphere(0.25), sphere(0.25), k=3.0)`.
+  - **2** usan `plane`: `ejemplos/def_let` y `ejemplos/luces`. **0** usan `capsule` o `cone`.
+  - **20** tienen expresiones de parámetro, con **106 parámetros** en total: **6 vectoriales** (`[ ... ]`), **85 espaciales** (`x`/`y`/`z`), **2 temporales** (`w`) y **13 constantes**. `--render` ignora los 106 (dibuja `params[i].constant = 0`); `--ont` rechaza los 91 espaciales/vectoriales con 2.0c.1 y pliega los 15 constantes/temporales.
+
+**Conclusión de la medición.** La condición dura del usuario —"si las librerías usan `smooth_union` o `displace`, DL-32 va antes de 2.0c.3"— **no se cumple**: 0/55 librerías. Pero `--render` afecta a **20/49 escenas** y la única escena con `smooth_union` sí resuelve. La decisión de si DL-32 va antes o después de 2.0c.3 queda pendiente de confirmación del usuario; el agente no la toma.
+
+**Hallazgo adicional (misma auditoría, 2026-11-07):** aunque los parámetros sean constantes, tres primitivas no significan lo mismo en el bytecode que en el render CPU:
+- `plane`: el bytecode emite `y + d` usando `params[0]` como distancia (`herm_ont.cpp:185-189`); el render CPU usa `params[0..2]` como normal y `params[3]` como distancia (`herm_render.cpp:157`).
 - `capsule`: el bytecode emite una esfera de radio `params[0]` e ignora la altura (`herm_ont.cpp:162-170`).
 - `cone`: el bytecode usa `max(sqrt(x²+z²) - r*(1-y/h), y)` (`herm_ont.cpp:190-201`), que no es el `sdCone` del render CPU.
 
@@ -628,7 +639,7 @@ Esto también rompe la paridad y no lo arregla ningún opcode nuevo. Debe entrar
 
 ## DL-33 — El lexer no acepta notación científica; 29/55 librerías no llegan al bytecode.
 
-**Estado:** REGISTRADO, PENDIENTE DE DECISIÓN (2026-11-07). Encontrado al medir P2 de DL-31.
+**Estado:** APROBADO como paso **2.0c.2b** (2026-11-07). Orden explícito del usuario: después de 2.0c.2 y **antes** de 2.0c.3; no en paralelo.
 
 **Bug:** `Lexer::read_number` (`herm_lexer.cpp:263-278`) lee signo, dígitos y punto decimal, pero no `e`/`E` con exponente. `1e-6` se tokeniza como `1`, `e`, `-6`. `Parser::parse_expr` une los tokens con espacios (`herm_parser.cpp:95-118`) y produce `1 e -6`. `evalExpression` no reconoce `e` como número y lanza `expresion invalida (pos ...)`.
 
@@ -637,6 +648,44 @@ Esto también rompe la paridad y no lo arregla ningún opcode nuevo. Debe entrar
 **Casos relacionados, misma prueba:** `1e6` se convierte en `1` + identificador `e6` (constante desconocida); `LN2`, `PLANCK` y `tanh` tampoco existen en `herm_eval.cpp`. Son 5 funciones adicionales dentro de las 243.
 
 **Consecuencia para 2.0c.3:** el criterio "las 55 librerías dan valores idénticos CPU/GPU" no se puede cumplir con opcodes: 29/55 fallan antes de emitir bytecode. Hay que decidir si se arregla el lexer (bugfix pequeño, sin sintaxis nueva) y se añaden las constantes/funciones que faltan **antes** de 2.0c.3, o si el criterio se limita a las librerías que hoy son representables. Recomendación del agente: arreglar el lexer y las constantes como paso 2.0c.2b, antes de los opcodes.
+
+---
+
+## DL-34 — 2.0c.2: formato y versionado de los opcodes nuevos (opción A).
+
+**Estado:** IMPLEMENTADO Y VALIDADO (2026-11-07, v0.23). Se implementó antes de 2.0c.2b. No añade opcodes nuevos: solo instala el formato, el versionado y el rechazo ruidoso. Los opcodes concretos son 2.0c.3.
+
+**Decisión (opción A):**
+- **La cabecera sigue en 120 bytes.** No se mueve ningún offset. `reserved[0]` (8 bytes) pasa a ser `feature_flags`; `reserved[1..6]` siguen reservados y deben ser 0.
+- **`version = 1`** si el bytecode solo usa opcodes v1 (0..`ONT_END`). **`version = 2`** solo si el bytecode usa al menos un opcode nuevo (`> ONT_END`).
+- **Opcodes nuevos detrás de `ONT_END`** (36..47). Los `.ont` v1 existentes se leen igual; no hay migración de assets.
+- **`feature_flags`:** bit 0 = math extendida (`exp`, `log`, `step`, `smoothstep`, `sign`, `fract`, ...); bit 1 = parámetros SDF como expresión. Los bits no definidos se rechazan.
+- **`loadOnt`:** acepta `version == 1` siempre; `version == 2` solo si todos los flags son conocidos; rechaza `version >= 3`, flags desconocidos y `reserved[1..6] != 0`.
+
+**Tres condiciones duras del usuario (criterio de aceptación, no nota):**
+1. **Fallo ruidoso en los 5 consumidores** ante un opcode desconocido: VM escalar (`bytecode_vm.h`), SIMD (`ray_march_simd.h`), GLSL (`glsl_gen.cpp`), SPIR-V (`spirv_gen.cpp`) y JIT (`jit_compiler.cpp`). Hoy los cinco lo convierten en 0 o devuelven un resultado parcial.
+2. **`loadOnt` rechaza `version >= 3` y `feature_flags` desconocidos.** No basta con aceptar cualquier versión como hoy (`version < 1`).
+3. **`version = 2` se emite solo cuando el bytecode usa opcodes nuevos.** Un `.ont` con solo opcodes v1 sigue siendo v1.
+
+**Criterio de 2.0c.3 corregido (mandato del usuario, 2026-11-07):** "**todas las librerías que compilan producen paridad CPU/GPU**", no "55/55". El 55/55 es el objetivo final de la fase, no el criterio de aceptación de 2.0c.3.
+
+**Compatibilidad:** el compilador (`herm`, `contrato/ont.h`) y el motor (`render/scene.h`) deben compartir los mismos valores de flags, versión máxima y rango de opcodes nuevos. El puente `core/herm_bridge.cpp` también calcula versión/flags al construir un `OntScene` en memoria.
+
+**Aceptación de 2.0c.2:**
+- Un `.ont` v1 con `reserved[0] = 0` se lee igual que antes.
+- Un `.ont` con `version = 3` se rechaza con mensaje explícito.
+- Un `.ont` v2 con un bit de flags no definido se rechaza con mensaje explícito.
+- Cualquiera de los 5 consumidores, ante un opcode desconocido, falla con mensaje (excepción o `GlslGenResult.ok = false`), no devuelve 0.
+- Un `.ont` generado por el compilador actual sigue saliendo con `version = 1`; el escaneo de bytecode confirma que no hay opcodes nuevos.
+
+**Resultado de la validación (2026-11-07):**
+- `.ont` de `ejemplos/teclado.herm`: `version = 1`, `reserved[0..6] = 0`, 1126 bytes.
+- Lector (`OntScene::loadOnt`): **14/14** — carga v1; rechaza v3 (`version 3 no soportada`), v2 con flags desconocidos (`0x4`), v1 con flags no cero, opcode 200 (`nodo 0: opcode 200 desconocido`) y archivo truncado (`tamano ... != esperado`); acepta v2 con flags conocidos.
+- Los 5 consumidores: **10/10** — VM escalar, VM SIMD, GLSL, SPIR-V y JIT lanzan/retornan error con `opcode 200` en el mensaje.
+- Suites del motor: f0 **24/24**, f1 **10/10**, f3 **16/16**, scene **81/82** (`orbit zoom reduces distance`, fallo preexistente), os_rhi **30/31** (fallo preexistente).
+- `test_ont_bridge` con `teclado.herm`: OK (43 nodos, 1 BVH, 3 materiales, 310 bytes de bytecode).
+
+**Hallazgo durante la validación:** el compilador anterior escribía `OntHeader` sin inicializar; `reserved[1..6]` contenía basura del stack (`0x00007FF7302B0595`, etc.). El nuevo `OntHeader hdr = {}` lo corrige. Como `loadOnt` solo valida `reserved[0]`, los `.ont` viejos siguen siendo aceptados.
 
 ---
 
@@ -1166,9 +1215,9 @@ Paso 5.13 (nuevo) — Gradiente analítico.
 
 - **Fase 0:** cerrada — tag `pre-reforma`, 55 librerías migradas (v0.15). La cola de reescritura se cerró el 2026-11-04 (55/55 compilan, v0.20).
 - **Fase 1:** cerrada — DL-07 a DL-21 decididas y registradas (v0.16–v0.18). DL-22 a DL-25 son decisiones de Fase 5, marcadas PENDIENTE a propósito.
-- **Fase 2:** abierta por mandato del usuario (2026-11-04), en curso. **Paso 2.0a/2.0b:** implementados (v0.21, DL-29). **Paso 2.0c.1:** implementado (v0.22, DL-31). **Paso 2.0c.2:** pendiente de decisión de formato (v1→v2 vs `reserved[7]`). **Paso 2.0c.3:** bloqueado hasta 2.0c.2 y hasta resolver DL-33. **Paso 2.0d:** pendiente de localizar los PNG de referencia. El Paso 2.0 **no está cerrado**.
-- **Fases 3–6:** pendientes.
-- **Decisiones abiertas:** DL-23, DL-24, DL-25 (Fase 5); DL-28 (`ior`/`transmission` en `material`); DL-32 (fallbacks de operadores SDF y `--render`); DL-33 (notación científica y constantes del evaluador); 2.0c.2 (formato `.ont`) y 2.0c.4 (división IEEE vs 0-silencioso).
+- **Fase 2:** abierta por mandato del usuario (2026-11-04), en curso. **Paso 2.0a/2.0b:** implementados (v0.21, DL-29). **Paso 2.0c.1:** implementado (v0.22, DL-31). **Paso 2.0c.2:** implementado y validado (v0.23, DL-34). **Paso 2.0c.2b:** aprobado (DL-33), siguiente y antes de 2.0c.3. **Paso 2.0c.3:** bloqueado hasta 2.0c.2b; criterio corregido: "todas las que compilan producen paridad", no 55/55. **DL-32:** medido (0/55 librerías con operadores; 20/49 escenas afectadas por `--render`), orden pendiente de confirmación. **Paso 2.0d:** pendiente de localizar los PNG de referencia. El Paso 2.0 **no está cerrado**.
+- **Fases 3-6:** pendientes.
+- **Decisiones abiertas:** DL-23, DL-24, DL-25 (Fase 5); DL-28 (`ior`/`transmission` en `material`); DL-32 (fallbacks de operadores SDF y `--render`; medido, orden pendiente); 2.0c.4 (división IEEE vs 0-silencioso).
 
 ---
 

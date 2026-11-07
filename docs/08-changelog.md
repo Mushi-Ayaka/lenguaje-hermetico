@@ -1,5 +1,35 @@
 # Changelog
 
+## 2026-11-07 — v0.23 — Paso 2.0c.2: formato y versionado del `.ont` (DL-34)
+
+### Cambiado
+- **`contrato/ont.h`:** `reserved[7] = {}` se inicializa a cero (antes quedaba con basura del stack). `reserved[0]` pasa a ser `feature_flags`; `reserved[1..6]` siguen reservados y deben ser 0.
+- **Constantes compartidas:** `ONT_VERSION_V1`, `ONT_VERSION_V2`, `ONT_VERSION_MAX_SUPPORTED`, `ONT_FEATURE_MATH_EXTENDED`, `ONT_FEATURE_SDF_EXPR_PARAMS`, `ONT_FEATURE_KNOWN_MASK`, `ONT_FIRST_NEW_OPCODE` y `ontOpcodeIsV1()`.
+- **`herm/herm_ont.cpp`:** `ontVersionForBytecode()` recorre el bytecode en pasos de 5 bytes y devuelve `version = 2` **solo** si aparece un opcode > `ONT_END`. Un `.ont` con solo opcodes v1 sigue saliendo v1. `OntHeader hdr = {}` garantiza `reserved[1..6] = 0`.
+- **`herm/herm_ont.cpp`:** `writeOnt` escribe `version` y `reserved[0] = feature_flags` (hoy 0; 2.0c.3 mapeará los flags).
+
+### Motor (`render/`)
+- **`scene.h`:** constantes espejo de versión/flags y `ontOpcodeIsKnown()` (hoy solo acepta opcodes v1). `OntScene::load_error` guarda el motivo del rechazo.
+- **`scene.cpp`:** `loadOnt` valida magic, versión 1..2, flags conocidos, tamaño exacto del layout, `bytecode_size % 5`, offsets/longitudes de cada nodo y todos los opcodes. Ante cualquier fallo imprime `[ONT] <motivo>` en `stderr` y devuelve `false`.
+- **`render.h`:** `Render::loadOnt` ya no cae a `loadDefault` en silencio: registra el rechazo con `std::cerr` y `logDiag`, y devuelve `false`.
+- **Los 5 consumidores fallan ruidosamente ante un opcode desconocido:**
+  - `bytecode_vm.h` (VM escalar) y `ray_march_simd.h` (VM SIMD): `std::runtime_error`.
+  - `glsl_gen.cpp` y `spirv_gen.cpp`: el decompilador lanza; `generate()` devuelve `ok = false` con el nodo y el opcode en `error`.
+  - `jit_compiler.cpp`: lanza si el opcode no es v1; devuelve `nullptr` para opcodes v1 que el JIT no implementa (los maneja el intérprete).
+- **`core/herm_bridge.cpp`:** el `OntScene` en memoria calcula `version` desde el bytecode y deja `reserved[0] = 0`.
+
+### Aceptación (2026-11-07)
+- `.ont` generado por el compilador actual: `version = 1`, `reserved[0..6] = 0`.
+- Pruebas del lector: **14/14** — carga v1; rechaza v3, flags desconocidos, v1 con flags, opcode 200 y archivo truncado; acepta v2 con flags conocidos.
+- Pruebas de los 5 consumidores: **10/10** — todos fallan con mensaje ante el opcode 200.
+- Suites del motor: f0 **24/24**, f1 **10/10**, f3 **16/16**, scene **81/82** (fallo preexistente `orbit zoom reduces distance`), os_rhi **30/31** (fallo preexistente).
+- `test_ont_bridge` con `teclado.herm`: OK (43 nodos, 1 BVH, 3 materiales, 310 bytes de bytecode).
+
+### Pendiente
+- **2.0c.2b (DL-33):** notación científica en el lexer (`1e-6`), `LN2`, `PLANCK`, `tanh`; 243 funciones / 29 librerías.
+- **2.0c.3:** opcodes nuevos, expresiones de parámetro SDF y unificación de `plane`/`capsule`/`cone`. Criterio: todas las librerías que compilan dan paridad CPU/GPU.
+- **DL-32:** medido; el orden (antes o después de 2.0c.3) queda pendiente de confirmación del usuario.
+
 ## 2026-11-07 — v0.22 — Paso 2.0c.1: el `.ont` deja de mentir con los parámetros SDF (DL-31)
 
 ### Cambiado
