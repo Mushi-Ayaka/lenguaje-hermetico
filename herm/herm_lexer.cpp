@@ -274,6 +274,19 @@ Token Lexer::read_number() {
             val += advance();
         }
     }
+    // 2.0c.2b (DL-33): notacion cientifica 1e-6, 1E6, 2.5e+3.
+    // Solo se consume 'e'/'E' si le siguen digitos (o signo + digitos); si no,
+    // se deja como identificador y el evaluador falla de forma ruidosa.
+    if ((peek() == 'e' || peek() == 'E') &&
+        (std::isdigit(peek(1)) ||
+         ((peek(1) == '+' || peek(1) == '-') && std::isdigit(peek(2))))) {
+        is_float = true;
+        val += advance();
+        if (peek() == '+' || peek() == '-') val += advance();
+        while (pos < source.size() && std::isdigit(peek())) {
+            val += advance();
+        }
+    }
     return make_token(is_float ? TokenType::FLOAT : TokenType::INT, val);
 }
 

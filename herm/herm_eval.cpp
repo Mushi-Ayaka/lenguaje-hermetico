@@ -8,10 +8,11 @@ namespace herm {
 
 // ============================================================================
 // Simple recursive-descent expression evaluator
-// Supports: + - * / % ^ sin cos tan abs sqrt floor ceil
+// Supports: + - * / % ^ sin cos tan tanh abs sqrt floor ceil
 //           exp log log2 log10 acos asin atan atan2 sign mod fract
 //           min max pow clamp lerp mix step smoothstep sample
-//           variable t (x,y,z,w), shading vars (nx..lz), constants pi/e
+//           variable t (x,y,z,w), shading vars (nx..lz)
+//           constants pi/e/LN2/PLANCK
 // Fallos: funcion o variable desconocida, parentesis sin cerrar y
 //         expresion invalida lanzan std::runtime_error (Paso 2.0b).
 //         No hay fallback silencioso a 0.0f.
@@ -136,6 +137,8 @@ private:
             // Constants
             if (name == "pi") return 3.14159265358979323846f;
             if (name == "e")  return 2.71828182845904523536f;
+            if (name == "LN2") return 0.69314718055994530942f;
+            if (name == "PLANCK") return 6.62607015e-34f;
 
             // Variables
             if (name == "x") return x;
@@ -175,6 +178,7 @@ private:
             if (name == "sin")   { arg = parseArg(); closeParen(); return std::sin(arg); }
             if (name == "cos")   { arg = parseArg(); closeParen(); return std::cos(arg); }
             if (name == "tan")   { arg = parseArg(); closeParen(); return std::tan(arg); }
+            if (name == "tanh")  { arg = parseArg(); closeParen(); return std::tanh(arg); }
             if (name == "abs")   { arg = parseArg(); closeParen(); return std::abs(arg); }
             if (name == "sqrt")  { arg = parseArg(); closeParen(); return std::sqrt(arg); }
             if (name == "floor") { arg = parseArg(); closeParen(); return std::floor(arg); }

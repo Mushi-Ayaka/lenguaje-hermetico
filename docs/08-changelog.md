@@ -1,5 +1,40 @@
 # Changelog
 
+## 2026-11-08 — v0.24 — Paso 2.0c.2b: notación científica y constantes que faltaban (DL-33)
+
+### Arreglado
+- **`Lexer::read_number`** (`herm/herm_lexer.cpp`) acepta exponente `e`/`E` con signo opcional: `1e-6`, `1E6`, `2.5e+3`. Solo consume la `e` si le siguen dígitos (o signo + dígitos); `1e` y `1e+` siguen fallando de forma ruidosa (`expresion invalida`), no se interpretan como `1` + identificador.
+- **El evaluador ya aceptaba exponentes** (`ExprParser::number`, `herm_eval.cpp:241`); el bug estaba solo en el lexer, que partía `1e-6` en tres tokens.
+
+### Añadido
+- **Constantes `LN2` y `PLANCK`** en `evalExpression` (`herm_eval.cpp`): `LN2 = 0.69314718055994530942`, `PLANCK = 6.62607015e-34`.
+- **Función `tanh`** (una entrada, `std::tanh`), junto a `sin`/`cos`/`tan`.
+- **`docs/12-guia-sintaxis-completa.md`**: lista de funciones/constantes actualizada; eliminada la advertencia obsoleta que decía que `step` y `smoothstep` no existían en el evaluador CPU (existen desde 2.0b).
+
+### Medición (2026-11-08, probe P2 sobre 55 librerías / 1070 funciones)
+- **Antes (v0.23):** 261/1070 fallan en 32/55 librerías. De ellas, **243 en 29 librerías** eran DL-33 (notación científica).
+- **Después:** **45/1070 fallan en 18/55 librerías**. **0 fallos por notación científica.**
+- Desglose de los 45 restantes:
+  - **18** `expresion SDF invalida`: el probe pasa una función que devuelve vector a un parámetro escalar de `sphere` (limitación del probe, no de las librerías).
+  - **14** `no da un numero finito`: los argumentos fijos del probe (`1.2345`) desbordan funciones con constantes físicas (`1/1e-34`, exponenciales grandes).
+  - **13** `depende de x/y/z`: parámetros SDF espaciales reales; los resolverá 2.0c.3. Uno de ellos (`bloch_wave`) usa además `exp`, que aún no tiene opcode.
+
+### Verificación
+| Caso | Resultado |
+|---|---|
+| `2.5e+3` como `fov` | 2500.0000 |
+| `1E6` como `fov` | 1000000.0000 |
+| `5e-1` como `fov` | 0.5000 |
+| `1e-6` en `sphere` | compila, exit 0 |
+| `1e` / `1e+` | exit 1, `expresion invalida en '1 e'` / `'1 e +'` |
+| `LN2 * 2.0` como `intensity` | 1.3863 |
+| `tanh(1.0)` como `falloff` | 0.7616 |
+| `LN2 * 2.0 + PLANCK * 1e34` | 8.0124 (1.3863 + 6.6261) |
+
+### Pendiente
+- **2.0c.3:** opcodes nuevos, expresiones de parámetro SDF y unificación de `plane`/`capsule`/`cone`. Criterio: todas las librerías que compilan dan paridad CPU/GPU.
+- **DL-32:** medido; el orden (antes o después de 2.0c.3) queda pendiente de confirmación del usuario.
+
 ## 2026-11-07 — v0.23 — Paso 2.0c.2: formato y versionado del `.ont` (DL-34)
 
 ### Cambiado

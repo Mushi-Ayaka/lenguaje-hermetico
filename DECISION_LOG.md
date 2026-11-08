@@ -639,7 +639,7 @@ Esto también rompe la paridad y no lo arregla ningún opcode nuevo. Debe entrar
 
 ## DL-33 — El lexer no acepta notación científica; 29/55 librerías no llegan al bytecode.
 
-**Estado:** APROBADO como paso **2.0c.2b** (2026-11-07). Orden explícito del usuario: después de 2.0c.2 y **antes** de 2.0c.3; no en paralelo.
+**Estado:** IMPLEMENTADO Y VALIDADO (2026-11-08, v0.24). Orden explícito del usuario: después de 2.0c.2 y **antes** de 2.0c.3; no en paralelo.
 
 **Bug:** `Lexer::read_number` (`herm_lexer.cpp:263-278`) lee signo, dígitos y punto decimal, pero no `e`/`E` con exponente. `1e-6` se tokeniza como `1`, `e`, `-6`. `Parser::parse_expr` une los tokens con espacios (`herm_parser.cpp:95-118`) y produce `1 e -6`. `evalExpression` no reconoce `e` como número y lanza `expresion invalida (pos ...)`.
 
@@ -648,6 +648,18 @@ Esto también rompe la paridad y no lo arregla ningún opcode nuevo. Debe entrar
 **Casos relacionados, misma prueba:** `1e6` se convierte en `1` + identificador `e6` (constante desconocida); `LN2`, `PLANCK` y `tanh` tampoco existen en `herm_eval.cpp`. Son 5 funciones adicionales dentro de las 243.
 
 **Consecuencia para 2.0c.3:** el criterio "las 55 librerías dan valores idénticos CPU/GPU" no se puede cumplir con opcodes: 29/55 fallan antes de emitir bytecode. Hay que decidir si se arregla el lexer (bugfix pequeño, sin sintaxis nueva) y se añaden las constantes/funciones que faltan **antes** de 2.0c.3, o si el criterio se limita a las librerías que hoy son representables. Recomendación del agente: arreglar el lexer y las constantes como paso 2.0c.2b, antes de los opcodes.
+
+**Solución implementada (2026-11-08):**
+- `Lexer::read_number` acepta `e`/`E` con signo y dígitos. Solo consume el exponente si está bien formado; `1e` y `1e+` siguen fallando con `expresion invalida`.
+- `evalExpression` añade las constantes `LN2` y `PLANCK` y la función `tanh`.
+
+**Resultado de la medición (2026-11-08, mismo probe P2):**
+- **Antes:** 261/1070 fallan en 32/55 librerías; **243 en 29** por DL-33.
+- **Después:** **45/1070 fallan en 18/55 librerías; 0 por notación científica.**
+- Restantes: **18** expresiones vectoriales usadas en un parámetro escalar (limitación del probe), **14** `no finito` por los argumentos fijos del probe, **13** parámetros espaciales reales (2.0c.3). La suma da 45 porque un fallo espacial (`bloch_wave`) menciona además `exp` sin opcode.
+- Verificado: `2.5e+3` → 2500, `1E6` → 1000000, `5e-1` → 0.5, `1e-6` compila; `LN2 * 2.0` → 1.3863, `tanh(1.0)` → 0.7616, `LN2 * 2.0 + PLANCK * 1e34` → 8.0124.
+
+**Consecuencia para 2.0c.3:** el criterio corregido del usuario ("todas las que compilan producen paridad") ya es medible: 18/55 librerías tienen al menos una función que aún falla por causas ajenas a DL-33, y 13 de esos fallos son parámetros espaciales que 2.0c.3 debe resolver.
 
 ---
 
@@ -1215,7 +1227,7 @@ Paso 5.13 (nuevo) — Gradiente analítico.
 
 - **Fase 0:** cerrada — tag `pre-reforma`, 55 librerías migradas (v0.15). La cola de reescritura se cerró el 2026-11-04 (55/55 compilan, v0.20).
 - **Fase 1:** cerrada — DL-07 a DL-21 decididas y registradas (v0.16–v0.18). DL-22 a DL-25 son decisiones de Fase 5, marcadas PENDIENTE a propósito.
-- **Fase 2:** abierta por mandato del usuario (2026-11-04), en curso. **Paso 2.0a/2.0b:** implementados (v0.21, DL-29). **Paso 2.0c.1:** implementado (v0.22, DL-31). **Paso 2.0c.2:** implementado y validado (v0.23, DL-34). **Paso 2.0c.2b:** aprobado (DL-33), siguiente y antes de 2.0c.3. **Paso 2.0c.3:** bloqueado hasta 2.0c.2b; criterio corregido: "todas las que compilan producen paridad", no 55/55. **DL-32:** medido (0/55 librerías con operadores; 20/49 escenas afectadas por `--render`), orden pendiente de confirmación. **Paso 2.0d:** pendiente de localizar los PNG de referencia. El Paso 2.0 **no está cerrado**.
+- **Fase 2:** abierta por mandato del usuario (2026-11-04), en curso. **Paso 2.0a/2.0b:** implementados (v0.21, DL-29). **Paso 2.0c.1:** implementado (v0.22, DL-31). **Paso 2.0c.2:** implementado y validado (v0.23, DL-34). **Paso 2.0c.2b:** implementado y validado (v0.24, DL-33); 0 fallos de notación científica. **Paso 2.0c.3:** siguiente; criterio corregido: "todas las que compilan producen paridad", no 55/55. **DL-32:** medido (0/55 librerías con operadores; 20/49 escenas afectadas por `--render`), orden pendiente de confirmación. **Paso 2.0d:** pendiente de localizar los PNG de referencia. El Paso 2.0 **no está cerrado**.
 - **Fases 3-6:** pendientes.
 - **Decisiones abiertas:** DL-23, DL-24, DL-25 (Fase 5); DL-28 (`ior`/`transmission` en `material`); DL-32 (fallbacks de operadores SDF y `--render`; medido, orden pendiente); 2.0c.4 (división IEEE vs 0-silencioso).
 

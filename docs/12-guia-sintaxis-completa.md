@@ -156,7 +156,7 @@ asociativos: ^ > * / > + -
 
 ```herm
 // Trigonométricas
-sin(x), cos(x), tan(x)
+sin(x), cos(x), tan(x), tanh(x)
 
 // Algebraicas
 abs(x), sqrt(x), floor(x), ceil(x), pow(x, y)
@@ -170,7 +170,7 @@ lerp(a, b, t) = mix(a, b, t)
 sample(expr, dx, dy, dz)  // Evalúa expr en (x+dx, y+dy, z+dz)
 
 // Constantes
-pi, e
+pi, e, LN2, PLANCK
 ```
 
 ### 5.4 Funciones matemáticas y estado por backend
@@ -187,13 +187,13 @@ fract(x)                // parte fraccionaria
 mod(x, y)               // módulo estilo GLSL: x - y*floor(x/y)
 ```
 
-Más las que ya existían: `sin cos tan abs sqrt floor ceil min max pow clamp lerp mix sample`, y las constantes `pi`, `e`.
+Más las que ya existían: `sin cos tan tanh abs sqrt floor ceil min max pow clamp lerp mix sample`, y las constantes `pi`, `e`, `LN2`, `PLANCK`.
 
-**Importante — el pipeline `.ont` del motor todavía no las soporta.** El bytecode ONT (`OntOpcode` en `render/scene.h`) solo tiene `sin cos tan abs sqrt floor ceil min max pow clamp lerp mix mod` y aritmética. `step`, `smoothstep`, `exp`, `log*`, `acos`, `asin`, `atan*`, `sign` y `fract` **no tienen opcode**, así que el path GPU no puede representarlas. Extender el bytecode + sus 5 consumidores (VM, VM SIMD, GLSL, SPIR-V, JIT) es el Paso 2.0c.
+**Notación científica:** el lexer acepta `1e-6`, `1E6` y `2.5e+3` desde 2.0c.2b (DL-33). Un exponente mal formado (`1e`, `1e+`) falla con error de expresión; no se interpreta como `1` seguido de un identificador.
+
+**Importante — el pipeline `.ont` del motor todavía no las soporta.** El bytecode ONT (`OntOpcode` en `render/scene.h`) solo tiene `sin cos tan abs sqrt floor ceil min max pow clamp lerp mix mod` y aritmética. `step`, `smoothstep`, `exp`, `log*`, `acos`, `asin`, `atan*`, `sign`, `fract` y `tanh` **no tienen opcode**, así que el path GPU no puede representarlas. Extender el bytecode + sus 5 consumidores (VM, VM SIMD, GLSL, SPIR-V, JIT) es el Paso 2.0c.
 
 Tampoco existen `length/dot/cross/normalize` como funciones nativas: las librerías las construyen a partir de `fn` en `.hm`.
-
-**⚠ Importante:** `step` y `smoothstep` **NO** están en el evaluador CPU. Solo funcionan en el path GPU. Si usas `--render` de herm.exe (PNG directo), esas funciones retornarán 0.0.
 
 ---
 
