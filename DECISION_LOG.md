@@ -701,6 +701,81 @@ Esto también rompe la paridad y no lo arregla ningún opcode nuevo. Debe entrar
 
 ---
 
+## DL-35 — 2.0c.3a: contrato de paridad CPU/GPU (tolerancias ULP, `mod` y división).
+
+**Estado:** IMPLEMENTADO (2026-11-08, v0.25; solo documentación, sin código). Este commit desbloquea 2.0c.3b; los opcodes no se implementan hasta que exista.
+
+**Mandato del usuario (2026-11-08):**
+- La referencia CPU del test de paridad es la **VM de bytecode**: `execBcRaw` (`render/bytecode_vm.h:21`) y `execBcRaw4` (`render/ray_march_simd.h:16`). No es `--render`.
+- Orden estricto: **2.0c.3a → 2.0c.3b → 2.0c.3c → 2.0c.3d**. DL-32 va **después** de 2.0c.3, no antes.
+- 2.0c.4 (división) solo si no se resuelve aquí.
+
+**Por qué `--render` no es la referencia:**
+- `evalSdfTree` lee `node.params[i].constant` en todas las primitivas (`herm_render.cpp:152-160`); solo `CUSTOM` (`:202`) y `displace` (`:220`) evalúan la expresión.
+- `--render` usa el árbol SDF, no el bytecode; la GPU consume bytecode (`glsl_gen.cpp`, `spirv_gen.cpp`).
+- Medido en DL-32: `sphere(0.75 + x)` y `sphere(1.5 * 0.5)` dan el mismo PNG de 257 B, exit 0; 20/49 escenas tienen expresiones de parámetro; `plane`/`capsule`/`cone` ya divergen entre bytecode y `--render` (DL-32:611-631).
+- Por eso el test compara **el mismo bytecode** en CPU (VM) y GPU (GLSL/SPIR-V). `--render` queda fuera del test; su fallo ruidoso es DL-32, después.
+
+**Tabla de tolerancias (fijada; se documenta también en `tests/test_eval_parity.cpp`):**
+
+| Función | Tolerancia | Justificación |
+|---|---|---|
+| `step` | 0 ULP | Comparación; solo devuelve `0.0` o `1.0`. |
+| `smoothstep` | 0 ULP | Polinomio `t*t*(3-2t)` con `t = clamp(...)`; misma secuencia en CPU y GPU. Si el driver usa FMA y difiere, 2.0c.3d lo mide y actualiza la tabla con una entrada nueva. |
+| `sign` | 0 ULP | Comparación; `-1`, `0`, `+1`. |
+| `mod` | 0 ULP | Fórmula GLSL `x - y*floor(x/y)`; prohibido `fmod`. |
+| `fract` | 0 ULP | `x - floor(x)`; la parte fraccionaria es exacta para finitos. |
+| `min`, `max`, `clamp`, `abs` | 0 ULP | Operaciones IEEE exactas; `min`/`max` con semántica GLSL (NaN devuelve el otro operando). |
+| `sqrt` | 0 ULP | IEEE 754 exige sqrt correctamente redondeada; se asume que el driver cumple. Si no, fallo ruidoso. |
+| `floor`, `ceil` | 0 ULP | Exactas. |
+| `exp`, `log`, `log2`, `log10` | 1 ULP | Trascendentes; libm y GPU pueden diferir en el último bit. |
+| `acos`, `asin`, `atan`, `atan2` | 1 ULP | Trascendentes; mismo motivo. |
+| `tanh` | 1 ULP | Trascendente; mismo motivo. **Nota:** `tanh` no está entre los 12 opcodes de 2.0c.3b; la fila es política para cuando exista opcode. El test de 2.0c.3c no la cubre salvo que se apruebe un 13º opcode. |
+
+**Comparación:** 0 ULP = bits idénticos para finitos, con `+0 == -0`, `NaN == NaN` e `inf` solo igual a `inf` del mismo signo. 1 ULP = distancia entera <= 1 en la representación ordenada de binary32, con los mismos casos especiales. Cualquier otra diferencia es error. No hay epsilon arbitrario.
+
+**No se propone cambiar ninguna tolerancia:** no hay medición GPU que lo justifique. La tabla se fija tal cual; si 2.0c.3d encuentra una diferencia, se mide y se registra en una entrada nueva antes de tocar el test.
+
+**Semántica de `mod` (fijada):** GLSL `x - y*floor(x/y)`, no C `fmod`.
+- `herm_eval.cpp:208-209` ya la usa (evaluador del lenguaje).
+- `bytecode_vm.h:62` y `ray_march_simd.h:102-107` usan `std::fmod` y devuelven `0` si `b == 0`; **incorrecto** para la referencia CPU. 2.0c.3b debe cambiarlos a la fórmula GLSL.
+- `jit_compiler.cpp:29` usa `fmodf`; `:287` lo invoca. **Incorrecto** para negativos; 2.0c.3b debe cambiar el helper a la fórmula GLSL.
+- `glsl_gen.cpp:327` y `spirv_gen.cpp:67` emiten `mod(a, b)`; la fórmula es correcta. La tolerancia 0 ULP aplica al resultado del driver.
+- Vectores de prueba: `mod(-1,3)=2`, `mod(1,-3)=-2`, `mod(-1,-3)=-1`, `mod(3,2)=1`, `mod(-3,2)=1`, `mod(3,-2)=-1`, `mod(5.5,2)=1.5`, `mod(1,0)=NaN`, `mod(0,0)=NaN`.
+
+**Semántica de división (fijada):** IEEE 754, `inf`/`NaN`; prohibido el 0-silencioso.
+- `herm_eval.cpp:88` ya la usa (`r /= rhs`; comentario "IEEE: inf/NaN como en GPU").
+- `bytecode_vm.h:61` devuelve `0` si `b == 0`; **incorrecto**. 2.0c.3b debe emitir `a / b` sin máscara.
+- `ray_march_simd.h:95-100` enmascara `b == 0` a `0`; **incorrecto**. 2.0c.3b debe dejar `_mm_div_ps(a, b)`.
+- `jit_compiler.cpp:173-188` enmascara `b == 0` a `0`; **incorrecto**. 2.0c.3b debe dejar `divps`.
+- `glsl_gen.cpp:326` y `spirv_gen.cpp:66` emiten `(a / b)`. La spec GLSL no garantiza inf/NaN para `b == 0`; el test de 2.0c.3c debe comprobar `1/0`, `-1/0`, `0/0`, `1/-0`, `-1/-0`. Si el driver devuelve `0` o un finito, el test falla con mensaje explícito; no se enmascara. Si el driver no cumple, 2.0c.4 decide si se añade `SignedZeroInfNanPreserve` o se cambia de backend.
+- Vectores: `1/0=+inf`, `-1/0=-inf`, `0/0=NaN`, `1/-0=-inf`, `-1/-0=+inf`, `1/2=0.5`, `-1/2=-0.5`.
+
+**Alcance de 2.0c.3b (consecuencia):**
+- Implementar los 12 opcodes nuevos (`step, smoothstep, exp, log, log2, log10, acos, asin, atan, atan2, sign, fract`) en los 5 consumidores: `bytecode_vm.h`, `ray_march_simd.h`, `glsl_gen.cpp`, `spirv_gen.cpp`, `jit_compiler.cpp`.
+- Corregir `mod` y división en los consumidores CPU (arriba). El path `BcOp` antiguo (`bytecode_vm.h:148-149`) tiene los mismos fallos; se corrige por consistencia, no lo usa el `.ont` v1/v2.
+- Incluir el **compilador de expresiones de parámetro SDF a bytecode** en `herm_ont.cpp` (hoy `sdfPrimToBytecode` rechaza `is_expr` por 2.0c.1). Sin él, 2.0c.3c no puede compilar una escena que use las funciones y el criterio "todas las que compilan" no se puede medir. Si el usuario quiere separarlo, es un sub-paso adicional antes de 2.0c.3c.
+- No tocar `--render` (DL-32 va después). No tocar los operadores `smooth_union`/`displace` (DL-32). No cambiar la cabecera `.ont` (DL-34 ya fijó v1/v2).
+- `tanh`: sin opcode en los 12; si se quiere en el test, se necesita un 13º opcode y una decisión explícita. No se añade por cuenta del agente.
+
+**Orden y criterio de aceptación de 2.0c.3a:**
+- Este commit contiene solo documentación: `DECISION_LOG.md` (autoritativo y copias) y `docs/08-changelog.md`.
+- No se modifica código, tests ni assets. `git status` de ambos repos solo muestra estos archivos (más el borrado preexistente `docs/21-MAPA_REAL_MOTOR.md` del motor, ajeno a este paso).
+- 2.0c.3b no empieza hasta que este commit exista.
+- 2.0c.3c escribe `tests/test_eval_parity.cpp` con la tabla de arriba. 2.0c.3d ejecuta, corrige y documenta. Cualquier cambio de tolerancia exige medición y una entrada nueva en este log; no se ensancha en silencio.
+- DL-32 (fallo ruidoso de `--render`, 106 parámetros) va después de 2.0c.3. 2.0c.4 solo si la división GPU no cumple IEEE.
+
+**Evidencia de la verificación (2026-11-08):**
+- `herm/herm_eval.cpp:88` (división IEEE), `:208-209` (`mod` GLSL), `:225-228` (`smoothstep`).
+- `render/bytecode_vm.h:61-62` (máscaras/fmod), `:148-149` (BcOp antiguo).
+- `render/ray_march_simd.h:95-107` (máscaras/fmod).
+- `render/jit_compiler.cpp:29` (fmodf), `:173-188` (máscara división), `:287-307` (mod).
+- `render/glsl_gen.cpp:326-327`; `render/spirv_gen.cpp:66-67`.
+- `herm/herm_render.cpp:152-160`, `:202`, `:220` (`--render`).
+- `DECISION_LOG.md:611-631` (DL-32: medición de `--render`, `plane`/`capsule`/`cone`).
+
+---
+
 ### Cómo queda el lenguaje después de estas decisiones
 
 Sin cambios. Ni una línea de sintaxis nueva. Exactamente como está hoy. El parser solo se extiende para aceptar let internos en fn (DL-14), que es una extensión del parser, no de la sintaxis visible.

@@ -1,5 +1,19 @@
 # Changelog
 
+## 2026-11-08 — v0.25 — Paso 2.0c.3a: contrato de paridad CPU/GPU (DL-35)
+
+### Documentado (sin código)
+- **Referencia CPU:** `execBcRaw` (`render/bytecode_vm.h:21`) y `execBcRaw4` (`render/ray_march_simd.h:16`), no `--render`. El test compara el mismo bytecode en CPU y en GPU (GLSL/SPIR-V).
+- **Tolerancias ULP fijadas:** 0 ULP para `step`, `smoothstep`, `sign`, `mod`, `fract`, `min`, `max`, `clamp`, `abs`, `sqrt`, `floor`, `ceil`; 1 ULP para `exp`, `log`, `log2`, `log10`, `acos`, `asin`, `atan`, `atan2`, `tanh`. La tabla y su justificación están en `DECISION_LOG.md` (DL-35) y se copiarán a `tests/test_eval_parity.cpp` en 2.0c.3c.
+- **`mod`:** GLSL `x - y*floor(x/y)`, no `fmod`. El evaluador del lenguaje ya lo hace; la VM de bytecode escalar/SIMD y el JIT usan `fmod`/`fmodf` y devuelven 0 para `y == 0`. 2.0c.3b debe corregirlos.
+- **División:** IEEE (`inf`/`NaN`), sin 0-silencioso. La VM escalar/SIMD y el JIT enmascaran `b == 0` a 0; 2.0c.3b debe quitar las máscaras. El test de 2.0c.3c verificará `1/0`, `-1/0`, `0/0`, `1/-0`, `-1/-0`; si el driver no cumple, fallo ruidoso (2.0c.4 decide la salida).
+- **Alcance:** 2.0c.3b implementa los 12 opcodes en los 5 consumidores y el compilador de expresiones de parámetro SDF a bytecode. `tanh` no está entre los 12; la fila de la tabla es política y el test la omite salvo que se apruebe un 13º opcode.
+- **Orden:** 2.0c.3a → 2.0c.3b → 2.0c.3c → 2.0c.3d; DL-32 después de 2.0c.3; 2.0c.4 solo si la división no se resuelve aquí.
+
+### Verificación
+- Solo documentación: no se modificó código, tests ni assets.
+- `DECISION_LOG.md` actualizado en el repo del lenguaje, en `repos/DECISION_LOG.md` y en el repo del motor (copia sincronizada; el motor tenía el log parado en DL-30).
+
 ## 2026-11-08 — v0.24 — Paso 2.0c.2b: notación científica y constantes que faltaban (DL-33)
 
 ### Arreglado
