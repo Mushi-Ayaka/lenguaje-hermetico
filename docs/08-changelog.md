@@ -1,5 +1,20 @@
 # Changelog
 
+## 2026-11-08 — v0.26 — Paso 2.0c.3b: registro de decisiones antes de código (DL-36)
+
+### Documentado (sin código todavía)
+- **Numeración corregida:** `ONT_END` vale **34**, no 35. Los 12 opcodes nuevos son **35..46**: `step`, `smoothstep`, `sign`, `exp`, `log`, `log2`, `log10`, `acos`, `asin`, `atan`, `atan2`, `fract`. Se añaden después de `ONT_END`; 0..34 no se reordena.
+- **Compilador de expresiones:** vivirá en `herm/herm_eval.cpp/.h` (`compileOntExpression` + `OntExprSink`), replicando la gramática de `ExprParser` y con una prueba diferencial contra `evalExpression`. No se duplica el parser en el motor.
+- **Preservación:** `evaluateFrame(..., false)` para los paths `.ont`; las transformaciones se siguen plegando. `writeOnt` recibe las expresiones vivas y las compila.
+- **AABB/`d_min`:** subárbol con expresión -> AABB `±1e9` y `d_min = 0`; no se muestrea `evalSdfTree`, que lee `params[i].constant`.
+- **Rechazos ruidosos en `.ont`:** `%` (fmod vs `mod` GLSL), `tanh` (sin 13.º opcode), `sample`, variables de sombreado `nx..lz`, función/variable desconocida, `CUSTOM` y expresión en parámetro no usado.
+- **Bug de `clamp`:** `herm_eval.cpp` calcula `fmax(fmin(hi,lo),x)` e ignora el límite superior. Se corrige a `fmax(fmin(x,hi),lo)`; es la semántica documentada y la de `ONT_CLAMP`.
+- **Versión/flags:** `MATH_EXTENDED` si aparece un opcode 35..46; `SDF_EXPR_PARAMS` si algún parámetro emitido es expresión; `version=2` si cualquiera; v1 solo si ninguno.
+- **Alcance motor:** los cinco consumidores (VM escalar, VM SIMD, JIT, GLSL, SPIR-V) implementan los 12, corrigen `mod`/división y fallan ruidosamente ante pila inválida u opcode desconocido. `herm_bridge` y `ri_optimizer` quedan fuera y registrados como deuda.
+
+### Estado
+- Registro completo en `DECISION_LOG.md` (DL-36). **La implementación no ha empezado**; este commit solo desbloquea 2.0c.3b.
+
 ## 2026-11-08 — v0.25 — Paso 2.0c.3a: contrato de paridad CPU/GPU (DL-35)
 
 ### Documentado (sin código)

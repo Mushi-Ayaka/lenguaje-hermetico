@@ -776,6 +776,107 @@ Esto también rompe la paridad y no lo arregla ningún opcode nuevo. Debe entrar
 
 ---
 
+## DL-36 — 2.0c.3b: compilador de expresiones de parámetro SDF a bytecode y los 12 opcodes.
+
+**Estado:** REGISTRADO (2026-11-08). Autoriza la implementación de 2.0c.3b. No se escribe código de 2.0c.3b hasta que este registro exista en los tres `DECISION_LOG.md`. Al cerrar el paso se marca IMPLEMENTADO con la fecha real y la versión del changelog.
+
+**Mandato (2026-11-08):** DL-35 fija el alcance: 12 opcodes, compilador de expresiones de parámetro SDF, `mod` GLSL y división IEEE. Orden estricto 2.0c.3a → 2.0c.3b → 2.0c.3c → 2.0c.3d. Este paso **no** toca `--render` (DL-32), **no** toca `smooth_union`/`displace` (DL-32), **no** cambia la sintaxis del lenguaje y **no** añade `tanh`.
+
+**Corrección de numeración (obligatoria):** `ONT_END` vale **34**, no 35. Conteo: `ONT_CONST=0`; 13 variables (1..13); 20 operaciones (14..33); `ONT_END=34`. El comentario de `contrato/ont.h:207` («ONT_END = 35; los nuevos empiezan en 36») y las referencias a «36..47» de DL-34/changelog están desplazados en uno. Los opcodes nuevos son **35..46**, se añaden **después** de `ONT_END` y nunca se reordena 0..34.
+
+| Valor | Opcode | Pila | Semántica |
+|---|---|---|---|
+| 35 | `ONT_STEP` | pop edge, pop x | `(x < edge) ? 0.0 : 1.0` (GLSL `step(edge,x)`) |
+| 36 | `ONT_SMOOTHSTEP` | pop x, pop e1, pop e0 | `t = clamp((x-e0)/(e1-e0),0,1); t*t*(3-2t)` |
+| 37 | `ONT_SIGN` | pop x | `(x>0)?1:((x<0)?-1:0)` |
+| 38 | `ONT_EXP` | pop x | `exp(x)` |
+| 39 | `ONT_LOG` | pop x | `log(x)` |
+| 40 | `ONT_LOG2` | pop x | `log2(x)` |
+| 41 | `ONT_LOG10` | pop x | `log10(x)` |
+| 42 | `ONT_ACOS` | pop x | `acos(x)` |
+| 43 | `ONT_ASIN` | pop x | `asin(x)` |
+| 44 | `ONT_ATAN` | pop x | `atan(x)` |
+| 45 | `ONT_ATAN2` | pop x, pop y | `atan2(y,x)` (GLSL `atan(y,x)`) |
+| 46 | `ONT_FRACT` | pop x | `x - floor(x)` |
+
+**Gramática del compilador (idéntica a `ExprParser`):** no se inventa sintaxis; se replica la que ya evalúa `evalExpression`.
+- `expr = term (('+'|'-') term)*`
+- `term = unary (('*'|'/'|'%') unary)*`
+- `unary = ('-'|'+')* power`
+- `power = primary ('^' primary)?` — `^` no es asociativo y su lado derecho es `primary`, igual que `herm_eval.cpp:101-112`.
+- `primary`: número con notación científica (incluye `.5`, `5.`, `1e-6`, `2^-3`), `(expr)`, constantes `pi`, `e`, `LN2`, `PLANCK`, variables `x`, `y`, `z`, `w`, `t`, y variables de sombreado `nx..lz` (se reconocen para rechazarlas).
+- Funciones: `sin cos tan tanh abs sqrt floor ceil exp log log2 log10 acos asin atan sign fract pow min max atan2 mod step clamp lerp mix sample smoothstep`. Las llamadas pueden omitir paréntesis (`sin x`), exactamente como el evaluador; `parseArg` consume `expr()`.
+- La salida es postfija, una instrucción de 5 bytes `[u8 op][f32 payload]`, y deja exactamente un valor en la pila.
+
+**Ubicación:** `herm/herm_eval.cpp` y `herm/herm_eval.h`. Se añade `compileOntExpression(const std::string&, OntExprSink&)`; `OntExprSink` expone `emitOp(uint8_t)` y `emitConst(float)`. `herm_ont.cpp` implementa el sink sobre `BytecodeBuilder`. El compilador vive junto al evaluador para que la prueba diferencial `evalExpression` vs bytecode detecte cualquier deriva de gramática. **No** se duplica el parser en el motor ni se guarda un AST en `.rih`.
+
+**Parámetros SDF:** en `sdfPrimToBytecode`, el lambda `cf(i,def)` se sustituye por `emitParam(i,def)`:
+- Si el parámetro es constante, se emite `ONT_CONST` con el mismo valor de hoy. Los plegados locales que ya existían (`h/2`, `1.0`, `1.73205`) se conservan para que el bytecode v1 de escenas sin expresiones no cambie.
+- Si es expresión, se compila en el punto de uso con `emitParam`. Una expresión usada dos veces (p. ej. `R` en `torus`) se emite dos veces; no hay opcode `DUP` y no se añade.
+- Los parámetros que la fórmula `.ont` no usa (`ontParamCount`) y que sean expresión se rechazan: hoy se descartarían en silencio. Los constantes en esos parámetros siguen igual (la divergencia `plane`/`capsule`/`cone` es DL-32).
+
+**Preservación de expresiones hasta `.ont`:**
+- `evaluateFrame(const Rih&, float, bool fold_sdf_params = true)`. Las transformaciones se pliegan siempre; el nuevo flag solo afecta a `params[i].is_expr` del árbol SDF.
+- Los paths `.ont` de `main.cpp` pasan `false`; `--render`, `--gte` y la emisión de `.rih` siguen con `true`. Así `--render` no cambia y `writeOnt` recibe la expresión viva.
+- Una expresión constante (`0.65 + sin(w*2)*0.35`) ya no se pliega para `.ont`: se compila a bytecode. Es el objetivo del paso. `w`/`t` se emiten como `ONT_VAR_W` y el motor los evalúa con `ubo.time`.
+
+**AABB y `d_min` conservadores:**
+- Nuevo helper `sdfTreeHasExprParam(nodes, idx)`: recorre el subárbol y devuelve true si alguna primitiva usada tiene `params[i].is_expr`.
+- `computeNodeAabbRecursive`: si el subárbol tiene una expresión, el AABB local es `[-1e9,+1e9]` en los tres ejes (y luego se transforma a world como siempre). Una expresión puede mover la superficie a cualquier punto; un AABB finito es mentira.
+- `flattenNode`: si el árbol tiene expresión, `fn.d_min = 0` y **no** se llama a `evalSdfTree` para el centro (hoy lee `params[i].constant` y daría un valor espurio).
+- `buildBvhRecursive`: si una hoja contiene algún `OntFlatNode` con expresión, `node->d_min = 0` y no se muestrea `evalSdfTree`.
+- Se usa `1e9f`, no `inf`, para que el área de superficie del BVH y la aritmética sigan siendo finitas y consistentes con el «miss» existente.
+
+**Validación:** `validateOntCompatibility` deja de muestrear tres puntos (`checkOntSdfParam`) y pasa a ser un **dry-run** de `sdfTreeToBytecode` para el árbol SDF de cada `Node` y cada `def`, descartando el bytecode. Así la validación y la emisión no pueden divergir. `checkOntSdfParam` y `findUnsupportedOntFn` se retiran. El error sigue incluyendo primitiva, índice, expresión y línea.
+
+**Rechazos ruidosos en `.ont`:**
+
+| Caso | Motivo | Acción |
+|---|---|---|
+| `%` | El evaluador usa `std::fmod`; `ONT_MOD` es GLSL `mod`. Diflieren en negativos y no hay opcode `FMOD`. | Error explícito; sugiere `mod(a,b)`. No hay usos de `%` en `.herm` (medido 2026-11-08). |
+| `tanh(...)` | No está entre los 12 opcodes; un 13.º exige decisión explícita. | Error explícito. |
+| `sample(...)` | Reentra en el evaluador con un offset; `ONT_SAMPLE` tiene otra semántica y los decompiladores GPU lo convierten en `0.0`. | Error explícito. |
+| `nx..lz` | Un parámetro SDF no tiene contexto de sombreado; `glsl_gen` los mapea a `0.0` y `spirv_gen` a vectores indefinidos. | Error explícito. |
+| función/variable desconocida | El parser no la conoce. | Error del compilador con posición. |
+| `CUSTOM` | Los nombres `terrain`/`rock`/... no son expresiones y el alcance de DL-31 lo rechaza. | Se mantiene el rechazo. |
+| expresión en parámetro no usado | El bytecode la descartaría en silencio. | Error explícito. |
+
+**Bug descubierto y corregido: `clamp`.** `herm_eval.cpp:223` calcula `fmax(fmin(hi,lo),x)`, que ignora el límite superior. La documentación (`docs/04-guia-uso.md:299`, `docs/12-guia-sintaxis-completa.md:166`) y `ONT_CLAMP` definen `clamp(x,lo,hi)`. Se corrige a `fmax(fmin(x,hi),lo)`. Vectores: `clamp(1.5,0,1)=1`, `clamp(-0.5,0,1)=0`, `clamp(0.5,0,1)=0.5`. Es un bugfix de semántica, no sintaxis; cualquier escena que dependiera del comportamiento buggy se mide en 2.0c.3d.
+
+**Versión y feature_flags:**
+- `ontVersionForBytecode(bc, has_sdf_expr_params, feature_flags)`: `ONT_FEATURE_MATH_EXTENDED` si aparece cualquier opcode 35..46; `ONT_FEATURE_SDF_EXPR_PARAMS` si `has_sdf_expr_params`.
+- `version = 2` si cualquiera de los dos flags está; `version = 1` solo si ninguno. Un opcode > 46 es un bug del compilador y lanza.
+- `has_sdf_expr_params` se calcula sobre los `OntFlatNode` realmente emitidos (`sdfTreeHasExprParam`), no sobre escenas vacías. Se marca aunque la expresión solo use opcodes v1: el archivo lo produjo el compilador de expresiones.
+- Los `.ont` v1 existentes no cambian. Los lectores deben aceptar 35..46 en `ontOpcodeIsKnown`; uno que no lo haga rechaza el archivo con error, no lo ejecuta como 0.
+
+**Motor (cinco consumidores):**
+- `render/scene.h`: espejo de los 12 opcodes después de `ONT_END`; `ontOpcodeIsKnown` acepta 0..46; corregir el comentario de numeración.
+- `render/bytecode_vm.h` (`execBcRaw`): quitar las máscaras `b == 0` de `ONT_DIV`; `ONT_MOD` a la fórmula GLSL; añadir los 12 opcodes; pila con under/overflow ruidoso; `ONT_END` con pila vacía lanza; `bc_len % 5 != 0` lanza. El path antiguo `BcOp` (`execBc`) recibe la misma corrección de `mod`/división por consistencia, aunque no lo usa el `.ont` v1/v2.
+- `render/ray_march_simd.h` (`execBcRaw4`): dejar `_mm_div_ps` sin máscara; `mod` GLSL por carril; 12 opcodes por carril; pila ruidosa; `ONT_END` vacío lanza.
+- `render/jit_compiler.cpp`: quitar la máscara de división; `_cdecl_jit_mod_ps_ref` a fórmula GLSL; helpers escalares para los 12; validación de altura de pila en tiempo de compilación (hoy `if (stack.size() >= n)` omite la operación en silencio); `ONT_END` vacío lanza. El JIT es opcional; si el bytecode es inválido, falla ruidosamente, no cae a otra ruta.
+- `render/glsl_gen.cpp` y `render/spirv_gen.cpp`: añadir los 12; fórmulas explícitas para `step`, `smoothstep`, `sign`, `fract` y `mod` (`a - b*floor(a/b)`); `log10` como `log2(x) * 0.3010299956639812`; `atan2(a,b)` como `atan(a,b)`; quitar los `abs()` que `spirv_gen` pone alrededor de `pow`/`sqrt`; formato de constantes compartido: `%.9g` con round-trip, `-0.0` explícito, `inf`/`NaN` con `uintBitsToFloat(0x7f800000u/0xff800000u/0x7fc00000u)`; `pop()` vacío, pila final vacía, opcode desconocido y `ONT_SAMPLE` lanzan en vez de devolver `0.0`; las variables de sombreado se emiten como `0.0` en ambos decompiladores (hoy `spirv_gen` emite `n.x`/`v.x`/`l.x` indefinidos) porque el compilador las rechaza y las llamadas CPU pasan 0.
+- `render/scene.cpp` (`loadOnt`): ya valida con `ontOpcodeIsKnown`; se añaden pruebas de que 35..46 se aceptan y 47 se rechaza.
+- `core/herm_bridge.cpp`: **fuera de alcance**. Su compilador propio sigue plegando expresiones complejas a `0.0` y escribiendo `feature_flags=0`; queda como deuda conocida para DL-32 o un paso posterior. El path de paridad de 2.0c.3 es el `.ont` de línea de comandos.
+- `render/ri_optimizer.cpp`: **fuera de alcance**. Solo lo usa `herm_bridge`; pliega división con epsilon y no conoce los opcodes nuevos. Deuda conocida.
+
+**Pruebas de 2.0c.3b (se escriben en este paso):**
+- Diferencial: para un corpus de expresiones, `evalExpression(expr,x,y,z,w)` contra la evaluación postfija de `compileOntExpression` con `execBcRaw`. Cubre los 12 opcodes, los vectores de `mod`/división de DL-35, los de `clamp`, constantes, variables, precedencia/asociatividad, llamadas sin paréntesis y notación científica.
+- Rechazos: `%`, `tanh`, `sample`, variables de sombreado, función desconocida, `CUSTOM`, expresión en parámetro no usado.
+- Primitivas: `sphere(1.0 + x*0.5)`, `torus(1.0 + x, 0.25)`, `box(1.0+w, 1.0, 1.0)` contra la fórmula evaluada en puntos.
+- `.ont`: escena con expresión -> `version=2` + `SDF_EXPR_PARAMS`; escena con opcode nuevo -> `MATH_EXTENDED`; escena sin nada -> `version=1`; `loadOnt` acepta y rechaza 47.
+- Suites existentes: f0 24/24, f1 10/10, f3 16/16, scene 81/82, os_rhi 30/31; los dos fallos preexistentes (`orbit zoom reduces distance`, os_rhi) se documentan, no se arreglan aquí.
+
+**Fuera de alcance:** `--render` (DL-32), `smooth_union`/`smooth_subtract`/`smooth_intersect`/`repeat`/`twist`/`elongate`/`displace` (DL-32), `tanh` (13.º opcode), `%` (opcode `FMOD`), `sample`, `CUSTOM`, `herm_bridge`, `ri_optimizer`, cualquier sintaxis nueva y cualquier campo nuevo en la cabecera `.ont`.
+
+**Criterio de aceptación de 2.0c.3b:**
+- `herm.exe --ont` compila `sphere(1.0 + x*0.5)`, las 12 funciones y los vectores de `mod`/división, y escribe `version=2` con los flags correctos.
+- Los 12 opcodes dan el mismo resultado (según la tabla de DL-35) en VM escalar, VM SIMD, JIT, GLSL y SPIR-V.
+- `%`, `tanh`, `sample`, variables de sombreado, función desconocida, `CUSTOM` y expresión en parámetro no usado fallan con primitiva, parámetro y línea; no hay fallback silencioso.
+- Las suites existentes pasan salvo los dos fallos preexistentes.
+- `docs/08-changelog.md` y este registro quedan actualizados con la fecha real y la versión (v0.26).
+
+---
+
 ### Cómo queda el lenguaje después de estas decisiones
 
 Sin cambios. Ni una línea de sintaxis nueva. Exactamente como está hoy. El parser solo se extiende para aceptar let internos en fn (DL-14), que es una extensión del parser, no de la sintaxis visible.
