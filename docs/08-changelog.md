@@ -1,5 +1,18 @@
 # Changelog
 
+## 2026-11-10 — Medición ULP GPU/CPU (pre-2.0c.3c, sin cambio de versión)
+
+### Medición
+- **Nuevo** `tests/test_ulp_probe.cpp` + `tests/build_ulp_probe.bat` en el motor: probe Vulkan compute que mide las 9 trascendentes de DL-35 contra la CPU (`expf`, `logf`, `log2f`, `log10f`, `acosf`, `asinf`, `atanf`, `atan2f`, `tanhf`) con **395 valores por función** (negativos, cero, positivos, grandes, pequeños y denormales). Fórmulas GPU idénticas a los decompiladores: `log10 = log2(x)*0.3010299956639812`, `atan2 = atan(y,x)`, `tanh = tanh(x)`.
+- **Hardware objetivo:** NVIDIA GeForce RTX 3060 Laptop GPU, driver 616.92, Vulkan 1.4.351. Dos ejecuciones consecutivas dan salida idéntica.
+- **Rango normal IEEE** (sin denormales), mín/mediana/máx ULP: `exp` 0/0/**5**; `log` 0/1/**24 321 578**; `log2` 0/1/**23 947 835**; `log10` 0/0/**23 699 219**; `acos` 0/0/**1**; `asin` 0/0/**2**; `atan` 0/0/**1**; `atan2` 0/0/**2**; `tanh` 0/0/**2**. La mediana es 0 en las 9 (1 en `log`/`log2`).
+- **`log*` cerca de `x=1`:** el máximo relativo explota porque el resultado tiende a cero; el error absoluto se mantiene ≤ 7.7e-6. Fuera de `|x-1| < 1e-3`: `log` máx 31, `log2` máx 23, `log10` máx 27 ULP.
+- **FTZ de denormales:** NVIDIA devuelve `-inf`/`0` para entradas o salidas denormales en trascendentes (p. ej. `log(1e-38) = -inf`, `atan(1e-38) = 0`), mientras la CPU conserva denormales. No es un fallo de categoría en rango normal, pero impide paridad bit a bit en todo el dominio.
+- **Documento completo:** `motor-grafico/docs/22-medicion-ulp-gpu.md`; salida cruda en `motor-grafico/docs/measurements/ulp_rtx3060_2026-11-10.txt`.
+
+### Decisión
+- **No se cambia la tabla de DL-35 en este paso.** Sigue vigente 1 ULP para las 9 funciones hasta que se registre DL-37 con la tabla medida y la regla de denormales. No se escribe `tests/test_eval_parity.cpp` hasta entonces.
+
 ## 2026-11-10 — v0.27 — Paso 2.0c.3b implementado (DL-36)
 
 > Código escrito el 2026-11-08; commit y cierre el 2026-11-10.

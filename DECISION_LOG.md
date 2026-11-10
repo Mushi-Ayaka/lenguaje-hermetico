@@ -774,6 +774,13 @@ Esto también rompe la paridad y no lo arregla ningún opcode nuevo. Debe entrar
 - `herm/herm_render.cpp:152-160`, `:202`, `:220` (`--render`).
 - `DECISION_LOG.md:611-631` (DL-32: medición de `--render`, `plane`/`capsule`/`cone`).
 
+**Medición real posterior (2026-11-10, RTX 3060 Laptop, driver NVIDIA 616.92):**
+- Probe `tests/test_ulp_probe.cpp` (motor) con 395 valores por función; dos ejecuciones idénticas. Detalle en `motor-grafico/docs/22-medicion-ulp-gpu.md` y salida cruda en `motor-grafico/docs/measurements/ulp_rtx3060_2026-11-10.txt`.
+- Rango normal IEEE, mín/mediana/máx ULP: `exp` 0/0/5; `log` 0/1/24 321 578; `log2` 0/1/23 947 835; `log10` 0/0/23 699 219; `acos` 0/0/1; `asin` 0/0/2; `atan` 0/0/1; `atan2` 0/0/2; `tanh` 0/0/2.
+- Los máximos de `log*` son la zona `x≈1` (resultado→0); el error absoluto es ≤ 7.7e-6. Fuera de `|x-1| < 1e-3`: `log` 31, `log2` 23, `log10` 27 ULP.
+- **FTZ:** NVIDIA flush-ea entradas/salidas denormales en trascendentes (`log(1e-38) = -inf`, `atan(1e-38) = 0`); la CPU x86 las conserva. La paridad bit a bit en todo el dominio no es alcanzable sin igualar el FTZ o excluir denormales.
+- **La tabla de 1 ULP de este registro no se cumple en el hardware objetivo.** No se modifica aquí: cualquier tabla nueva, criterio híbrido para `log*` y regla de denormales debe registrarse en **DL-37** antes de escribir `tests/test_eval_parity.cpp`.
+
 ---
 
 ## DL-36 — 2.0c.3b: compilador de expresiones de parámetro SDF a bytecode y los 12 opcodes.
