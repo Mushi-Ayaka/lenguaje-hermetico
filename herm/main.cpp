@@ -193,10 +193,13 @@ int main(int argc, char* argv[]) {
                         dot2 = std::string::npos;
                     auto ont_path = (dot2 != std::string::npos) ? out_path.substr(0, dot2) : out_path;
                     ont_path += ".ont";
-                    bool ont_ok = herm::writeOnt(frame_rih, ont_path);
+                    // 2.0c.3b (DL-36): las expresiones de parametro SDF llegan
+                    // vivas a writeOnt; solo se pliegan las transformaciones.
+                    auto ont_rih = herm::evaluateFrame(rih, (float)f, false);
+                    bool ont_ok = herm::writeOnt(ont_rih, ont_path);
                     if (ont_ok) {
                         std::cout << "  " << ont_path << "\n";
-                        herm::writeObs(frame_rih, ont_path);
+                        herm::writeObs(ont_rih, ont_path);
                         std::cout << "  " << ont_path.substr(0, ont_path.rfind('.')) << ".obs\n";
                     } else {
                         std::cerr << "Error: no se pudo escribir '" << ont_path << "'\n";
@@ -283,10 +286,10 @@ int main(int argc, char* argv[]) {
                             dot3 = std::string::npos;
                         auto ont_path = (dot3 != std::string::npos) ? output_prefix.substr(0, dot3) : output_prefix;
                         ont_path += ".ont";
-                        // W=1: no hay bucle de fotogramas. evaluateFrame(.,0)
-                        // pliega las expresiones que solo dependen de w (las
-                        // espaciales ya las rechazo validateOntCompatibility).
-                        auto ont_rih = herm::evaluateFrame(rih, 0.0f);
+                        // W=1: no hay bucle de fotogramas. evaluateFrame(.,0,false)
+                        // conserva las expresiones de parametro SDF para que
+                        // writeOnt las compile (2.0c.3b, DL-36).
+                        auto ont_rih = herm::evaluateFrame(rih, 0.0f, false);
                         bool ont_ok = herm::writeOnt(ont_rih, ont_path);
                         if (ont_ok) {
                             herm::writeObs(ont_rih, ont_path);

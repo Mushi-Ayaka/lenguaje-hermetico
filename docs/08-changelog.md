@@ -1,5 +1,32 @@
 # Changelog
 
+## 2026-11-10 — v0.27 — Paso 2.0c.3b implementado (DL-36)
+
+> Código escrito el 2026-11-08; commit y cierre el 2026-11-10.
+
+### Lenguaje
+- **12 opcodes nuevos 35..46** en `contrato/ont.h` (`step`, `smoothstep`, `sign`, `exp`, `log`, `log2`, `log10`, `acos`, `asin`, `atan`, `atan2`, `fract`), añadidos después de `ONT_END = 34`; 0..34 no se reordena.
+- **Compilador de expresiones** `compileOntExpression` + `OntExprSink` en `herm/herm_eval.cpp/.h`, réplica de la gramática de `ExprParser`. Rechaza con posición `%`, `tanh`, `sample`, variables de sombreado, función/variable desconocida. `clamp` corregido a `fmax(fmin(x,hi),lo)`.
+- **Emisión `.ont`**: todas las primitivas compilan sus parámetros expresión en el punto de uso; `CUSTOM` y expresión en parámetro no usado se rechazan. `validateOntCompatibility` es ahora un dry-run de `sdfTreeToBytecode` (validación y emisión no pueden divergir).
+- **AABB/`d_min` conservadores**: subárbol con expresión -> AABB `±1e9`, `d_min = 0`, sin muestrear `evalSdfTree`.
+- **`evaluateFrame(..., bool fold_sdf_params = true)`**: los paths `.ont` pasan `false`; `--render` y `.rih` no cambian. `writeOnt` calcula `version=2` + flags (`MATH_EXTENDED`, `SDF_EXPR_PARAMS`) sobre los nodos emitidos. Escena plana sigue produciendo `version=1`, `flags=0`.
+
+### Motor
+- `render/scene.h`: espejo de 35..46 y `ontOpcodeIsKnown` (0..46).
+- `render/scene.cpp`: `loadOnt` rechaza opcode 47, flags desconocidos y **v1 con opcodes 35..46** («no permitido en v1»). v2 con opcode 46 se acepta.
+- `render/bytecode_vm.h` y `render/ray_march_simd.h`: división IEEE sin máscara, `mod` GLSL, 12 opcodes, pila con under/overflow ruidoso, `ONT_END` estricto, bytecode sin `END` lanza.
+- `render/jit_compiler.cpp`: `jitValidateStack` pre-valida altura/opcodes/END; máscara de división eliminada; helpers para los 12; `mod` GLSL.
+- `render/glsl_gen.cpp` y `render/spirv_gen.cpp`: 12 opcodes con fórmulas explícitas, `log10` como `log2(x)*0.3010299956639812`, literales `%.9g`/`-0.0`/inf/NaN, sin `abs()` espurios, pila/SAMPLE/opcode desconocido lanzan.
+- `build_libherm.bat`: `/I "deps\lenguaje-hermetico"` porque `herm_eval.cpp` incluye `contrato/ont.h`.
+
+### Verificación
+- **Nuevo** `tests/test_ont_v2.cpp` + `tests/build_ont_v2_test.bat`: **36/36**. Diferencial de 33 expresiones (bit a bit), `mod`/división escalar y SIMD, 12 opcodes escalar/SIMD/JIT, decompiladores GLSL/SPIR-V + `glslc`, rechazos ruidosos y `loadOnt` v1/v2/47/flags.
+- Suites existentes: f0 24/24, f1 10/10, f3 16/16, scene 81/82, os_rhi 30/31. Los dos fallos preexistentes (`orbit zoom reduces distance`, `bodegon.rih found`) se documentan, no se arreglan aquí.
+- Manual: `sphere(1.0+x*0.5)`, `torus(1.0+z,0.25)`, `box(1.0+w,0.5,2.0-y)` -> `version=2`, `flags=2`, AABB `±1e9`; escena con los 12 -> `version=2`, `flags=3`, opcodes 35..46.
+
+### Deuda abierta
+- `tanh` (13.º opcode), `%` (opcode `FMOD`), `sample`, `CUSTOM`, `herm_bridge` y `ri_optimizer`; fuera del alcance de 2.0c.3b.
+
 ## 2026-11-08 — v0.26 — Paso 2.0c.3b: registro de decisiones antes de código (DL-36)
 
 ### Documentado (sin código todavía)

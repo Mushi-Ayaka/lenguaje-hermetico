@@ -1,4 +1,5 @@
 #include "herm_eval.h"
+#include "contrato/ont.h"
 #include <cmath>
 #include <cctype>
 #include <stdexcept>
@@ -220,7 +221,7 @@ private:
                 skipWs(); if (peek() == ',') advance();
                 arg3 = parseArg();
                 closeParen();
-                if (name == "clamp") return std::fmax(std::fmin(arg3, arg2), arg);
+                if (name == "clamp") return std::fmax(std::fmin(arg, arg3), arg2);
                 if (name == "lerp" || name == "mix") return arg + (arg2 - arg) * arg3;
                 if (name == "smoothstep") {
                     float t = (arg3 - arg) / (arg2 - arg);
@@ -260,6 +261,281 @@ private:
     }
 };
 
+// ============================================================================
+// 2.0c.3b (DL-36): expression -> ONT postfix bytecode
+//
+// Replica la gramatica de ExprParser (misma precedencia, mismo `^` no
+// asociativo, mismas llamadas sin parentesis). La diferencia es que en vez
+// de calcular emite instrucciones de 5 bytes. Cualquier cambio de gramatica
+// debe hacerse en los dos sitios; la prueba diferencial lo detecta.
+// ============================================================================
+
+class OntExprCompiler {
+public:
+    OntExprCompiler(const std::string& s, OntExprSink& sink)
+        : s(s), sink(sink), pos(0) {}
+
+    void parse() {
+        skipWs();
+        expr();
+        skipWs();
+        if (pos < s.size())
+            throw std::runtime_error("expresion invalida en '" + s + "' (pos " +
+                                     std::to_string(pos) + ")");
+    }
+
+private:
+    const std::string& s;
+    OntExprSink& sink;
+    size_t pos;
+
+    char peek() const { return pos < s.size() ? s[pos] : '\0'; }
+    char advance() { return pos < s.size() ? s[pos++] : '\0'; }
+
+    void skipWs() {
+        while (pos < s.size() && std::isspace((unsigned char)s[pos])) pos++;
+    }
+
+    void expr() {
+        term();
+        skipWs();
+        while (peek() == '+' || peek() == '-') {
+            char op = advance();
+            skipWs();
+            term();
+            sink.emitOp(op == '+' ? ONT_ADD : ONT_SUB);
+        }
+    }
+
+    void term() {
+        unary();
+        skipWs();
+        while (peek() == '*' || peek() == '/' || peek() == '%') {
+            char op = advance();
+            skipWs();
+            if (op == '%')
+                throw std::runtime_error(
+                    "el operador '%' usa fmod y no tiene opcode ONT; "
+                    "usa mod(a,b) en '" + s + "'");
+            unary();
+            sink.emitOp(op == '*' ? ONT_MUL : ONT_DIV);
+        }
+    }
+
+    void unary() {
+        skipWs();
+        if (peek() == '-') {
+            advance();
+            unary();
+            sink.emitOp(ONT_NEG);
+            return;
+        }
+        if (peek() == '+') {
+            advance();
+            unary();
+            return;
+        }
+        power();
+    }
+
+    void power() {
+        primary();
+        skipWs();
+        if (peek() == '^') {
+            advance();
+            skipWs();
+            primary();
+            sink.emitOp(ONT_POW);
+        }
+    }
+
+    void primary() {
+        skipWs();
+        char c = peek();
+
+        // Numero (incluye el '-' de 2^-3, igual que ExprParser::number)
+        if (c == '.' || std::isdigit((unsigned char)c) ||
+            (c == '-' && pos + 1 < s.size() &&
+             std::isdigit((unsigned char)s[pos + 1]))) {
+            sink.emitConst(number());
+            return;
+        }
+
+        // '(' expr ')'
+        if (c == '(') {
+            advance();
+            expr();
+            skipWs();
+            if (peek() == ')') advance();
+            return;
+        }
+
+        // Identificador: constante, variable o funcion
+        if (std::isalpha((unsigned char)c) || c == '_') {
+            std::string name;
+            while (pos < s.size() &&
+                   (std::isalnum((unsigned char)s[pos]) || s[pos] == '_'))
+                name += advance();
+
+            // Constantes
+            if (name == "pi")     { sink.emitConst(3.14159265358979323846f); return; }
+            if (name == "e")      { sink.emitConst(2.71828182845904523536f); return; }
+            if (name == "LN2")    { sink.emitConst(0.69314718055994530942f); return; }
+            if (name == "PLANCK") { sink.emitConst(6.62607015e-34f); return; }
+
+            // Variables
+            if (name == "x") { sink.emitOp(ONT_VAR_X); return; }
+            if (name == "y") { sink.emitOp(ONT_VAR_Y); return; }
+            if (name == "z") { sink.emitOp(ONT_VAR_Z); return; }
+            if (name == "w" || name == "t") { sink.emitOp(ONT_VAR_W); return; }
+
+            // Variables de sombreado: el bytecode tiene opcodes, pero un
+            // parametro SDF no tiene contexto de sombreado y los
+            // decompiladores GPU no las representan igual. Fallo ruidoso.
+            if (name == "nx" || name == "ny" || name == "nz" ||
+                name == "vx" || name == "vy" || name == "vz" ||
+                name == "lx" || name == "ly" || name == "lz") {
+                throw std::runtime_error(
+                    "la variable de sombreado '" + name +
+                    "' no tiene contexto en un parametro SDF ('" + s + "')");
+            }
+
+            // Funciones sin opcode: rechazo explicito antes de parsear args.
+            if (name == "tanh")
+                throw std::runtime_error(
+                    "'tanh' no tiene opcode ONT (los 12 de 2.0c.3b no la "
+                    "incluyen) en '" + s + "'");
+            if (name == "sample")
+                throw std::runtime_error(
+                    "'sample' no se puede representar en bytecode ONT "
+                    "(reentra en el evaluador con un offset) en '" + s + "'");
+
+            // Parentesis opcional, igual que ExprParser.
+            skipWs();
+            bool hasParen = (peek() == '(');
+            if (hasParen) advance();
+
+            auto parseArg = [&]() { skipWs(); expr(); };
+            auto closeParen = [&]() {
+                skipWs();
+                if (hasParen) {
+                    if (peek() != ')')
+                        throw std::runtime_error("falta ')' en '" + s + "'");
+                    advance();
+                }
+            };
+
+            // Una entrada
+            uint8_t op1 = oneArgOp(name);
+            if (op1 != 0xFF) {
+                parseArg();
+                closeParen();
+                sink.emitOp(op1);
+                return;
+            }
+
+            // Dos entradas
+            uint8_t op2 = twoArgOp(name);
+            if (op2 != 0xFF) {
+                parseArg();
+                skipWs(); if (peek() == ',') advance();
+                parseArg();
+                closeParen();
+                sink.emitOp(op2);
+                return;
+            }
+
+            // Tres entradas
+            uint8_t op3 = threeArgOp(name);
+            if (op3 != 0xFF) {
+                parseArg();
+                skipWs(); if (peek() == ',') advance();
+                parseArg();
+                skipWs(); if (peek() == ',') advance();
+                parseArg();
+                closeParen();
+                sink.emitOp(op3);
+                return;
+            }
+
+            throw std::runtime_error("funcion o variable desconocida '" +
+                                     name + "' en '" + s + "'");
+        }
+
+        throw std::runtime_error("caracter inesperado '" +
+                                 std::string(1, c) + "' en '" + s + "'");
+    }
+
+    static uint8_t oneArgOp(const std::string& name) {
+        if (name == "sin")   return ONT_SIN;
+        if (name == "cos")   return ONT_COS;
+        if (name == "tan")   return ONT_TAN;
+        if (name == "abs")   return ONT_ABS;
+        if (name == "sqrt")  return ONT_SQRT;
+        if (name == "floor") return ONT_FLOOR;
+        if (name == "ceil")  return ONT_CEIL;
+        if (name == "exp")   return ONT_EXP;
+        if (name == "log")   return ONT_LOG;
+        if (name == "log2")  return ONT_LOG2;
+        if (name == "log10") return ONT_LOG10;
+        if (name == "acos")  return ONT_ACOS;
+        if (name == "asin")  return ONT_ASIN;
+        if (name == "atan")  return ONT_ATAN;
+        if (name == "sign")  return ONT_SIGN;
+        if (name == "fract") return ONT_FRACT;
+        return 0xFF;
+    }
+
+    static uint8_t twoArgOp(const std::string& name) {
+        if (name == "pow")   return ONT_POW;
+        if (name == "min")   return ONT_MIN;
+        if (name == "max")   return ONT_MAX;
+        if (name == "atan2") return ONT_ATAN2;
+        if (name == "mod")   return ONT_MOD;
+        if (name == "step")  return ONT_STEP;
+        return 0xFF;
+    }
+
+    static uint8_t threeArgOp(const std::string& name) {
+        if (name == "clamp")      return ONT_CLAMP;
+        if (name == "lerp")       return ONT_LERP;
+        if (name == "mix")        return ONT_MIX;
+        if (name == "smoothstep") return ONT_SMOOTHSTEP;
+        return 0xFF;
+    }
+
+    float number() {
+        skipWs();
+        std::string val;
+        if (peek() == '-') val += advance();
+        while (pos < s.size() && std::isdigit((unsigned char)s[pos]))
+            val += advance();
+        if (peek() == '.') {
+            val += advance();
+            while (pos < s.size() && std::isdigit((unsigned char)s[pos]))
+                val += advance();
+        }
+        if (peek() == 'e' || peek() == 'E') {
+            val += advance();
+            if (peek() == '+' || peek() == '-') val += advance();
+            while (pos < s.size() && std::isdigit((unsigned char)s[pos]))
+                val += advance();
+        }
+        try {
+            return std::stof(val);
+        } catch (...) {
+            throw std::runtime_error("numero invalido '" + val + "' en '" + s + "'");
+        }
+    }
+};
+
+void compileOntExpression(const std::string& expr, OntExprSink& sink) {
+    if (expr.empty())
+        throw std::runtime_error("expresion ONT vacia");
+    OntExprCompiler compiler(expr, sink);
+    compiler.parse();
+}
+
 float evalExpression(const std::string& expr, float t) {
     if (expr.empty()) return 0.0f;
     ExprParser parser(expr, t);
@@ -274,31 +550,6 @@ float evalExpression(const std::string& expr, float x, float y, float z, float w
     if (expr.empty()) return 0.0f;
     ExprParser parser(expr, x, y, z, w, nx, ny, nz, vx, vy, vz, lx, ly, lz, depth);
     return parser.parse();
-}
-
-std::string findUnsupportedOntFn(const std::string& expr) {
-    static const char* names[] = {
-        "smoothstep", "atan2", "log10", "step", "exp", "log2",
-        "log", "acos", "asin", "atan", "sign", "fract"
-    };
-    auto isIdent = [](char c) {
-        return std::isalnum((unsigned char)c) || c == '_';
-    };
-    for (const char* name : names) {
-        std::string fn(name);
-        size_t pos = 0;
-        while ((pos = expr.find(fn, pos)) != std::string::npos) {
-            size_t end = pos + fn.size();
-            bool left_ok = (pos == 0) || !isIdent(expr[pos - 1]);
-            bool right_ok = (end >= expr.size()) || !isIdent(expr[end]);
-            size_t p = end;
-            while (p < expr.size() && std::isspace((unsigned char)expr[p])) p++;
-            if (left_ok && right_ok && p < expr.size() && expr[p] == '(')
-                return fn;
-            pos = end;
-        }
-    }
-    return "";
 }
 
 } // namespace herm

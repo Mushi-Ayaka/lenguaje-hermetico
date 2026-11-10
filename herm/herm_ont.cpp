@@ -67,33 +67,6 @@ static std::string lineSuffix(int line) {
     return (line > 0) ? " (linea " + std::to_string(line) + ")" : "";
 }
 
-static bool isIdentChar(char c) {
-    return std::isalnum((unsigned char)c) || c == '_';
-}
-
-static bool hasIdent(const std::string& s, const std::string& name) {
-    size_t pos = 0;
-    while ((pos = s.find(name, pos)) != std::string::npos) {
-        size_t end = pos + name.size();
-        bool left_ok = (pos == 0) || !isIdentChar(s[pos - 1]);
-        bool right_ok = (end >= s.size()) || !isIdentChar(s[end]);
-        if (left_ok && right_ok) return true;
-        pos = end;
-    }
-    return false;
-}
-
-// Variables que solo tienen sentido por muestra. Si aparecen en un parametro
-// SDF, el valor no se puede plegar a un escalar por fotograma.
-static bool usesPerSampleVars(const std::string& expr) {
-    static const char* names[] = {
-        "nx", "ny", "nz", "vx", "vy", "vz", "lx", "ly", "lz"
-    };
-    for (const char* n : names)
-        if (hasIdent(expr, n)) return true;
-    return false;
-}
-
 // Numero de parametros que el bytecode ONT usa de verdad por primitiva.
 static int ontParamCount(SdfType t) {
     switch (t) {
@@ -113,141 +86,164 @@ static int ontParamCount(SdfType t) {
     }
 }
 
+// 2.0c.3b (DL-36): adaptador BytecodeBuilder -> OntExprSink.
+struct BytecodeExprSink : OntExprSink {
+    BytecodeBuilder& bb;
+    explicit BytecodeExprSink(BytecodeBuilder& b) : bb(b) {}
+    void emitOp(uint8_t op) override { bb.emit(op); }
+    void emitConst(float v) override { bb.emit(ONT_CONST, v); }
+};
+
+// Emite un parametro SDF: constante (ONT_CONST) o expresion compilada.
+// El error lleva primitiva, indice, expresion y linea.
+static void emitParamExpr(const SdfNode& n, int i, BytecodeBuilder& bb) {
+    const Expr& p = n.params[i];
+    if (!p.is_expr) {
+        bb.emit(ONT_CONST, p.constant);
+        return;
+    }
+    try {
+        BytecodeExprSink sink(bb);
+        compileOntExpression(p.expression, sink);
+    } catch (const std::exception& ex) {
+        throw std::runtime_error(
+            "el parametro " + std::to_string(i) + " de '" +
+            sdfTypeName(n.type) + "' no se puede compilar a bytecode ('" +
+            p.expression + "'): " + ex.what() + lineSuffix(p.line));
+    }
+}
+
+// Igual que emitParamExpr, pero dividiendo entre `divisor`. Para constantes
+// conserva el plegado previo (h/2) y no cambia el bytecode v1.
+static void emitParamDiv(const SdfNode& n, int i, float divisor,
+                         BytecodeBuilder& bb) {
+    const Expr& p = n.params[i];
+    if (!p.is_expr) {
+        bb.emit(ONT_CONST, p.constant / divisor);
+        return;
+    }
+    emitParamExpr(n, i, bb);
+    bb.emit(ONT_CONST, divisor);
+    bb.emit(ONT_DIV);
+}
+
 static void sdfPrimToBytecode(const SdfNode& n, BytecodeBuilder& bb) {
-    auto cf = [&](int i, float def) {
-        const Expr& p = n.params[i];
-        if (p.is_expr) {
-            // Antes se devolvia `def` en silencio y la GPU renderizaba otra
-            // cosa (DL-30/DL-31). Ahora es un fallo ruidoso.
-            std::string fn = findUnsupportedOntFn(p.expression);
-            std::string msg = "el parametro " + std::to_string(i) + " de '" +
-                              sdfTypeName(n.type) + "' es una expresion ('" +
-                              p.expression + "') que el bytecode ONT no puede representar";
-            if (!fn.empty()) msg += "; funcion sin opcode: '" + fn + "'";
-            msg += lineSuffix(p.line);
-            throw std::runtime_error(msg);
+    // CUSTOM no tiene formula .ont: los presets (terrain/rock/...) no son
+    // expresiones y DL-31 lo rechaza.
+    if (n.type == SdfType::CUSTOM) {
+        std::string msg = "el SDF 'custom' no esta soportado por el bytecode ONT";
+        if (n.params[0].is_expr) msg += " ('" + n.params[0].expression + "')";
+        msg += lineSuffix(n.params[0].line);
+        throw std::runtime_error(msg);
+    }
+
+    // Un parametro que la formula .ont no usa se descartaria en silencio.
+    const int used = ontParamCount(n.type);
+    for (int i = used; i < 4; i++) {
+        if (n.params[i].is_expr) {
+            throw std::runtime_error(
+                "el parametro " + std::to_string(i) + " de '" +
+                sdfTypeName(n.type) + "' es una expresion ('" +
+                n.params[i].expression + "') que la formula .ont no usa; "
+                "se descartaria en silencio" + lineSuffix(n.params[i].line));
         }
-        return p.constant;
-    };
+    }
 
     switch (n.type) {
         case SdfType::SPHERE: {
-            float r = cf(0, 1.0f);
             // sqrt(x*x + y*y + z*z) - r
             bb.emit(ONT_VAR_X); bb.emit(ONT_VAR_X); bb.emit(ONT_MUL);
             bb.emit(ONT_VAR_Y); bb.emit(ONT_VAR_Y); bb.emit(ONT_MUL); bb.emit(ONT_ADD);
             bb.emit(ONT_VAR_Z); bb.emit(ONT_VAR_Z); bb.emit(ONT_MUL); bb.emit(ONT_ADD);
             bb.emit(ONT_SQRT);
-            bb.emit(ONT_CONST, r); bb.emit(ONT_SUB);
+            emitParamExpr(n, 0, bb); bb.emit(ONT_SUB);
             return;
         }
         case SdfType::BOX: {
-            float sx = cf(0, 1.0f), sy = cf(1, 1.0f), sz = cf(2, 1.0f);
             // max(|x|-sx, max(|y|-sy, |z|-sz))
-            bb.emit(ONT_VAR_X); bb.emit(ONT_ABS); bb.emit(ONT_CONST, sx); bb.emit(ONT_SUB);
-            bb.emit(ONT_VAR_Y); bb.emit(ONT_ABS); bb.emit(ONT_CONST, sy); bb.emit(ONT_SUB); bb.emit(ONT_MAX);
-            bb.emit(ONT_VAR_Z); bb.emit(ONT_ABS); bb.emit(ONT_CONST, sz); bb.emit(ONT_SUB); bb.emit(ONT_MAX);
+            bb.emit(ONT_VAR_X); bb.emit(ONT_ABS); emitParamExpr(n, 0, bb); bb.emit(ONT_SUB);
+            bb.emit(ONT_VAR_Y); bb.emit(ONT_ABS); emitParamExpr(n, 1, bb); bb.emit(ONT_SUB); bb.emit(ONT_MAX);
+            bb.emit(ONT_VAR_Z); bb.emit(ONT_ABS); emitParamExpr(n, 2, bb); bb.emit(ONT_SUB); bb.emit(ONT_MAX);
             return;
         }
         case SdfType::CYLINDER: {
-            float r = cf(0, 1.0f), h = cf(1, 2.0f);
             // max(sqrt(x*x+z*z)-r, |y|-h/2)
             bb.emit(ONT_VAR_X); bb.emit(ONT_VAR_X); bb.emit(ONT_MUL);
             bb.emit(ONT_VAR_Z); bb.emit(ONT_VAR_Z); bb.emit(ONT_MUL); bb.emit(ONT_ADD);
-            bb.emit(ONT_SQRT); bb.emit(ONT_CONST, r); bb.emit(ONT_SUB);
-            bb.emit(ONT_VAR_Y); bb.emit(ONT_ABS); bb.emit(ONT_CONST, h/2.0f); bb.emit(ONT_SUB);
+            bb.emit(ONT_SQRT); emitParamExpr(n, 0, bb); bb.emit(ONT_SUB);
+            bb.emit(ONT_VAR_Y); bb.emit(ONT_ABS); emitParamDiv(n, 1, 2.0f, bb); bb.emit(ONT_SUB);
             bb.emit(ONT_MAX);
             return;
         }
         case SdfType::CAPSULE: {
-            float r = cf(0, 1.0f);
             // sqrt(x*x+y*y+z*z)-r
             bb.emit(ONT_VAR_X); bb.emit(ONT_VAR_X); bb.emit(ONT_MUL);
             bb.emit(ONT_VAR_Y); bb.emit(ONT_VAR_Y); bb.emit(ONT_MUL); bb.emit(ONT_ADD);
             bb.emit(ONT_VAR_Z); bb.emit(ONT_VAR_Z); bb.emit(ONT_MUL); bb.emit(ONT_ADD);
-            bb.emit(ONT_SQRT); bb.emit(ONT_CONST, r); bb.emit(ONT_SUB);
+            bb.emit(ONT_SQRT); emitParamExpr(n, 0, bb); bb.emit(ONT_SUB);
             return;
         }
         case SdfType::TORUS: {
-            float R = cf(0, 1.0f), r = cf(1, 0.3f);
             // sqrt((sqrt(x*x+z*z)-R)^2 + y^2) - r
             // Need to compute q = sqrt(x*x+z*z)-R twice (no DUP opcode)
             auto pushQ = [&]() {
                 bb.emit(ONT_VAR_X); bb.emit(ONT_VAR_X); bb.emit(ONT_MUL);
                 bb.emit(ONT_VAR_Z); bb.emit(ONT_VAR_Z); bb.emit(ONT_MUL); bb.emit(ONT_ADD);
-                bb.emit(ONT_SQRT); bb.emit(ONT_CONST, R); bb.emit(ONT_SUB);
+                bb.emit(ONT_SQRT); emitParamExpr(n, 0, bb); bb.emit(ONT_SUB);
             };
             pushQ(); pushQ(); bb.emit(ONT_MUL); // q*q
             bb.emit(ONT_VAR_Y); bb.emit(ONT_VAR_Y); bb.emit(ONT_MUL); bb.emit(ONT_ADD); // q*q + y*y
-            bb.emit(ONT_SQRT); bb.emit(ONT_CONST, r); bb.emit(ONT_SUB);
+            bb.emit(ONT_SQRT); emitParamExpr(n, 1, bb); bb.emit(ONT_SUB);
             return;
         }
         case SdfType::PLANE: {
-            float d = cf(0, 0.0f);
-            bb.emit(ONT_VAR_Y); bb.emit(ONT_CONST, d); bb.emit(ONT_ADD);
+            bb.emit(ONT_VAR_Y); emitParamExpr(n, 0, bb); bb.emit(ONT_ADD);
             return;
         }
         case SdfType::CONE: {
-            float r = cf(0, 1.0f), h = cf(1, 2.0f);
             // max(sqrt(x*x+z*z)-r*(1-y/h), y)
             bb.emit(ONT_VAR_X); bb.emit(ONT_VAR_X); bb.emit(ONT_MUL);
             bb.emit(ONT_VAR_Z); bb.emit(ONT_VAR_Z); bb.emit(ONT_MUL); bb.emit(ONT_ADD);
             bb.emit(ONT_SQRT);
-            bb.emit(ONT_CONST, 1.0f); bb.emit(ONT_VAR_Y); bb.emit(ONT_CONST, h); bb.emit(ONT_DIV); bb.emit(ONT_SUB);
-            bb.emit(ONT_CONST, r); bb.emit(ONT_MUL);
+            bb.emit(ONT_CONST, 1.0f); bb.emit(ONT_VAR_Y); emitParamExpr(n, 1, bb); bb.emit(ONT_DIV); bb.emit(ONT_SUB);
+            emitParamExpr(n, 0, bb); bb.emit(ONT_MUL);
             bb.emit(ONT_SUB);
             bb.emit(ONT_VAR_Y); bb.emit(ONT_MAX);
             return;
         }
         case SdfType::ROUNDED_BOX: {
-            float sx = cf(0, 1.0f), sy = cf(1, 1.0f), sz = cf(2, 1.0f), rr = cf(3, 0.1f);
             // max(|x|-sx, max(|y|-sy, |z|-sz)) - rr
-            bb.emit(ONT_VAR_X); bb.emit(ONT_ABS); bb.emit(ONT_CONST, sx); bb.emit(ONT_SUB);
-            bb.emit(ONT_VAR_Y); bb.emit(ONT_ABS); bb.emit(ONT_CONST, sy); bb.emit(ONT_SUB); bb.emit(ONT_MAX);
-            bb.emit(ONT_VAR_Z); bb.emit(ONT_ABS); bb.emit(ONT_CONST, sz); bb.emit(ONT_SUB); bb.emit(ONT_MAX);
-            bb.emit(ONT_CONST, rr); bb.emit(ONT_SUB);
+            bb.emit(ONT_VAR_X); bb.emit(ONT_ABS); emitParamExpr(n, 0, bb); bb.emit(ONT_SUB);
+            bb.emit(ONT_VAR_Y); bb.emit(ONT_ABS); emitParamExpr(n, 1, bb); bb.emit(ONT_SUB); bb.emit(ONT_MAX);
+            bb.emit(ONT_VAR_Z); bb.emit(ONT_ABS); emitParamExpr(n, 2, bb); bb.emit(ONT_SUB); bb.emit(ONT_MAX);
+            emitParamExpr(n, 3, bb); bb.emit(ONT_SUB);
             return;
         }
         case SdfType::OCTAHEDRON: {
-            float s = cf(0, 1.0f);
             // (|x|+|y|+|z|-s) / 1.73205
             bb.emit(ONT_VAR_X); bb.emit(ONT_ABS);
             bb.emit(ONT_VAR_Y); bb.emit(ONT_ABS); bb.emit(ONT_ADD);
             bb.emit(ONT_VAR_Z); bb.emit(ONT_ABS); bb.emit(ONT_ADD);
-            bb.emit(ONT_CONST, s); bb.emit(ONT_SUB);
+            emitParamExpr(n, 0, bb); bb.emit(ONT_SUB);
             bb.emit(ONT_CONST, 1.73205f); bb.emit(ONT_DIV);
             return;
         }
         case SdfType::TESSERACT: {
-            float s = cf(0, 1.0f);
             // max(|x|-s, max(|y|-s, max(|z|-s, |w|-s)))
-            bb.emit(ONT_VAR_X); bb.emit(ONT_ABS); bb.emit(ONT_CONST, s); bb.emit(ONT_SUB);
-            bb.emit(ONT_VAR_Y); bb.emit(ONT_ABS); bb.emit(ONT_CONST, s); bb.emit(ONT_SUB); bb.emit(ONT_MAX);
-            bb.emit(ONT_VAR_Z); bb.emit(ONT_ABS); bb.emit(ONT_CONST, s); bb.emit(ONT_SUB); bb.emit(ONT_MAX);
-            bb.emit(ONT_VAR_W); bb.emit(ONT_ABS); bb.emit(ONT_CONST, s); bb.emit(ONT_SUB); bb.emit(ONT_MAX);
+            bb.emit(ONT_VAR_X); bb.emit(ONT_ABS); emitParamExpr(n, 0, bb); bb.emit(ONT_SUB);
+            bb.emit(ONT_VAR_Y); bb.emit(ONT_ABS); emitParamExpr(n, 0, bb); bb.emit(ONT_SUB); bb.emit(ONT_MAX);
+            bb.emit(ONT_VAR_Z); bb.emit(ONT_ABS); emitParamExpr(n, 0, bb); bb.emit(ONT_SUB); bb.emit(ONT_MAX);
+            bb.emit(ONT_VAR_W); bb.emit(ONT_ABS); emitParamExpr(n, 0, bb); bb.emit(ONT_SUB); bb.emit(ONT_MAX);
             return;
         }
         case SdfType::SPHERE4D: {
-            float r = cf(0, 1.0f);
             // sqrt(x*x+y*y+z*z+w*w) - r
             bb.emit(ONT_VAR_X); bb.emit(ONT_VAR_X); bb.emit(ONT_MUL);
             bb.emit(ONT_VAR_Y); bb.emit(ONT_VAR_Y); bb.emit(ONT_MUL); bb.emit(ONT_ADD);
             bb.emit(ONT_VAR_Z); bb.emit(ONT_VAR_Z); bb.emit(ONT_MUL); bb.emit(ONT_ADD);
             bb.emit(ONT_VAR_W); bb.emit(ONT_VAR_W); bb.emit(ONT_MUL); bb.emit(ONT_ADD);
-            bb.emit(ONT_SQRT); bb.emit(ONT_CONST, r); bb.emit(ONT_SUB);
+            bb.emit(ONT_SQRT); emitParamExpr(n, 0, bb); bb.emit(ONT_SUB);
             return;
-        }
-        case SdfType::CUSTOM: {
-            // Antes emitia ONT_CONST 1e9 (un "miss" silencioso). El bytecode
-            // ONT no tiene opcode para SDF definidos por expresion.
-            std::string msg = "el SDF 'custom' no esta soportado por el bytecode ONT";
-            if (n.params[0].is_expr) {
-                std::string fn = findUnsupportedOntFn(n.params[0].expression);
-                msg += " ('" + n.params[0].expression + "')";
-                if (!fn.empty()) msg += "; funcion sin opcode: '" + fn + "'";
-            }
-            msg += lineSuffix(n.params[0].line);
-            throw std::runtime_error(msg);
         }
         default:
             throw std::runtime_error("tipo de SDF desconocido en el bytecode ONT");
@@ -501,6 +497,22 @@ static void aabbUnion(const float a_min[4], const float a_max[4],
                        const float b_min[4], const float b_max[4],
                        float out_min[4], float out_max[4]);
 
+// 2.0c.3b (DL-36): un parametro SDF con expresion puede mover la superficie
+// a cualquier punto. El AABB deja de ser calculable y d_min debe ser 0.
+static bool sdfTreeHasExprParam(const std::vector<SdfNode>& nodes, u32 idx) {
+    if (idx >= nodes.size()) return false;
+    const auto& n = nodes[idx];
+    if (n.type < SdfType::UNION) {
+        int used = ontParamCount(n.type);
+        for (int i = 0; i < used && i < 4; i++)
+            if (n.params[i].is_expr) return true;
+        return false;
+    }
+    if (n.child_a && sdfTreeHasExprParam(nodes, *n.child_a)) return true;
+    if (n.child_b && sdfTreeHasExprParam(nodes, *n.child_b)) return true;
+    return false;
+}
+
 // ============================================================================
 // Compute AABB for an SDF tree recursively
 // ============================================================================
@@ -512,6 +524,13 @@ static void computeNodeAabbRecursive(const std::vector<SdfNode>& nodes, u32 idx,
     bmax[0] = bmax[1] = bmax[2] = bmax[3] = -1e9f;
 
     if (idx >= nodes.size()) return;
+
+    // 2.0c.3b (DL-36): expresion -> AABB conservador e infinito practico.
+    if (sdfTreeHasExprParam(nodes, idx)) {
+        bmin[0] = bmin[1] = bmin[2] = -1e9f; bmin[3] = 0.0f;
+        bmax[0] = bmax[1] = bmax[2] =  1e9f; bmax[3] = 0.0f;
+        return;
+    }
 
     const auto& node = nodes[idx];
     // Initialize local AABB to reasonable default BEFORE switch
@@ -1047,7 +1066,11 @@ static void flattenNode(const Node& node, const Rih& rih,
         // Compute d_min for adaptive stepping:
         // local_d_min = max(0, SDF(center) - half_diagonal)
         // Uses 1-Lipschitz property: min SDF in AABB >= SDF(center) - max_dist_from_center
-        {
+        // 2.0c.3b (DL-36): con expresion, evalSdfTree lee params[i].constant
+        // y da un valor espurio; d_min = 0 desactiva el paso seguro.
+        if (sdfTreeHasExprParam(node.sdf_nodes, 0)) {
+            fn.d_min = 0.0f;
+        } else {
             float cx = (local_min[0] + local_max[0]) * 0.5f;
             float cy = (local_min[1] + local_max[1]) * 0.5f;
             float cz = (local_min[2] + local_max[2]) * 0.5f;
@@ -1143,6 +1166,24 @@ static BvhBuildNode* buildBvhRecursive(
 
     if (count <= max_leaf_size) {
         node->is_leaf = true;
+
+        // 2.0c.3b (DL-36): una hoja con expresion no se puede muestrear con
+        // evalSdfTree (lee params[i].constant). d_min = 0 desactiva el paso
+        // seguro de esa hoja en vez de inventar una cota.
+        bool leaf_has_expr = false;
+        for (uint32_t i = first; i < first + count; i++) {
+            auto* fn = items[i];
+            if (fn->sdf_nodes && !fn->sdf_nodes->empty() &&
+                sdfTreeHasExprParam(*fn->sdf_nodes, fn->sdf_root)) {
+                leaf_has_expr = true;
+                break;
+            }
+        }
+        if (leaf_has_expr) {
+            node->d_min = 0.0f;
+            return node;
+        }
+
         // Compute d_min from combined leaf AABB: SDF(center) - half_diag
         // Sample all OntFlatNodes at the center of the leaf's combined AABB
         {
@@ -1255,58 +1296,17 @@ static uint32_t linearizeBvh(BvhBuildNode* node,
 // ---------------------------------------------------------------------------
 // 2.0c.1 — validacion previa a emitir .ont
 //
-// evaluateFrame() pliega los parametros SDF con evalExpression(expr, frame),
-// es decir, con x=y=z=0 y w=frame. Una expresion que dependa de x/y/z se
-// convierte en una constante espuria y la GPU (y el render CPU del lenguaje)
-// dibujan otra cosa. Aqui se detecta antes de escribir nada.
+// 2.0c.3b (DL-36): la validacion es un dry-run de sdfTreeToBytecode. Antes se
+// muestreaba la expresion en tres puntos; eso no detectaba `%`, `tanh`,
+// `sample` ni variables de sombreado, y ademas duplicaba la logica del emisor.
+// Ahora validacion y emision son la misma funcion: si el emisor acepta la
+// escena, la validacion pasa; si la rechaza, el error lleva primitiva,
+// parametro, expresion y linea.
 // ---------------------------------------------------------------------------
-static void checkOntSdfParam(const Expr& e, SdfType type, int idx) {
-    if (!e.is_expr) return;
-
-    std::string where = "el parametro " + std::to_string(idx) + " de '" +
-                        sdfTypeName(type) + "'";
-    if (usesPerSampleVars(e.expression)) {
-        throw std::runtime_error(where + " usa variables por muestra ('" +
-                                 e.expression + "') y el bytecode ONT no puede representarlo" +
-                                 lineSuffix(e.line));
-    }
-
-    float a = 0.0f, b = 0.0f, c = 0.0f;
-    try {
-        a = evalExpression(e.expression, 0.0f, 0.0f, 0.0f, 0.0f);
-        b = evalExpression(e.expression, 1.2345f, 2.3456f, 3.4567f, 0.0f);
-        c = evalExpression(e.expression, -2.345f, 0.789f, 4.567f, 0.0f);
-    } catch (const std::exception& ex) {
-        throw std::runtime_error("expresion SDF invalida en " + where + " ('" +
-                                 e.expression + "'): " + ex.what() + lineSuffix(e.line));
-    }
-
-    if (!std::isfinite(a)) {
-        throw std::runtime_error(where + " no da un numero finito ('" +
-                                 e.expression + "')" + lineSuffix(e.line));
-    }
-    if (!(a == b) || !(a == c)) {
-        std::string fn = findUnsupportedOntFn(e.expression);
-        std::string msg = where + " depende de x/y/z ('" + e.expression +
-                          "') y el bytecode ONT no puede representarlo";
-        if (!fn.empty()) msg += "; funcion sin opcode: '" + fn + "'";
-        msg += lineSuffix(e.line);
-        throw std::runtime_error(msg);
-    }
-}
-
 static void validateNodeSdfForOnt(const Node& n) {
-    for (const auto& s : n.sdf_nodes) {
-        int count = ontParamCount(s.type);
-        for (int i = 0; i < count && i < 4; i++)
-            checkOntSdfParam(s.params[i], s.type, i);
-
-        if (s.type == SdfType::CUSTOM) {
-            throw std::runtime_error(
-                "el SDF 'custom' no esta soportado por el bytecode ONT" +
-                lineSuffix(s.params[0].line));
-        }
-    }
+    if (n.sdf_nodes.empty()) return;
+    BytecodeBuilder scratch;
+    sdfTreeToBytecode(n.sdf_nodes, 0, scratch);
 }
 
 void validateOntCompatibility(const Rih& rih) {
@@ -1314,10 +1314,12 @@ void validateOntCompatibility(const Rih& rih) {
     for (const auto& n : rih.defs)  validateNodeSdfForOnt(n);
 }
 
-// 2.0c.2 (DL-34): version = 2 SOLO si el bytecode usa opcodes nuevos.
+// 2.0c.2 (DL-34) / 2.0c.3b (DL-36): version = 2 si el bytecode usa opcodes
+// nuevos (35..46) o si algun parametro SDF emitido es una expresion.
 // El formato canonico es 5 bytes por instruccion, asi que se avanza de 5 en 5
 // sin confundir el payload de ONT_CONST con un opcode.
 static uint32_t ontVersionForBytecode(const std::vector<uint8_t>& bc,
+                                      bool has_sdf_expr_params,
                                       uint64_t& feature_flags) {
     if (bc.size() % 5 != 0)
         throw std::runtime_error(
@@ -1325,12 +1327,17 @@ static uint32_t ontVersionForBytecode(const std::vector<uint8_t>& bc,
             " bytes no es multiplo de 5");
     bool uses_new = false;
     for (size_t i = 0; i < bc.size(); i += 5) {
-        if (!ontOpcodeIsV1(bc[i])) { uses_new = true; break; }
+        uint8_t op = bc[i];
+        if (!ontOpcodeIsKnown(op))
+            throw std::runtime_error(
+                "bytecode ONT usa un opcode desconocido: " +
+                std::to_string((int)op));
+        if (!ontOpcodeIsV1(op)) uses_new = true;
     }
-    // 2.0c.2 no emite opcodes nuevos. 2.0c.3 mapeara cada opcode nuevo a
-    // ONT_FEATURE_MATH_EXTENDED o ONT_FEATURE_SDF_EXPR_PARAMS.
     feature_flags = 0;
-    return uses_new ? ONT_VERSION_V2 : ONT_VERSION_V1;
+    if (uses_new) feature_flags |= ONT_FEATURE_MATH_EXTENDED;
+    if (has_sdf_expr_params) feature_flags |= ONT_FEATURE_SDF_EXPR_PARAMS;
+    return (feature_flags != 0) ? ONT_VERSION_V2 : ONT_VERSION_V1;
 }
 
 bool writeOnt(const Rih& rih, const std::string& path) {
@@ -1431,8 +1438,18 @@ bool writeOnt(const Rih& rih, const std::string& path) {
     // Header
     OntHeader hdr = {};
     hdr.magic = ONT_MAGIC;
+    // 2.0c.3b (DL-36): el flag se calcula sobre los nodos realmente emitidos.
+    bool has_sdf_expr_params = false;
+    for (auto& fn : flat_nodes) {
+        if (fn.sdf_nodes && !fn.sdf_nodes->empty() &&
+            sdfTreeHasExprParam(*fn.sdf_nodes, fn.sdf_root)) {
+            has_sdf_expr_params = true;
+            break;
+        }
+    }
     uint64_t feature_flags = 0;
-    hdr.version = ontVersionForBytecode(bytecode_block, feature_flags);
+    hdr.version = ontVersionForBytecode(bytecode_block, has_sdf_expr_params,
+                                        feature_flags);
     hdr.reserved[0] = feature_flags;
     hdr.epsilon = rih.pipeline.trace_hit_threshold;
     hdr.node_count = (uint32_t)flat_nodes.size();

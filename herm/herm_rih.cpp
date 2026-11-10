@@ -447,16 +447,16 @@ static void evalNodeSdfParams(Node& n, float frame) {
     }
 }
 
-Rih evaluateFrame(const Rih& rih, float t) {
+Rih evaluateFrame(const Rih& rih, float t, bool fold_sdf_params) {
     Rih out = rih;
 
     for (auto& n : out.nodes) {
         evalTransform(n.transform, t);
-        evalNodeSdfParams(n, t);
+        if (fold_sdf_params) evalNodeSdfParams(n, t);
     }
     for (auto& n : out.defs) {
         evalTransform(n.transform, t);
-        evalNodeSdfParams(n, t);
+        if (fold_sdf_params) evalNodeSdfParams(n, t);
     }
 
     // Update scene time range for single frame

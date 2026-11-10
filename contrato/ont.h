@@ -170,8 +170,8 @@ enum OntOpcode : uint8_t {
     ONT_ADD,            // pop b, pop a, push a+b
     ONT_SUB,            // pop b, pop a, push a-b
     ONT_MUL,            // pop b, pop a, push a*b
-    ONT_DIV,            // pop b, pop a, push a/b
-    ONT_MOD,            // pop b, pop a, push fmod(a,b)
+    ONT_DIV,            // pop b, pop a, push a/b (IEEE: inf/NaN, sin mascara)
+    ONT_MOD,            // pop b, pop a, push a - b*floor(a/b) (GLSL mod)
     ONT_NEG,            // pop, push -val
     ONT_POW,            // pop b, pop a, push pow(a,b)
     ONT_SIN,            // pop, push sin(val)
@@ -188,6 +188,20 @@ enum OntOpcode : uint8_t {
     ONT_MIX,            // igual que LERP (alias)
     ONT_SAMPLE,         // pop dz, dy, dx → recursive eval(x+dx,y+dy,z+dz)
     ONT_END,            // fin: resultado en tope de pila
+    // 2.0c.3b (DL-36): opcodes nuevos 35..46. Se anaden DESPUES de
+    // ONT_END; nunca se reordena 0..34 (rompe los .ont v1).
+    ONT_STEP,           // pop x, pop edge, push step(edge,x)
+    ONT_SMOOTHSTEP,     // pop x, pop e1, pop e0, push smoothstep(e0,e1,x)
+    ONT_SIGN,           // pop, push sign(x)
+    ONT_EXP,            // pop, push exp(x)
+    ONT_LOG,            // pop, push log(x)
+    ONT_LOG2,           // pop, push log2(x)
+    ONT_LOG10,          // pop, push log10(x)
+    ONT_ACOS,           // pop, push acos(x)
+    ONT_ASIN,           // pop, push asin(x)
+    ONT_ATAN,           // pop, push atan(x)
+    ONT_ATAN2,          // pop x, pop y, push atan2(y,x)
+    ONT_FRACT,          // pop, push x - floor(x)
 };
 
 // ============================================================================
@@ -204,8 +218,19 @@ static constexpr uint64_t ONT_FEATURE_SDF_EXPR_PARAMS = 1ull << 1;
 static constexpr uint64_t ONT_FEATURE_KNOWN_MASK =
     ONT_FEATURE_MATH_EXTENDED | ONT_FEATURE_SDF_EXPR_PARAMS;
 
-// Primer opcode nuevo. ONT_END = 35; los nuevos empiezan en 36.
+// Primer opcode nuevo. ONT_END = 34; los nuevos empiezan en 35.
 static constexpr uint8_t ONT_FIRST_NEW_OPCODE = (uint8_t)(ONT_END + 1);
+static constexpr uint8_t ONT_LAST_OPCODE = (uint8_t)ONT_FRACT;
+
+// Un opcode es v1 si cabe hasta ONT_END. Los nuevos viven detras.
+inline bool ontOpcodeIsV1(uint8_t op) {
+    return op <= (uint8_t)ONT_END;
+}
+
+// Opcodes que este contrato conoce (v1 + 2.0c.3b).
+inline bool ontOpcodeIsKnown(uint8_t op) {
+    return op <= ONT_LAST_OPCODE;
+}
 
 // ============================================================================
 // Nombre de opcode para debug
@@ -248,13 +273,20 @@ inline const char* ontOpcodeName(OntOpcode op) {
         case ONT_MIX:      return "MIX";
         case ONT_SAMPLE:   return "SAMPLE";
         case ONT_END:      return "END";
+        case ONT_STEP:       return "STEP";
+        case ONT_SMOOTHSTEP: return "SMOOTHSTEP";
+        case ONT_SIGN:       return "SIGN";
+        case ONT_EXP:        return "EXP";
+        case ONT_LOG:        return "LOG";
+        case ONT_LOG2:       return "LOG2";
+        case ONT_LOG10:      return "LOG10";
+        case ONT_ACOS:       return "ACOS";
+        case ONT_ASIN:       return "ASIN";
+        case ONT_ATAN:       return "ATAN";
+        case ONT_ATAN2:      return "ATAN2";
+        case ONT_FRACT:      return "FRACT";
         default: return "?";
     }
-}
-
-// Un opcode es v1 si cabe hasta ONT_END. Los nuevos viven detrás.
-inline bool ontOpcodeIsV1(uint8_t op) {
-    return op <= (uint8_t)ONT_END;
 }
 
 // ============================================================================
