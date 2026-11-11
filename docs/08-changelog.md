@@ -1,5 +1,26 @@
 # Changelog
 
+## 2026-11-10 — 2.0c.3c: test de paridad de opcodes CPU/GPU (sin cambio de versión)
+
+### Cambios
+- **Nuevo** `tests/test_eval_parity.cpp` + `tests/build_eval_parity.bat` en el motor: compila expresiones a bytecode ONT y compara la CPU (`execBcRaw` escalar y `execBcRaw4` SIMD) contra la GPU real (`SpirvGen::decompileBytecode` → GLSL → `glslc` → SPIR-V → pipeline compute Vulkan), el mismo camino que usa el motor.
+- **14 opcodes × 5 vectores = 70 casos**: los 12 de 2.0c.3b (`step`, `smoothstep`, `sign`, `exp`, `log`, `log2`, `log10`, `acos`, `asin`, `atan`, `atan2`, `fract`) más `mod` y división de DL-35. `tanh` no aparece: no tiene opcode.
+- **Tolerancias de DL-37 aplicadas tal cual**: 0 ULP para exactos y `mod`/`div`; 1 ULP `acos`/`atan`; 2 ULP `asin`/`atan2`; 5 ULP `exp`; `abs <= 1e-5` Y `d <= max(2e-7, 1e-5*max(|cpu|,|gpu|))` para `log*`. Sin margen asimétrico.
+- **Denormales**: se excluyen del corpus con contador explícito `subIn`/`subOut`; la CPU de referencia no activa FTZ/DAZ.
+- **Reporte por opcode y por librería**: cada fallo imprime función, vector, CPU, GPU, ULP, `abs`, `rel` y tolerancia; el test no tiene epsilon arbitrario ni fallback silencioso.
+- **Manifiesto opcional de librerías** (`--libs`, formato `nombre|expresion|tol`). Sin manifiesto el test reporta **PENDIENTE**, no PASS: el barrido de las 52 librerías que compilan es 2.0c.3d. Las 3 con parámetros SDF espaciales quedan fuera y se documentarán con su nombre en ese paso.
+
+### Verificación (2026-11-10, RTX 3060 Laptop, driver 616.92, Vulkan 1.4.351)
+- **70/70 pasan, 0 fallos, 0 denormales excluidos.** Dos ejecuciones consecutivas idénticas, exit 0.
+- `step`, `smoothstep`, `sign`, `fract`, `mod`, `div`: **0 ULP**. `mod`/`div` incluyen `mod(1,0)=NaN`, `mod(0,0)=NaN`, `1/0=+inf`, `-1/0=-inf`, `0/0=NaN`, `1/-0=-inf`, `-1/-0=+inf`.
+- `exp`: máx **4 ULP** (tolerancia 5). El `maxAbs = 1.486e28` es `exp(80)`, con ULP 4 y relativo `2.7e-7`; no es un fallo.
+- `log` y `log2`: máx **1 ULP**; `log10`, `acos`, `asin`, `atan`, `atan2`: **0 ULP** en estos vectores.
+- El SIMD coincide bit a bit con el escalar en los carriles comparados.
+
+### Consecuencia
+- 2.0c.3c cerrado en lo que respecta a opcodes. **2.0c.3d** queda como el paso que reconstruye `herm.exe` (el actual no conoce `--ont`), genera el manifiesto de las 52 librerías, ejecuta el barrido, corrige y documenta.
+- Detalle y tabla por opcode en `motor-grafico/docs/22-medicion-ulp-gpu.md` (sección 10).
+
 ## 2026-11-10 — DL-37: tabla de tolerancias de paridad medida (pre-2.0c.3c, sin cambio de versión)
 
 ### Decisión

@@ -905,7 +905,7 @@ Esto también rompe la paridad y no lo arregla ningún opcode nuevo. Debe entrar
 
 ## DL-37 — 2.0c.3c: tabla de tolerancias de paridad medida y regla de denormales.
 
-**Estado:** REGISTRADO (2026-11-10). Autoriza 2.0c.3c. Sustituye la tabla teórica de DL-35 por la medida en el hardware objetivo; no cambia sintaxis ni código del lenguaje.
+**Estado:** IMPLEMENTADO (2026-11-10, v0.27; test en el motor, sin cambio de versión). Autorizó y cerró 2.0c.3c en lo relativo a opcodes. Sustituye la tabla teórica de DL-35 por la medida en el hardware objetivo; no cambia sintaxis ni código del lenguaje.
 
 **Mandato del usuario (2026-11-10):**
 - Acepta la medición ULP de 395 valores por función, dos ejecuciones idénticas, contra doble precisión.
@@ -975,6 +975,8 @@ En la cola `|resultado| < 1e-4`, el máximo absoluto es `1.073e-7` (`log2`); el 
 - Un fallo de tolerancia es fallo ruidoso del test, no un aviso.
 - `tanh` no aparece en el test.
 - `docs/08-changelog.md` y este registro quedan actualizados con fecha real.
+
+**Resultado (2026-11-10):** `tests/test_eval_parity.cpp` implementado y ejecutado en la RTX 3060 Laptop (driver 616.92, Vulkan 1.4.351). **70/70 casos pasan, 0 fallos, 0 denormales excluidos.** Dos ejecuciones consecutivas idénticas, exit 0. `step`/`smoothstep`/`sign`/`fract`/`mod`/`div` 0 ULP; `exp` máx 4 ULP (tolerancia 5); `log`/`log2` máx 1 ULP; `log10`/`acos`/`asin`/`atan`/`atan2` 0 ULP en los vectores del test. El `maxAbs = 1.486e28` de `exp` corresponde a `exp(80)` (ULP 4, relativo `2.7e-7`) y no es fallo. El manifiesto de librerías queda **PENDIENTE**: las 52 librerías y las 3 con parámetros SDF espaciales se ejecutan y documentan en 2.0c.3d, que también debe reconstruir `herm.exe` (el actual no conoce `--ont`). Detalle por opcode en `motor-grafico/docs/22-medicion-ulp-gpu.md` (sección 10).
 
 **Fuera de alcance:** `tanh` (13.º opcode), `%` (opcode `FMOD`), `sample`, `CUSTOM`, `--render` (DL-32), `herm_bridge`, `ri_optimizer`, cualquier sintaxis nueva y cualquier cambio de cabecera `.ont`.
 
