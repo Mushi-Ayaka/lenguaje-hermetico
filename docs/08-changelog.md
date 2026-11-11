@@ -1,5 +1,20 @@
 # Changelog
 
+## 2026-11-10 — DL-37: tabla de tolerancias de paridad medida (pre-2.0c.3c, sin cambio de versión)
+
+### Decisión
+- **Tabla de DL-37 registrada** con la medición real de la RTX 3060 Laptop (driver 616.92, Vulkan 1.4.351): `acos`/`atan` 1 ULP; `asin`/`atan2` 2 ULP; `exp` 5 ULP; `step`/`smoothstep`/`sign`/`fract` 0 ULP; `mod` 0 ULP con semántica GLSL; denormales excluidos con contador explícito. Sin margen asimétrico: ninguna función lleva `+1`.
+- **`log`/`log2`/`log10`:** `abs <= 1e-5` **Y** `rel <= 1e-5` con suelo absoluto `2e-7`, es decir `d <= max(2e-7, 1e-5*max(|cpu|,|gpu|))`. El suelo `2e-4` del borrador solo era válido con `rel = 1e-3`; con `rel = 1e-5` produce `2e-9` y falla 2 muestras por función. La regla registrada da **0 fallos** en las 3 funciones.
+- **`exp` verificado:** `glsl_gen.cpp:399` y `spirv_gen.cpp:139` emiten `exp(x)`; `glslc` produce `OpExtInst ... Exp`, no `Exp2`/`Pow`. Los 5 ULP son del driver/MUFU; no hay fórmula que corregir.
+- **`mod` ya resuelto en DL-35** e implementado en 2.0c.3b en las cinco rutas. `step`/`smoothstep`/`sign`/`fract` son 0 ULP por construcción (comparaciones, `floor`, aritmética IEEE).
+- **Denormales:** se excluyen del corpus de paridad con contador `subIn`/`subOut`; no se activa FTZ/DAZ en la CPU de referencia (`execBcRaw`/`execBcRaw4`).
+- **`tanh`:** fuera de alcance. Deuda documentada: existe en `herm_eval.cpp` (CPU) desde 2.0b, no tiene opcode ONT, 2.0c.1 la rechaza en SDF y ninguna librería la usa. Se añadirá un 13.º opcode en 2.0c.5 o Fase 3 si hace falta.
+- **Alcance:** RTX 3060 Laptop, driver 616.92, Vulkan 1.4.351. Otras GPUs requieren medición propia.
+
+### Consecuencia
+- **Desbloquea 2.0c.3c:** `tests/test_eval_parity.cpp` cubrirá las 12 funciones con opcode, 5 vectores por función, los vectores de `mod`/división y las 52 librerías que compilan (3 excluidas por parámetros SDF espaciales). El barrido de librerías se ejecuta en 2.0c.3d.
+- Detalle completo en `motor-grafico/docs/22-medicion-ulp-gpu.md` y `DECISION_LOG.md` (DL-37).
+
 ## 2026-11-10 — Medición ULP GPU/CPU (pre-2.0c.3c, sin cambio de versión)
 
 ### Medición

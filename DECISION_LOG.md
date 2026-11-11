@@ -903,6 +903,83 @@ Esto también rompe la paridad y no lo arregla ningún opcode nuevo. Debe entrar
 
 ---
 
+## DL-37 — 2.0c.3c: tabla de tolerancias de paridad medida y regla de denormales.
+
+**Estado:** REGISTRADO (2026-11-10). Autoriza 2.0c.3c. Sustituye la tabla teórica de DL-35 por la medida en el hardware objetivo; no cambia sintaxis ni código del lenguaje.
+
+**Mandato del usuario (2026-11-10):**
+- Acepta la medición ULP de 395 valores por función, dos ejecuciones idénticas, contra doble precisión.
+- Antes de registrar DL-37 exige: verificar la fórmula de `exp`, quitar el margen asimétrico, confirmar `mod`/operaciones exactas y definir la tolerancia relativa de `log*`.
+- Margen: opción A, sin `+1` en ninguna función, con alcance declarado.
+- Denormales: excluirlos del corpus con contador explícito; **no** forzar FTZ/DAZ en la CPU del test.
+- `tanh`: fuera de alcance; deuda documentada, sin 13.º opcode por ahora.
+
+**Tabla de tolerancias (fijada):**
+
+| Función | Tolerancia |
+|---|---|
+| `acos`, `atan` | 1 ULP |
+| `asin`, `atan2` | 2 ULP |
+| `exp` | 5 ULP |
+| `log`, `log2`, `log10` | `abs <= 1e-5` Y `rel <= 1e-5` con suelo absoluto `2e-7` |
+| `step`, `smoothstep`, `sign`, `fract` | 0 ULP |
+| `mod` | 0 ULP, semántica GLSL `x - y*floor(x/y)` |
+| `tanh` | fuera de alcance |
+| Denormales | excluidos del corpus, contador explícito |
+
+**Regla exacta de `log*`:**
+
+```
+pasa  <=>  |cpu - gpu| <= 1e-5
+       Y   |cpu - gpu| <= max(2e-7, 1e-5 * max(|cpu|, |gpu|))
+```
+
+Es relativa `1e-5` desde `|resultado| = 2e-2`, con suelo absoluto `2e-7` por debajo. Sin suelo la regla es imposible: `log(0.99999994)` da `d = 5.14e-8` con resultado `8.2e-9` (`rel ≈ 6.3`).
+
+**Corrección obligatoria del borrador:** el borrador pedía `rel <= 1e-5` con «suelo 2e-4». Ese suelo venía de la regla con `rel = 1e-3`, donde `1e-3 * 2e-4 = 2e-7`. Con `rel = 1e-5`, `2e-4` produce `2e-9` y las 3 muestras de cola fallan (verificado: 2 fallos por función). Por eso la regla registrada usa el suelo absoluto `2e-7` explícito, equivalente a un denominador `2e-2`. Con ella: **0 fallos** en las 3 funciones.
+
+**Verificación de `exp`:** `glsl_gen.cpp:399` y `spirv_gen.cpp:139` emiten `exp(x)`; `spirv_gen` genera GLSL y lo compila con `glslc`. El SPIR-V resultante es `%17 = OpExtInst %float %1 Exp %16`, no `Exp2` ni `Pow`. Los 5 ULP son del driver/MUFU; no hay fórmula que corregir.
+
+**`mod` y operaciones exactas:** `mod` ya quedó resuelto en DL-35 y se implementó en 2.0c.3b en las cinco rutas (`bytecode_vm.h:80/197`, `ray_march_simd.h:112-118`, `jit_compiler.cpp:29-31`, `glsl_gen.cpp:349-351`, `spirv_gen.cpp:89-92`); `test_ont_v2` 36/36 cubre los vectores GLSL. `step`, `smoothstep`, `sign` y `fract` usan solo comparaciones, `floor` y aritmética IEEE; 0 ULP. Si `smoothstep` difiere por contracción FMA, se corrige con flags/parentización, no ampliando la tolerancia.
+
+**Medición (2026-11-10, RTX 3060 Laptop, driver NVIDIA 616.92, Vulkan 1.4.351):** 395 valores por función, rango normal IEEE, dos ejecuciones idénticas. Detalle en `motor-grafico/docs/22-medicion-ulp-gpu.md` y salida cruda en `motor-grafico/docs/measurements/ulp_rtx3060_2026-11-10.txt`.
+
+| Función | mín/mediana/máx ULP | máx abs | máx rel |
+|---|---|---:|---:|
+| `exp` | 0/0/5 | 3.906e-3 | — |
+| `acos` | 0/0/1 | 2.384e-7 | — |
+| `asin` | 0/0/2 | 2.384e-7 | — |
+| `atan` | 0/0/1 | 1.192e-7 | — |
+| `atan2` | 0/0/2 | 2.384e-7 | — |
+| `log` | 0/1/31 (fuera de `x≈1`) | 7.629e-6 | 2.151e-6 |
+| `log2` | 0/1/23 (fuera de `x≈1`) | 7.629e-6 | 2.212e-6 |
+| `log10` | 0/0/27 (fuera de `x≈1`) | 3.815e-6 | 2.157e-6 |
+
+En la cola `|resultado| < 1e-4`, el máximo absoluto es `1.073e-7` (`log2`); el suelo `2e-7` deja ~2× de margen. En la banda `|resultado| >= 1e-4`, el máximo relativo es `2.212e-6`; `1e-5` deja ~4.5× de margen.
+
+**Denormales:** NVIDIA hace flush-to-zero de entradas y salidas denormales en las MUFU (`log(1e-38) = -inf`, `atan(1e-38) = 0`), mientras la CPU x86 las conserva. Se excluyen del corpus con contador `subIn`/`subOut`; la CPU de referencia (`execBcRaw`/`execBcRaw4`) sigue sin FTZ. Forzar FTZ en el test crearía una CPU distinta de la del motor.
+
+**Alcance:** RTX 3060 Laptop, driver 616.92, Vulkan 1.4.351. Otras GPUs requieren medición propia. Sin margen asimétrico: ninguna función lleva `+1`.
+
+**Deuda documentada — `tanh`:** existe en `herm_eval.cpp` (CPU) desde 2.0b y funciona en campos escalares; no tiene opcode en el bytecode ONT y 2.0c.1 la rechaza ruidosamente en SDF. No se usa en ninguna librería (solo docs, tests y `herm_eval.cpp`). Se añadirá un 13.º opcode en un paso posterior (2.0c.5 o Fase 3) si alguna librería lo necesita. 2.0c.3c la omite.
+
+**Cobertura de 2.0c.3c (`tests/test_eval_parity.cpp`):**
+- Las 12 funciones con opcode: `step`, `smoothstep`, `sign`, `exp`, `log`, `log2`, `log10`, `acos`, `asin`, `atan`, `atan2`, `fract`.
+- Vectores por opcode: 5 casos por función (negativos, cero, positivos, grandes, pequeños), más los vectores de `mod` y división de DL-35.
+- 52 de las 55 librerías estándar; las 3 con parámetros SDF espaciales quedan fuera y se documentan con su nombre en la salida del test. El barrido se ejecuta en 2.0c.3d.
+- Reporte por librería y por opcode; cualquier fallo imprime función, vector, CPU, GPU, ULP y tolerancia. Sin epsilon arbitrario ni fallback silencioso.
+
+**Criterio de aceptación de 2.0c.3c:**
+- El test compila, ejecuta y reporta las 12 funciones y los vectores de `mod`/división con la tabla de arriba.
+- `exp` se compara con 5 ULP; `log*` con la regla híbrida; exactos con 0 ULP; denormales excluidos y contados.
+- Un fallo de tolerancia es fallo ruidoso del test, no un aviso.
+- `tanh` no aparece en el test.
+- `docs/08-changelog.md` y este registro quedan actualizados con fecha real.
+
+**Fuera de alcance:** `tanh` (13.º opcode), `%` (opcode `FMOD`), `sample`, `CUSTOM`, `--render` (DL-32), `herm_bridge`, `ri_optimizer`, cualquier sintaxis nueva y cualquier cambio de cabecera `.ont`.
+
+---
+
 ### Cómo queda el lenguaje después de estas decisiones
 
 Sin cambios. Ni una línea de sintaxis nueva. Exactamente como está hoy. El parser solo se extiende para aceptar let internos en fn (DL-14), que es una extensión del parser, no de la sintaxis visible.
