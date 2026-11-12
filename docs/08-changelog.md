@@ -1,5 +1,20 @@
 # Changelog
 
+## 2026-11-12 — DL-38 implementado en el motor (2.0c.3d)
+
+### Cambios
+- **`motor-grafico/render/float_controls.h/.cpp` (nuevo):** inyección idempotente de `OpCapability SignedZeroInfNanPreserve` (4466), `OpExtension "SPV_KHR_float_controls"` y `OpExecutionMode <entry> SignedZeroInfNanPreserve 32` (4461) sobre el SPIR-V 1.0 de glslc.
+- **`motor-grafico/render/vulkan_core.*`:** `VulkanContext::queryFloatControls()` consulta `shaderSignedZeroInfNanPreserveFloat32` al crear el contexto y guarda el modo en `vk_ctx.szinp_f32`, disponible para replay/export. Log `[IEEE] modo A activo` o `[IEEE] modo B activo (sin determinismo NaN/inf)`.
+- **`motor-grafico/render/vulkan_pipeline.cpp`:** `recreateScenePipeline()` inyecta el modo en todo SPIR-V (escena especializada y fallback `ray_march.spv`). Si la inyección falla, avisa y ese pipeline queda en B.
+- **`motor-grafico/visor/visor_app.cpp`:** escribe el modo activo en `phase6_diag.txt` tras `vk_ctx.init`.
+- **`motor-grafico/tests/test_eval_parity.cpp`:** reutiliza el helper del motor; ya no duplica la inyección.
+
+### Verificación
+- `build/phase6_diag.txt` al cargar `std_astro_cosmology.ont`: `[PHASE6] vk_ctx.init OK`, `[IEEE] modo A activo (SignedZeroInfNanPreserve f32)`, `[VK] Scene-specialized pipeline created`.
+- El SPIR-V inyectado por el motor pasa `spirv-val` en `vulkan1.0` y `vulkan1.2`.
+- Corpus con el helper del motor: 0 fallos de categoría, 70/70 opcodes, 5003/5003 filas idénticas entre corridas y contra el arnés de referencia.
+- **DL-38:** IMPLEMENTADO (el marcado `bit_exact` del replay/export queda diferido porque no existe replay/export). **DL-39:** deuda medida, sin implementar.
+
 ## 2026-11-11 — 2.0c.3d: política IEEE/NaN (DL-38) y deuda de reasociación (DL-39)
 
 ### Decisión
@@ -14,7 +29,7 @@
 
 ### Consecuencia
 - **2.0c.3d cerrado** en lo relativo a política NaN/inf/div0, corpus real y fix de `powParityExpr`. Dos corridas idénticas (5003/5003 filas, 70/70 opcodes).
-- **Implementación de A+B en el motor pendiente** (`render/render.h`, `visor/visor_app.cpp`); se propone 2.0c.4 junto con la división IEEE.
+- **Implementación de A+B en el motor:** completada el 2026-11-12 (ver la entrada superior y `DECISION_LOG.md`, DL-38).
 - Detalle en `motor-grafico/docs/22-medicion-ulp-gpu.md` (sección 11), `DECISION_LOG.md` (DL-38, DL-39).
 
 ## 2026-11-10 — 2.0c.3c: test de paridad de opcodes CPU/GPU (sin cambio de versión)

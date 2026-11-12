@@ -984,7 +984,14 @@ En la cola `|resultado| < 1e-4`, el máximo absoluto es `1.073e-7` (`log2`); el 
 
 ## DL-38 — 2.0c.3d: política IEEE/NaN. Modo A (`SignedZeroInfNanPreserve`) con fallback explícito B.
 
-**Estado:** DECIDIDO (2026-11-11). Medición completa en el arnés `tests/test_eval_parity.cpp` (`--caps`, `--szinp`). La inyección en el motor (`render/render.h`, `visor/visor_app.cpp`) queda pendiente; se propone 2.0c.4, junto con la división IEEE. El arnés es la implementación de referencia y la evidencia. No cambia sintaxis ni bytecode.
+**Estado:** IMPLEMENTADO (2026-11-12; medición 2026-11-11). Decisión: A (`SignedZeroInfNanPreserve`) con fallback B obligatorio. La consulta y la inyección están cableadas en el motor real; el marcado `bit_exact` del replay/export queda diferido porque todavía no existe replay/export. No cambia sintaxis ni bytecode.
+
+**Implementación (2026-11-12):**
+- `render/float_controls.h/.cpp`: `injectSignedZeroInfNanPreserve()` idempotente; añade `OpCapability 4466`, `OpExtension "SPV_KHR_float_controls"` y `OpExecutionMode <entry> 4461 32`. Devuelve false si el SPIR-V es inválido o no tiene `OpEntryPoint`.
+- `render/vulkan_core.h/.cpp`: `VulkanContext::queryFloatControls()` consulta `VkPhysicalDeviceFloatControlsProperties` al crear el contexto (después de elegir el `physical_device`) y guarda el resultado en `vk_ctx.szinp_f32`, disponible para replay/export.
+- `render/vulkan_pipeline.cpp`: `VulkanSceneData::recreateScenePipeline()` inyecta el modo en todo SPIR-V que llega al pipeline (escena especializada y fallback `ray_march.spv`). Si la inyección falla, lo dice y ese pipeline queda en B; no hay fallo silencioso.
+- `visor/visor_app.cpp`: tras `vk_ctx.init`, escribe en `phase6_diag.txt` `[IEEE] modo A activo (SignedZeroInfNanPreserve f32)` o `[IEEE] modo B activo (sin determinismo NaN/inf)`.
+- `tests/test_eval_parity.cpp`: usa el mismo `injectSignedZeroInfNanPreserve()` del motor; ya no duplica la inyección. La corrida del corpus con el helper del motor da 5003/5003 filas idénticas al arnés de referencia y 0 fallos de categoría.
 
 **Mandato del usuario (2026-11-11):**
 - A si es viable; B si no. Criterio: `>= 15/17` → A; `10–14/17` → zona gris (consultar); `< 10/17` → B.
@@ -1020,12 +1027,14 @@ A existe en este hardware. Otras GPUs requieren su propia consulta; no se extrap
 - Post-fix, con modo: **0 fallos de categoría en 1042 nodos / 5210 muestras / 55 librerías**; 0 nodos con fallo SIMD. **No se declara 17/17**: el test mide NaN/inf/div0 y SIMD≠escalar, no reasociación. Esa limitación es DL-39.
 - Efecto colateral medido: 93/5003 muestras GPU cambian entre sin-modo y con-modo (61 funciones; hasta 98.6% rel en `hash21_y`), por codegen distinto del driver. El corpus debe re-baselinarse con A; no es un fallo del modo.
 
-**Fallback B (política):**
-1. Al arrancar, consultar `VkPhysicalDeviceFloatControlsProperties::shaderSignedZeroInfNanPreserveFloat32`.
-2. Si `VK_TRUE`: inyectar A en todo shader generado; log `[IEEE] modo A (SignedZeroInfNanPreserve) activo`.
-3. Si `VK_FALSE`: no inyectar; log `[IEEE] modo B (sin SignedZeroInfNanPreserve): replay no bit-exacto en NaN/inf/div0`; marcar el replay/export con `bit_exact=false`. B no es degradación silenciosa.
-4. Si la consulta falla o la extensión no está: tratar como B y loguear el motivo.
+**Fallback B (política implementada):**
+1. `VulkanContext::queryFloatControls()` consulta `VkPhysicalDeviceFloatControlsProperties::shaderSignedZeroInfNanPreserveFloat32` al arrancar.
+2. Si `VK_TRUE`: `vk_ctx.szinp_f32 = true`; `recreateScenePipeline` inyecta A en todo SPIR-V; log `[IEEE] modo A activo (SignedZeroInfNanPreserve f32)`.
+3. Si `VK_FALSE`: no inyectar; log `[IEEE] modo B activo (sin determinismo NaN/inf)`; `vk_ctx.szinp_f32 = false`. El marcado `bit_exact=false` del replay/export queda diferido hasta que exista replay/export; el modo no se presenta como bit-exacto.
+4. Si la consulta falla (sin `physical_device`, sin `vkGetPhysicalDeviceProperties2`): tratar como B y loguear el motivo.
 5. Nunca usar A cuando la propiedad sea `VK_FALSE`: `VUID-RuntimeSpirv-shaderSignedZeroInfNanPreserveFloat32-06294` dice "must not be used"; el pipeline puede rechazarse o el comportamiento es indefinido. No hay degradación garantizada.
+
+**Verificación en el motor (2026-11-12):** al cargar `std_astro_cosmology.ont`, `build/phase6_diag.txt` registra `[PHASE6] vk_ctx.init OK`, `[IEEE] modo A activo (SignedZeroInfNanPreserve f32)` y `[VK] Scene-specialized pipeline created` (el driver acepta el SPIR-V inyectado y crea el pipeline). El SPIR-V inyectado por el motor pasa `spirv-val` en `vulkan1.0` y `vulkan1.2`. El corpus con el helper del motor: 0 fallos de categoría, 70/70 opcodes, 5003/5003 filas idénticas entre corridas y contra el arnés de referencia.
 
 **Alcance de A (lo que sí y lo que no):**
 - A da semántica IEEE por instrucción para NaN, inf y signo del cero; evita las transformaciones que asumen "sin NaN" (`0*x → 0`, gating con `step`, etc.).
