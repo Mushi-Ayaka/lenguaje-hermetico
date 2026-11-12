@@ -1,5 +1,22 @@
 # Changelog
 
+## 2026-11-11 — 2.0c.3d: política IEEE/NaN (DL-38) y deuda de reasociación (DL-39)
+
+### Decisión
+- **DL-38 (A + fallback B):** la RTX 3060 Laptop (driver 616.92, Vulkan 1.4.351) soporta `shaderSignedZeroInfNanPreserveFloat32 = VK_TRUE`. Se inyecta `OpCapability SignedZeroInfNanPreserve` + `OpExtension "SPV_KHR_float_controls"` + `OpExecutionMode %main SignedZeroInfNanPreserve 32` sobre el SPIR-V de glslc; `spirv-val` lo acepta en `vulkan1.0` y `vulkan1.2`. Si la propiedad es `VK_FALSE`, el motor debe consultarla al arrancar, activar B, marcar el replay como no bit-exacto y loguear; nunca usar A cuando la propiedad sea `VK_FALSE` (`VUID-RuntimeSpirv-shaderSignedZeroInfNanPreserveFloat32-06294`). Default A si está, B si no, con log explícito.
+- **DL-39 (reasociación):** deuda medida, **no implementada**. Prohibido tocar el generador para reasociación hasta que se decida en un paso propio.
+
+### Medición
+- **Soporte:** `shaderSignedZeroInfNanPreserveFloat32/16/64 = VK_TRUE`; `shaderDenormPreserve/FlushToZeroFloat32 = VK_FALSE`; RTE/RTZ = VK_TRUE. Canario: `0*(1/0)` pasa de 0 a NaN con el modo; `1/-0`, `1/+0` y el control no cambian.
+- **Corpus real:** 55 librerías, 1042 nodos, 5210 muestras. Pre-fix: 17 fallos de categoría → 2 con modo (15/17, 88.2%). Los 2 restantes eran un bug de `powParityExpr` con base `-inf` (`powf(-inf,1.5)=+inf`), corregido en `render/spirv_gen.cpp` y `render/glsl_gen.cpp`. Post-fix: **0 fallos de categoría, 0 fallos SIMD**. No se declara 17/17 porque el test no cubre reasociación.
+- **Efecto colateral:** 93/5003 muestras GPU cambian entre sin modo y con modo (61 funciones; hasta 98.6% rel en `hash21_y`). El corpus se re-baselina con A.
+- **DL-39:** 55/55 librerías tienen cadenas de 3+ términos; 698/1042 nodos. Con `--precise` (NoContraction) sin modo: 119 nodos / 40 librerías cambian; 24 nodos / 13 librerías cambian >1e-5; 14 nodos / 4 librerías >1e-3. Desglose: 1 caso catastrófico atribuible a la función (`magnetic_susceptibility`, rel 1.98 por `μB² → 0`; `--precise` lo lleva a ≤4 ULP); 13 nodos / 3 librerías son caos de `hash*`/`vnoise*`/`fbm*`/`terrain_height` (no reasociación; `--precise` no los arregla); 10 nodos / 9 librerías son ruido del wrapper del corpus (≤2.2e-5, acotado por `higgs_mass`, que no tiene cadena en su función). Respuesta: **1 caso catastrófico (1/55)**, no 50.
+
+### Consecuencia
+- **2.0c.3d cerrado** en lo relativo a política NaN/inf/div0, corpus real y fix de `powParityExpr`. Dos corridas idénticas (5003/5003 filas, 70/70 opcodes).
+- **Implementación de A+B en el motor pendiente** (`render/render.h`, `visor/visor_app.cpp`); se propone 2.0c.4 junto con la división IEEE.
+- Detalle en `motor-grafico/docs/22-medicion-ulp-gpu.md` (sección 11), `DECISION_LOG.md` (DL-38, DL-39).
+
 ## 2026-11-10 — 2.0c.3c: test de paridad de opcodes CPU/GPU (sin cambio de versión)
 
 ### Cambios

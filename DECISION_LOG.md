@@ -982,6 +982,105 @@ En la cola `|resultado| < 1e-4`, el máximo absoluto es `1.073e-7` (`log2`); el 
 
 ---
 
+## DL-38 — 2.0c.3d: política IEEE/NaN. Modo A (`SignedZeroInfNanPreserve`) con fallback explícito B.
+
+**Estado:** DECIDIDO (2026-11-11). Medición completa en el arnés `tests/test_eval_parity.cpp` (`--caps`, `--szinp`). La inyección en el motor (`render/render.h`, `visor/visor_app.cpp`) queda pendiente; se propone 2.0c.4, junto con la división IEEE. El arnés es la implementación de referencia y la evidencia. No cambia sintaxis ni bytecode.
+
+**Mandato del usuario (2026-11-11):**
+- A si es viable; B si no. Criterio: `>= 15/17` → A; `10–14/17` → zona gris (consultar); `< 10/17` → B.
+- El fallback no es degradación silenciosa: consultar la propiedad al arrancar; si `VK_FALSE`, activar B, marcar el replay como no bit-exacto y loguear. Default A si está disponible, B si no, con log explícito del modo activo.
+- Sin determinismo bit a bit cross-platform prometido si se usa B.
+- No declarar 17/17 hasta que el test cubra reasociación (DL-39).
+- Cada exclusión se justifica por propiedad medida, nunca por nombre de función.
+
+**Soporte medido (2026-11-11, RTX 3060 Laptop, NVIDIA 616.92, Vulkan 1.4.351):**
+
+| Propiedad | Valor |
+|---|---|
+| `shaderSignedZeroInfNanPreserveFloat32` | **VK_TRUE** |
+| `shaderSignedZeroInfNanPreserveFloat16/64` | VK_TRUE |
+| `shaderDenormPreserveFloat32` / `shaderDenormFlushToZeroFloat32` | VK_FALSE / VK_FALSE |
+| `shaderRoundingModeRTE/RTZFloat32` | VK_TRUE / VK_TRUE |
+| `denormBehaviorIndependence` | ALL (1) |
+
+A existe en este hardware. Otras GPUs requieren su propia consulta; no se extrapola.
+
+**Inyección validada:** sobre el SPIR-V 1.0 de glslc se añade `OpCapability SignedZeroInfNanPreserve (4466)`, `OpExtension "SPV_KHR_float_controls"` y `OpExecutionMode %main SignedZeroInfNanPreserve 32 (4461)`. `spirv-val` acepta el módulo en `vulkan1.0` y `vulkan1.2`; `spirv-dis` confirma las tres instrucciones. El canario demuestra que el driver no ignora el modo:
+
+| Canario | sin modo | con modo |
+|---|---:|---:|
+| `0 * (1/0)` | 0 | **NaN** |
+| `1 / -0` | -inf | -inf |
+| `1 / +0` | inf | inf |
+| control `(p.x-p.x)+1` | 1 | 1 |
+
+**Resultado de la medición:**
+- Pre-fix de `powParityExpr`: 17 fallos de categoría → 2 con modo (**15/17, 88.2%**, umbral A). Resueltos: `binary_entropy` (3), `entropy3` (3), `abrikosov_vortex` (2), `gibbs_entropy2` (2), `half_life_nth_order`, `pareto_pdf`, `weibull_pdf`, `mutual_info`, `kl_divergence`. Restantes: `std_bridge_statmech_mol[1] translational_partition_function` j=0 y j=4.
+- Los 2 restantes **no eran límite de A**: `PLANCK² = 4.39e-67 → 0` en f32, `term = -inf`, y `powParityExpr` devolvía el NaN de `sqrt(-1.0 - abs(A))` en vez de `powf(-inf, 1.5) = +inf`. Corregido en `render/spirv_gen.cpp` y `render/glsl_gen.cpp`: la rama no entera distingue `A < -3.402823466e38` (solo `-inf`) y usa `pow(-A, B)`; conserva `-inf` para exponente entero impar.
+- Post-fix, con modo: **0 fallos de categoría en 1042 nodos / 5210 muestras / 55 librerías**; 0 nodos con fallo SIMD. **No se declara 17/17**: el test mide NaN/inf/div0 y SIMD≠escalar, no reasociación. Esa limitación es DL-39.
+- Efecto colateral medido: 93/5003 muestras GPU cambian entre sin-modo y con-modo (61 funciones; hasta 98.6% rel en `hash21_y`), por codegen distinto del driver. El corpus debe re-baselinarse con A; no es un fallo del modo.
+
+**Fallback B (política):**
+1. Al arrancar, consultar `VkPhysicalDeviceFloatControlsProperties::shaderSignedZeroInfNanPreserveFloat32`.
+2. Si `VK_TRUE`: inyectar A en todo shader generado; log `[IEEE] modo A (SignedZeroInfNanPreserve) activo`.
+3. Si `VK_FALSE`: no inyectar; log `[IEEE] modo B (sin SignedZeroInfNanPreserve): replay no bit-exacto en NaN/inf/div0`; marcar el replay/export con `bit_exact=false`. B no es degradación silenciosa.
+4. Si la consulta falla o la extensión no está: tratar como B y loguear el motivo.
+5. Nunca usar A cuando la propiedad sea `VK_FALSE`: `VUID-RuntimeSpirv-shaderSignedZeroInfNanPreserveFloat32-06294` dice "must not be used"; el pipeline puede rechazarse o el comportamiento es indefinido. No hay degradación garantizada.
+
+**Alcance de A (lo que sí y lo que no):**
+- A da semántica IEEE por instrucción para NaN, inf y signo del cero; evita las transformaciones que asumen "sin NaN" (`0*x → 0`, gating con `step`, etc.).
+- A **no impide la reasociación**. El spec de SPIR-V lo dice: la preservación de NaN/inf no impide transformaciones que reasocien, aunque desborden a inf/NaN. Por eso A no arregla `magnetic_susceptibility` (rel 1.98) ni garantiza bit-exactitud de valores finitos. Eso es DL-39.
+- Tampoco arregla las diferencias de transcendentes (`sin`, `exp`, `pow`) ni la amplificación caótica de `hash*`/`vnoise*`/`fbm*`/`terrain_height`; esas son otra deuda (DL-39 las separa).
+
+**Limitación del test (obligatoria en el cierre):** `test_eval_parity` compara NaN/inf/div0 y SIMD≠escalar, y aplica tolerancias ULP a opcodes. No genera cadenas con underflow/cancelación para forzar reasociación, así que un `PASS` no implica paridad bit a bit de valores finitos. La cobertura de reasociación es DL-39.
+
+**Evidencia cruda:** `motor-grafico/docs/measurements/parity_rtx3060_2026-11-11.txt`; detalle en `motor-grafico/docs/22-medicion-ulp-gpu.md` (sección 11).
+
+**Alcance:** RTX 3060 Laptop, driver 616.92, Vulkan 1.4.351. Sin margen asimétrico. Otras GPUs: consulta propia; A si `VK_TRUE`, B documentado si no.
+
+---
+
+## DL-39 — 2.0c.3d: reasociación de punto flotante. Deuda medida, sin implementación.
+
+**Estado:** MEDIDO (2026-11-11). No implementado. **Prohibido tocar el generador para reasociación hasta que esta deuda se decida e implemente en un paso propio.** La única modificación de esta ronda es el fix de `powParityExpr` (DL-38), que no reasocia nada.
+
+**Mandato del usuario (2026-11-11):** antes de registrar DL-39, medir cuántas de las 55 librerías tienen expresiones donde la reasociación cambia el resultado. Criterio: multiplicaciones/sumas de 3+ términos donde el orden importa (underflow, overflow, cancelación). Reportar librerías afectadas, funciones y ejemplos. Sin ese número no se decide.
+
+**Método:**
+- Escaneo estático de las 1042 expresiones GLSL del corpus (`--glsl-out`): parser de la expresión completa, se descarta el wrapper `sphere(abs(fn)+0.5)` y se buscan cadenas maximales de 3+ términos con el mismo operador (`+` puro, `*` puro) y cadenas mixtas (`+/-`, `*//`).
+- Medición dinámica: `--precise` sin modo (`NoContraction`) sobre el corpus, comparado con el baseline sin modo (run8). `precise` obliga a no contraer y, en este driver, también impide reasociar; se verificó que emite `OpDecorate NoContraction` (no es un control de reasociación portable).
+- Se separa contracción FMA (cambios de ~1 ULP) de reasociación (cambios materiales) y se acota el efecto del wrapper del corpus.
+
+**Resultado estructural (sin wrapper):**
+- **55/55 librerías** tienen al menos una función con una cadena de 3+ términos.
+- 698/1042 nodos (67%): 477 nodos con suma pura 3+ (52 librerías), 403 con multiplicación pura 3+ (54 librerías); 836 nodos si se cuentan cadenas mixtas.
+- El patrón es sistémico por construcción: casi cualquier fórmula física encadena 3+ productos o sumas. La pregunta útil no es "¿hay cadenas?", sino "¿cuántas cambian el resultado?".
+
+**Resultado dinámico (`--precise`, sin modo; run8 vs run10):**
+- 119 nodos / 40 librerías cambian al menos una muestra (154/5003 muestras).
+- 24 nodos / 13 librerías cambian más de `1e-5`.
+- 14 nodos / 4 librerías cambian más de `1e-3`.
+- 95 nodos / 37 librerías cambian solo `1e-6..1e-5`: ruido de contracción FMA, no reasociación.
+
+**Desglose de los 24 nodos materiales:**
+1. **Reasociación catastrófica demostrada — 1 librería / 1 función:** `std_chem_coordination[8] magnetic_susceptibility`. `C = N_A·m²·μB²/(3k_B)`; `μB² = 8.6e-47 → 0` en f32. La CPU asocia de izquierda a derecha (`N_A` primero) y conserva un término distinto de cero; la GPU asocia `μB·μB` primero, anula `C`, y la salida del nodo pasa de 0.685 (CPU) a 1.42 (GPU) en la muestra 0 (rel 1.98, hasta 2.17e9 ULP). Con `--precise` la GPU coincide con la CPU (≤4 ULP). Es el único caso con firma inequívoca de la función: rel 1.98 en las 5 muestras, muy por encima del ruido del arnés.
+2. **Clúster caótico — 3 librerías / 13 nodos, NO es reasociación:** `std_math_core` (`hash12`, `hash21_x`, `hash21_y`, `hash13`), `std_geo_terrain` (`terrain_height`, `ridged_fbm`, `billowy_fbm`), `std_math_noise` (`vnoise2d`, `vnoise3d`, `fbm2d_4`, `fbm3d_4`, `fbm3d_6`, `turbulence3d_4`). Cambian más de `1e-3` con `precise`, pero **`precise` no los arregla**: siguen a rel 0.6 contra la CPU. La causa es la amplificación caótica de diferencias de 1 ULP en `sin`/`floor`/`fract` (`fract(sin(x)*43758.5)`), no el orden de una cadena. Necesitan otra decisión (transcendentes bit-exactas o hash entero), no DL-39. Incluirlos aquí sería un diagnóstico falso.
+3. **Ruido del arnés — 10 nodos / 9 librerías, ≤2.2e-5:** `second_order_kinetics_same`, `higgs_mass`, `channel_capacity`, `grating_field`, `open_probability`, `transference_number`, `cylinder_y_field`, `fcc_structure_factor`, `gas_viscosity`, `gas_thermal_conductivity`. `higgs_mass` no tiene ninguna cadena en su función (`1.41421354*(0.7+p.x)`) y aun así muestra el mismo patrón 256 ULP / 1.78e-5 en la muestra 0 que `gas_viscosity`; el wrapper `sqrt(x²+y²+z²)` es una cadena de 3 términos y su cancelación con `abs(fn)+0.5` fija ese suelo. No se atribuyen a la librería sin un corpus sin wrapper.
+
+**Respuesta a la pregunta del usuario:** no son 50 casos sistémicos ni 1 caso aislado; son **1 caso catastrófico demostrado (1/55 librerías)**, con el patrón estructural presente en 55/55 y 13/55 mostrando algún cambio material bajo orden forzado, de los cuales 3/55 son un problema distinto (caos) y 9/55 están en el ruido del arnés. Si el criterio es "cualquier cambio >1e-5 bajo orden forzado", el número es 13/55; si es "reasociación que cambia el resultado de forma atribuible a la función", es 1/55.
+
+**Opciones (ninguna implementada):**
+- **A. `precise`/`NoContraction` global en los shaders generados.** Medido: arregla `magnetic_susceptibility` (≤4 ULP) y elimina los 15 fallos de categoría sin el modo DL-38 en este driver. Pero el spec solo garantiza no contraer, no no-reasociar; el efecto observado es del driver, no portable. Coste: inhibe FMA (154 muestras cambian, 95 en el ruido `1e-6..1e-5`) y no arregla hash/noise/terrain. No sustituye a DL-38.
+- **B. Reordenamiento seguro en el generador.** Asociación explícita y temporales para cadenas con underflow/overflow; requiere una regla determinista y un test que la mida. Sin `precise`, el driver puede volver a reasociar; con `precise`, se paga A. No implementar hasta decidir.
+- **C. Aceptar y documentar.** Solo exclusiones por propiedad medida, nunca por nombre; cada exclusión en este registro. Si el motor no promete bit-exactitud de valores finitos, `magnetic_susceptibility` se documenta como caso conocido y el resto (≤2.2e-5) queda dentro de tolerancia.
+- **D. Test de reasociación antes de cualquier 17/17.** Añadir cadenas con underflow/cancelación explícitas (p. ej. `(a*b)*c` vs `a*(b*c)` con `b*c → 0`) y comparar CPU/GPU. Sin ese test, el `PASS` actual no cubre reasociación.
+
+**Recomendación (para decidir, no implementada):** DL-39 no se resuelve con un cambio global de `precise`: arregla 1 caso y no arregla el clúster caótico. La opción de menor riesgo es C + D (documentar el caso medido y añadir el test), y tratar hash/noise/terrain en una deuda aparte. Si el usuario exige bit-exactitud de finitos, hace falta A+B y aun así el clúster caótico queda fuera.
+
+**Cobertura actual:** el test de paridad mide NaN/inf/div0 y SIMD≠escalar; no mide reasociación. Esa limitación queda registrada en DL-38 y es la razón por la que 2.0c.3d no declara 17/17.
+
+---
+
 ### Cómo queda el lenguaje después de estas decisiones
 
 Sin cambios. Ni una línea de sintaxis nueva. Exactamente como está hoy. El parser solo se extiende para aceptar let internos en fn (DL-14), que es una extensión del parser, no de la sintaxis visible.
