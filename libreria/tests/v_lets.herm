@@ -1,0 +1,83 @@
+// v_lets.herm - RAM bomb de DL-09 con una expresion valida y expandida.
+//
+// 6 librerias importadas + 31 let que invocan sus funciones. Los 31 let se
+// conectan a density_scale (campo escalar evaluado de verdad desde 2.0a) y a
+// position (texto conservado en el .rih). El termino "+ w * 0.0" impide que el
+// plegado constante de DL-09(A) elimine el arbol antes de medirlo: la prueba
+// debe ejercitar la expansion de fn y la memoizacion de DL-09(B), no saltarselas.
+//
+// Compilar: build\herm.exe libreria\tests\v_lets.herm -o %TEMP%\v_lets
+// Criterio DL-09: peak < 100 MB.
+// Medido 2026-11-12: 2.5-5.3 MB peak, 47-204 ms; density_scale = 49678.5703;
+// translate[0] = expresion de ~99 KB con parentesis balanceados.
+
+scene {
+    background: [0, 0, 0];
+}
+
+import "std_math_core.hm"
+import "std_math_algebra.hm"
+import "std_math_calculus.hm"
+import "std_math_noise.hm"
+import "std_math_probability.hm"
+import "std_math_dynamics.hm"
+
+material "test_mat" {}
+
+// --- std_math_algebra ---
+let dot3 = v3_dot(1.0, 0.0, 0.0, 0.0, 1.0, 0.0) + w * 0.0;
+let cross_x = v3_cross_x(1.0, 0.0, 0.0, 0.0, 1.0, 0.0) + w * 0.0;
+let len3 = v3_len(3.0, 4.0, 0.0) + w * 0.0;
+let rod_x = rodrigues_x(1.0, 0.0, 0.0, 0.0, 0.0, 1.0, 1.5707) + w * 0.0;
+let disc = discriminant(1.0, -3.0, 2.0) + w * 0.0;
+let root1 = quadratic_root1(1.0, -3.0, 2.0) + w * 0.0;
+let lap2d = laplacian(0.0, 1.0, -1.0, 1.0, -1.0, 0.1) + w * 0.0;
+
+// --- std_math_calculus ---
+let d_sin_val = d_sin(0.0) + w * 0.0;
+let sin_t7 = sin_taylor7(0.5) + w * 0.0;
+let exp_t4 = exp_taylor4(1.0) + w * 0.0;
+let shm = shm_pos(1.0, 0.0, 1.0, 1.0) + w * 0.0;
+let log_grow = logistic_growth(10.0, 1000.0, 0.3, 5.0) + w * 0.0;
+let heat_1d = heat1d_mode1(100.0, 1.0, 1.0, 0.5, 0.1) + w * 0.0;
+let herm = hermite_pos(0.0, 1.0, 0.0, 0.0, 0.5) + w * 0.0;
+
+// --- std_math_noise ---
+let vn1 = vnoise1d(1.37) + w * 0.0;
+let vn2 = vnoise2d(0.5, 0.7) + w * 0.0;
+let fbm2 = fbm2d_4(0.3, 0.7) + w * 0.0;
+let fbm3 = fbm3d_4(0.1, 0.2, 0.3) + w * 0.0;
+let turb = turbulence3d_4(0.5, 0.5, 0.5) + w * 0.0;
+let checker_val = checker(1.5, 2.5, 1.0) + w * 0.0;
+
+// --- std_math_probability ---
+let gauss = normal_pdf(0.0, 0.0, 1.0) + w * 0.0;
+let cauchy = cauchy_pdf(1.0, 0.0, 1.0) + w * 0.0;
+let weibull = weibull_pdf(1.0, 2.0, 1.0) + w * 0.0;
+let entropy3_val = entropy3(0.5, 0.3, 0.2) + w * 0.0;
+let kl = kl_divergence(0.4, 0.3) + w * 0.0;
+
+// --- std_math_dynamics ---
+let lor_dx = lorenz_dx(1.0, 2.0, 10.0) + w * 0.0;
+let lor_dy = lorenz_dy(1.0, 2.0, 1.0, 28.0) + w * 0.0;
+let logmap = logistic_map(0.4, 3.7) + w * 0.0;
+let fhn_v = fhn_dv(0.5, 0.2, 1.0) + w * 0.0;
+let bin_ent = binary_entropy(0.3) + w * 0.0;
+let channel_cap = channel_capacity(10000.0, 30.0) + w * 0.0;
+
+// El campo escalar fuerza la evaluacion real de los 31 let; position conserva
+// la expresion expandida completa en el .rih (no se descarta en silencio).
+node "ram_probe" {
+    position: [dot3 + cross_x + len3 + rod_x + disc + root1 + lap2d
+        + d_sin_val + sin_t7 + exp_t4 + shm + log_grow + heat_1d + herm
+        + vn1 + vn2 + fbm2 + fbm3 + turb + checker_val
+        + gauss + cauchy + weibull + entropy3_val + kl
+        + lor_dx + lor_dy + logmap + fhn_v + bin_ent + channel_cap, 0, 0];
+    sdf: sphere(0.2);
+    density_scale: dot3 + cross_x + len3 + rod_x + disc + root1 + lap2d
+        + d_sin_val + sin_t7 + exp_t4 + shm + log_grow + heat_1d + herm
+        + vn1 + vn2 + fbm2 + fbm3 + turb + checker_val
+        + gauss + cauchy + weibull + entropy3_val + kl
+        + lor_dx + lor_dy + logmap + fhn_v + bin_ent + channel_cap;
+    material: "test_mat";
+}

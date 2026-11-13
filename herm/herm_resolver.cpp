@@ -1,9 +1,56 @@
 #include <stdexcept>
 #include <cmath>
+#include <cstdio>
 #include "herm_resolver.h"
 #include "herm_eval.h"
 
 namespace herm {
+
+namespace {
+
+// DL-09: limite duro de expansion. Sin CSE, una `fn` que recibe como argumento
+// otra `fn` grande se duplica en cada uso del parametro (domain_warp2d supera
+// los 300 MB). Preferimos un fallo ruidoso a materializar el arbol.
+constexpr size_t kMaxExpansionBytes = 16u * 1024u * 1024u;
+constexpr size_t kMaxCacheEntryBytes = 1u * 1024u * 1024u;
+constexpr size_t kMaxCacheBytes = 64u * 1024u * 1024u;
+
+// Formatea una constante f32 con precision suficiente para round-trip.
+std::string formatConst(f32 v) {
+    char buf[32];
+    std::snprintf(buf, sizeof(buf), "%.9g", (double)v);
+    return std::string(buf);
+}
+
+bool isIdentifierChar(char c) {
+    return std::isalnum((unsigned char)c) || c == '_';
+}
+
+// Nombres que evalExpression resuelve contra el contexto de runtime. Una
+// expresion que use cualquiera de ellos NO se pliega a constante aunque su
+// valor coincida en dos muestras: el .rih debe conservar la dependencia.
+bool usesRuntimeVar(const std::string& t) {
+    static const char* vars[] = {
+        "x", "y", "z", "w", "t",
+        "nx", "ny", "nz", "vx", "vy", "vz", "lx", "ly", "lz"
+    };
+    size_t i = 0;
+    while (i < t.size()) {
+        if (std::isalpha((unsigned char)t[i]) || t[i] == '_') {
+            size_t start = i;
+            while (i < t.size() && isIdentifierChar(t[i])) i++;
+            std::string name = t.substr(start, i - start);
+            for (const char* v : vars) {
+                if (name == v) return true;
+            }
+        } else {
+            i++;
+        }
+    }
+    return false;
+}
+
+} // namespace
 
 Resolver::Resolver(const AstProgram& ast) : ast(ast) {}
 
@@ -27,6 +74,10 @@ Rih Resolver::resolve() {
         bool changed = false;
         for (auto& [name, val] : let_table) {
             std::string new_val = expandExpression(val);
+            // DL-09 A: si el valor ya no depende de nada, guardarlo como
+            // literal. Evita arrastrar el arbol expandido por cada uso.
+            f32 folded = 0.0f;
+            if (tryFoldConstant(new_val, folded)) new_val = formatConst(folded);
             if (new_val != val) { val = new_val; changed = true; }
         }
         if (!changed) break;
@@ -85,11 +136,10 @@ void Resolver::resolveCamera(const AstCamera& ast) {
 f32 Resolver::evalExpr(const ExprNode& expr) const {
     if (expr.text.empty()) return 0.0f;
     std::string text = expandExpression(expr.text);
-    try {
-        size_t pos;
-        float val = std::stof(text, &pos);
-        if (pos == text.size()) return val;
-    } catch (...) {}
+
+    // DL-09 A: plegado constante real.
+    f32 folded = 0.0f;
+    if (tryFoldConstant(text, folded)) return folded;
 
     // No es un literal: evaluar con el mismo evaluador que usa el runtime
     // (DL-29). Antes se devolvia 0.0f en silencio.
@@ -126,15 +176,15 @@ Expr Resolver::toExpr(const ExprNode& node, f32 default_val) const {
         return e;
     }
     std::string text = expandExpression(node.text);
-    try {
-        size_t pos;
-        float val = std::stof(text, &pos);
-        if (pos == text.size()) {
-            e.is_expr = false;
-            e.constant = val;
-            return e;
-        }
-    } catch (...) {}
+
+    // DL-09 A: si la expresion es constante, guardarla como numero en vez de
+    // arrastrar el texto expandido hasta el .rih.
+    f32 folded = 0.0f;
+    if (tryFoldConstant(text, folded)) {
+        e.is_expr = false;
+        e.constant = folded;
+        return e;
+    }
     e.is_expr = true;
     e.expression = text;
     return e;
@@ -534,6 +584,10 @@ std::string Resolver::substExprText(const std::string& text,
             bool bl = (pos == 0 || !isWord(t[pos - 1]));
             bool br = (pos + param.size() >= t.size() || !isWord(t[pos + param.size()]));
             if (bl && br) {
+                // DL-09: una sustitucion no puede materializar un arbol sin limite.
+                if (t.size() - param.size() + arg.size() > kMaxExpansionBytes)
+                    throw ResolverError("la sustitucion de '" + param +
+                        "' supera el limite de 16 MB de expansion");
                 t.replace(pos, param.size(), arg);
                 pos += arg.size();
             } else {
@@ -545,33 +599,33 @@ std::string Resolver::substExprText(const std::string& text,
 }
 
 std::string Resolver::expandExpression(const std::string& text, int depth) const {
-    if (depth > 16) return text; // Límite de recursión para evitar cuelgues
+    if (depth > 16) return text; // Limite de recursion para evitar cuelgues
+    if (text.size() > kMaxExpansionBytes)
+        throw ResolverError("la expresion supera el limite de 16 MB antes de expandir");
 
-    std::string t = substExprText(text, let_table);
-    
     std::string res;
+    res.reserve(text.size());
     size_t i = 0;
-    bool changed = false;
-    while (i < t.size()) {
-        if (std::isalpha(t[i]) || t[i] == '_') {
+    while (i < text.size()) {
+        if (std::isalpha((unsigned char)text[i]) || text[i] == '_') {
             size_t start = i;
-            while (i < t.size() && (std::isalnum(t[i]) || t[i] == '_')) i++;
-            std::string name = t.substr(start, i - start);
-            
+            while (i < text.size() && isIdentifierChar(text[i])) i++;
+            std::string name = text.substr(start, i - start);
+
             size_t j = i;
-            while (j < t.size() && std::isspace(t[j])) j++;
-            
-            if (j < t.size() && t[j] == '(' && fn_table.count(name)) {
+            while (j < text.size() && std::isspace((unsigned char)text[j])) j++;
+
+            if (j < text.size() && text[j] == '(' && fn_table.count(name)) {
                 const AstFn* fn = fn_table.at(name);
                 j++; // skip '('
-                
+
                 std::vector<std::string> args;
                 std::string current_arg;
                 int parens = 0;
-                
-                while (j < t.size()) {
-                    if (t[j] == '(') parens++;
-                    else if (t[j] == ')') {
+
+                while (j < text.size()) {
+                    if (text[j] == '(') parens++;
+                    else if (text[j] == ')') {
                         if (parens == 0) {
                             args.push_back(current_arg);
                             j++;
@@ -579,51 +633,118 @@ std::string Resolver::expandExpression(const std::string& text, int depth) const
                         }
                         parens--;
                     }
-                    else if (t[j] == ',' && parens == 0) {
+                    else if (text[j] == ',' && parens == 0) {
                         args.push_back(current_arg);
                         current_arg = "";
                         j++;
                         continue;
                     }
-                    current_arg += t[j];
+                    current_arg += text[j];
                     j++;
                 }
-                
-                std::unordered_map<std::string, std::string> param_subst;
-                for (size_t k = 0; k < std::min(fn->params.size(), args.size()); k++) {
-                    param_subst[fn->params[k]] = "(" + args[k] + ")";
+
+                // DL-09 B: expandir cada argumento una sola vez antes de
+                // sustituirlo. La clave de cache usa los argumentos ya
+                // expandidos (y la profundidad, por el corte de recursion).
+                for (auto& a : args) a = expandExpression(a, depth + 1);
+
+                std::string key = name;
+                key += '#';
+                key += std::to_string(depth);
+                for (auto& a : args) {
+                    key += '\x1e';
+                    key += a;
                 }
 
-                // DL-14: desugar internal lets — later lets and the final body
-                // see each let's name replaced by its parenthesized value
-                std::unordered_map<std::string, std::string> let_subst;
-                for (auto& [lname, lval] : fn->body_lets) {
-                    std::string lv = substExprText(lval, param_subst);
-                    lv = substExprText(lv, let_subst);
-                    let_subst[lname] = "(" + lv + ")";
+                std::string expanded;
+                auto cached = fn_expand_cache.find(key);
+                if (cached != fn_expand_cache.end()) {
+                    expanded = cached->second;
+                } else {
+                    std::unordered_map<std::string, std::string> param_subst;
+                    for (size_t k = 0; k < std::min(fn->params.size(), args.size()); k++) {
+                        param_subst[fn->params[k]] = "(" + args[k] + ")";
+                    }
+
+                    // DL-14: desugar internal lets — later lets and the final body
+                    // see each let's name replaced by its parenthesized value
+                    std::unordered_map<std::string, std::string> let_subst;
+                    for (auto& [lname, lval] : fn->body_lets) {
+                        std::string lv = substExprText(lval, param_subst);
+                        lv = substExprText(lv, let_subst);
+                        let_subst[lname] = "(" + lv + ")";
+                    }
+
+                    // body: lets primero (shadowing: un let interno pisa al param homonimo),
+                    // luego params para los nombres no cubiertos por lets
+                    try {
+                        expanded = substExprText(fn->body_expr, let_subst);
+                        expanded = substExprText(expanded, param_subst);
+                        expanded = expandExpression(expanded, depth + 1);
+                    } catch (const ResolverError& e) {
+                        throw ResolverError("expandiendo la funcion '" + name + "': " + e.what());
+                    }
+                    if (expanded.size() > kMaxExpansionBytes)
+                        throw ResolverError("la expansion de la funcion '" + name +
+                            "' supera el limite de 16 MB de expansion");
+                    if (expanded.size() <= kMaxCacheEntryBytes) {
+                        if (fn_cache_bytes + expanded.size() > kMaxCacheBytes) {
+                            fn_expand_cache.clear();
+                            fn_cache_bytes = 0;
+                        }
+                        fn_cache_bytes += expanded.size();
+                        fn_expand_cache.emplace(std::move(key), expanded);
+                    }
                 }
 
-                // body: lets primero (shadowing: un let interno pisa al param homónimo),
-                // luego params para los nombres no cubiertos por lets
-                std::string expanded = substExprText(fn->body_expr, let_subst);
-                expanded = substExprText(expanded, param_subst);
+                if (res.size() + expanded.size() + 2 > kMaxExpansionBytes)
+                    throw ResolverError("la expansion de la funcion '" + name +
+                        "' supera el limite de 16 MB de expansion");
                 res += "(" + expanded + ")";
                 i = j;
-                changed = true;
-                continue;
             } else {
                 res += name;
             }
         } else {
-            res += t[i];
+            res += text[i];
             i++;
         }
     }
-    
-    if (changed) {
-        return expandExpression(res, depth + 1);
+
+    // DL-09: la sustitucion de lets va DESPUES de expandir llamadas `fn`.
+    // Asi `dot3(...)` (fn de std_math_core) no se confunde con un `let dot3`
+    // definido por la escena. Un let solo se sustituye como identificador
+    // suelto, nunca como nombre de llamada.
+    return substExprText(res, let_table);
+}
+
+bool Resolver::tryFoldConstant(const std::string& expanded, f32& out) const {
+    if (expanded.empty()) return false;
+
+    // Literal puro (camino rapido).
+    try {
+        size_t pos = 0;
+        float v = std::stof(expanded, &pos);
+        if (pos == expanded.size()) {
+            if (!std::isfinite(v)) return false;
+            out = v;
+            return true;
+        }
+    } catch (...) {}
+
+    // Nunca plegar una expresion que dependa del contexto de runtime.
+    if (usesRuntimeVar(expanded)) return false;
+
+    // El evaluador lanza ante funciones/variables desconocidas: en ese caso
+    // la expresion sigue siendo texto (fallara o se resolvera mas adelante).
+    try {
+        float v = evalExpression(expanded, 0.0f, 0.0f, 0.0f, 0.0f);
+        if (!std::isfinite(v)) return false;
+        out = v;
+        return true;
+    } catch (...) {
+        return false;
     }
-    return res;
 }
 
 std::unique_ptr<AstSdf> Resolver::cloneSubstSdf(const AstSdf& src,

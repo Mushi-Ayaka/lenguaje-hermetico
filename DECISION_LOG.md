@@ -133,16 +133,23 @@
 
 ### DL-09 — RAM bomb del resolver.
 
-**Estado:** DECIDIDO (A+B+C en orden)
-**Motivo:** La explosión es exponencial por sustitución textual sin memoria. Los tres fixes son ortogonales y necesarios.
+**Estado:** A+B IMPLEMENTADO (2026-11-12); C diferido.
+**Motivo:** La explosión es exponencial por sustitución textual sin memoria. A y B son ortogonales; C exige cambiar el formato de expresión del RIH y no es necesario para la aceptación.
+
 **Consecuencia:**
+- **Fase A — Constant folding real (implementada).** `Resolver::tryFoldConstant` evalúa las subexpresiones constantes y las emite con `formatConst` (`%.9g`), suficiente para round-trip a f32. Se aplica al valor de los `let`, a `evalExpr` y a `toExpr`. Nunca pliega una expresión que contenga variables de runtime (`x,y,z,w,t,nx,ny,nz,vx,vy,vz,lx,ly,lz`).
+- **Fase B — Memoización de `fn` (implementada).** `fn_expand_cache` indexa `fn + profundidad + argumentos ya expandidos`; los argumentos se expanden antes de sustituir. Presupuesto de 64 MB, entradas de ≤ 1 MB: al agotarse, la caché se vacía y se recalcula (coste de tiempo, no de corrección).
+- **Fase C — CSE (diferida).** El RIH guarda las expresiones como `std::string`, sin tabla de referencias ni temporales; implantarla obliga a cambiar el formato. Con A+B el caso de aceptación baja de 1568 MB a 4,3 MB, así que C no bloquea el cierre. Queda como deuda si aparece otro patrón de expansión.
+- **Colisión `let`/`fn` (corregida).** `expandExpression` expande primero las llamadas `fn` y solo sustituye un `let` como identificador suelto, nunca como nombre de llamada. Antes, un `let` homónimo de una `fn` corrompía la llamada: la expresión de `test_layer1_math.herm` tenía 64 `)(` mal formados; la actual tiene 0.
+- **Límite ruidoso de expansión.** `kMaxExpansionBytes` = 16 MB en `substExprText` y `expandExpression`, con error que encadena contexto (`expandiendo la funcion 'domain_warp2d': ...`). Impide materializar árboles patológicos: `domain_warp2d` producía 298 MB de `.ont` / 403 MB de `.rih` y ahora falla con error explícito, quedando excluida del corpus.
 
-- **Fase A — Constant folding real.** En `Resolver::toExpr`, evaluar la expresión si todos los argumentos son constantes. `let RADIO = 1.0; let ALTURA = RADIO * 1.5;` → `let ALTURA = 1.5`.
-- **Fase B — Memoización de `fn`.** Cache de `(fn_name, arg_text)` → `expanded_text` en `expandExpression`.
-- **Fase C — CSE (common subexpression elimination).** Detección de subexpresiones idénticas en el árbol expandido. Reemplazo por referencias.
+**Verificación (2026-11-12, `build\herm.exe`):**
+- `libreria/tests/v_lets.herm` (6 librerías + 31 `let`, cada uno multiplicado por `w * 0.0` para que A no elimine el árbol antes de medir, y suma conectada a `density_scale` y `position`): **peak 2,5–5,3 MB, 47–204 ms** (tres corridas; el poll de 5 ms no captura el pico exacto), `density_scale = 49678.5703`, `translate[0]` ≈ 99 KB con paréntesis balanceados (11921/11921, 0 `)(`).
+- 55/55 librerías compilan. Todos los `.herm` de `ejemplos/` y `libreria/tests/` conservan su exit code; la única diferencia es `v_lets.herm` (base 1 → nuevo 0). Escenas animadas: 30/30, 6/6 y 33/33 fotogramas byte-idénticos.
+- Corpus 2.0c.3d: 1042 funciones, 55/55 librerías. Seis `.ont` cambian solo por plegado de constantes de librería (`5.29177210903e-11 * 1e11` → `5.29177189`, mismo f32); los `.obs` son idénticos.
+- Paridad del motor con el corpus nuevo: 1042 nodos, 5210 muestras, 0 fallos de categoría, 0 nodos con fallo SIMD; dos corridas con 5025/5025 filas idénticas.
 
-Se implementan en ese orden. Cada uno reduce el trabajo del siguiente.
-**Criterio de aceptación:** el test de 6 librerías + 31 let corre en < 100 MB.
+**Criterio de aceptación:** el test de 6 librerías + 31 let corre en < 100 MB → **cumplido (≤ 5,3 MB)**.
 
 ### DL-10 — Rol de `MLIR-CampoTensorial`.
 
@@ -418,7 +425,7 @@ Para esos casos, se usa SDF en runtime. Pero son minoría.
 - Fallback a ray marching siempre funcional.
 - No se toca el lenguaje. Flags del compilador y motor.
 
-**Dependencias:** Fase 3 (`.sem`), DL-09 (fold + memo + CSE), Pasos 5.1–5.5.
+**Dependencias:** Fase 3 (`.sem`), DL-09 A+B (fold + memo; CSE diferido), Pasos 5.1–5.5.
 **Riesgos:** Detección conservadora (aceptable), shader más grande, ganancia depende de la escena.
 
 ---
@@ -1113,7 +1120,7 @@ Editor de nodos visuales (DL-20)
    ↓
 .herm puro (con mix/step/smoothstep/def/instance)
    ↓
-herm.exe (con DL-09: fold + memo + CSE)
+herm.exe (con DL-09 A+B: fold + memo)
    ↓
 .ont + .sem + .bake
    ↓
@@ -1483,7 +1490,7 @@ Paso 5.13 (nuevo) — Gradiente analítico.
 **Dependencias:**
 - Paso 5.1–5.5 cerrados (static/dynamic, `def_id`, AABBs, normales, operadores SDF).
 - Fase 3 cerrada (`.sem` con `analytic_flags`).
-- DL-09 cerrado (fold + memo + CSE).
+- DL-09 A+B cerrado (fold + memo; CSE diferido).
 
 **Sub-pasos (en orden estricto):**
 

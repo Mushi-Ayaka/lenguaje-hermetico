@@ -43,7 +43,7 @@ Detalle por librería en `docs/librerias/*.md`.
 
 ### RAM bomb
 
-`v_lets.herm` (6 libs importadas + 31 `let` que invocan sus funciones): **peak 1568 MB, 12,973 ms** (medido 2026-10-16 con poll de 5 ms por pid). Causa: el resolver expande `fn`/`let` por sustitución textual sin memoización ni CSE (DL-09 A+B+C, pendiente, objetivo < 100 MB). **Sigue vigente**: la reescritura de librerías no cambia el coste de expansión.
+`v_lets.herm` (6 libs importadas + 31 `let` que invocan sus funciones): **peak 2,5–5,3 MB, 47–204 ms** (medido 2026-11-12 con DL-09 A+B; el poll de 5 ms no captura el pico exacto). Histórico: **peak 1568 MB, 12.973 ms** (2026-10-16). Causa: el resolver expandía `fn`/`let` por sustitución textual sin memoria. **DL-09 A+B implementado** (plegado constante y memoización de `fn`, con límite ruidoso de 16 MB por expansión); C (CSE) queda diferido porque el RIH no tiene tabla de referencias. El objetivo < 100 MB está cumplido; `domain_warp2d` supera el límite y falla con error explícito.
 
 ## Contenido
 

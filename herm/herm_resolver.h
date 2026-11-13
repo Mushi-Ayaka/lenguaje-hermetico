@@ -45,6 +45,9 @@ private:
         const std::unordered_map<std::string, std::string>& subst) const;
     std::string expandExpression(const std::string& text, int depth = 0) const;
 
+    // DL-09 A: plegado constante real. `expanded` ya no tiene fn/let pendientes.
+    bool tryFoldConstant(const std::string& expanded, f32& out) const;
+
     // State
     const AstProgram& ast;
     Rih rih;
@@ -54,6 +57,12 @@ private:
     std::unordered_map<std::string, const AstDef*> ast_def_map; // param'd defs
     std::unordered_map<std::string, std::string> let_table;     // let variables
     std::unordered_map<std::string, const AstFn*> fn_table;     // fn pure functions
+
+    // DL-09 B: cache (fn, argumentos, profundidad) -> cuerpo ya expandido.
+    // Mutable porque expandExpression es const. Sin esto, cada llamada
+    // identica vuelve a expandir todo su subarbol.
+    mutable std::unordered_map<std::string, std::string> fn_expand_cache;
+    mutable size_t fn_cache_bytes = 0;
 };
 
 } // namespace herm

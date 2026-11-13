@@ -1,5 +1,19 @@
 # Changelog
 
+## 2026-11-12 — DL-09 implementado: fin de la RAM bomb del resolver (A+B)
+
+### Cambios
+- **`herm/herm_resolver.{h,cpp}`:** constant folding real (`tryFoldConstant` + `formatConst` con `%.9g`) en valores de `let`, `evalExpr` y `toExpr`, sin plegar expresiones con variables de runtime. Memoización de `fn` con clave `fn + profundidad + argumentos ya expandidos` y presupuesto de caché de 64 MB.
+- **Colisión `let`/`fn`:** las llamadas `fn` se expanden antes de sustituir `let`; un `let` solo se sustituye como identificador suelto, nunca como nombre de llamada. Corrige los 64 `)(` corruptos que arrastraba `test_layer1_math.herm`.
+- **Límite ruidoso:** 16 MB por sustitución/expansión, con error que encadena el contexto de funciones. `domain_warp2d` deja de generar 298 MB de `.ont` y falla de forma explícita, quedando excluida del corpus.
+- **`libreria/tests/v_lets.herm`:** 6 librerías + 31 `let`, cada uno con `+ w * 0.0` para impedir que el plegado elimine el árbol antes de medir; la suma se conecta a `density_scale` y a `position`.
+
+### Verificación (2026-11-12)
+- Aceptación: **peak 2,5–5,3 MB, 47–204 ms** (histórico 1568 MB / 12.973 ms), `density_scale = 49678.5703`, `position` ≈ 99 KB con paréntesis balanceados (0 `)(`).
+- 55/55 librerías compilan. Regresión de `ejemplos/` y `libreria/tests/` sin cambios de exit code salvo `v_lets.herm` (base 1 → nuevo 0). Escenas animadas: 30/30, 6/6 y 33/33 fotogramas byte-idénticos.
+- Corpus: 1042 funciones, 55/55 librerías; 6 `.ont` cambian solo por plegado de constantes de librería (mismo f32) y los `.obs` son idénticos. Paridad del motor: 1042 nodos, 5210 muestras, 0 fallos de categoría/SIMD; dos corridas con 5025/5025 filas idénticas.
+- **DL-09:** A+B implementado; **C (CSE) diferido** porque el RIH no tiene tabla de referencias. No se declara paridad 17/17 y DL-39 sigue como deuda medida, no implementada.
+
 ## 2026-11-12 — DL-38 implementado en el motor (2.0c.3d)
 
 ### Cambios
