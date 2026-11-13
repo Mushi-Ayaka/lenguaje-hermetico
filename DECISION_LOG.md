@@ -605,7 +605,7 @@ Para esos casos, se usa SDF en runtime. Pero son minoría.
 
 ## DL-32 — Fallbacks silenciosos que quedan en el compilador `.ont` y en `--render`.
 
-**Estado:** MEDIDO (2026-11-07). La condición dura del usuario no se cumple: 0/55 librerías usan `smooth_union` o `displace`. Orden pendiente de confirmación; no se toca en 2.0c.1 ni en 2.0c.2.
+**Estado:** `--render`/`--gte` IMPLEMENTADO (2026-11-12); los cinco operadores SDF siguen MEDIDOS y pendientes. La condición dura del usuario no se cumple: 0/55 librerías usan `smooth_union` o `displace`. No se tocó en 2.0c.1 ni en 2.0c.2.
 
 DL-31 cierra el silencio de los **parámetros** SDF. Quedan cinco degradaciones que siguen renderizando otra cosa sin avisar:
 
@@ -641,6 +641,22 @@ Esto también rompe la paridad y no lo arregla ningún opcode nuevo. Debe entrar
 **Opcodes desconocidos (relevante para 2.0c.2):** los cinco consumidores reaccionan de forma silenciosa ante un opcode que no conocen: el VM escalar hace `default: break` (`bytecode_vm.h:83`), el SIMD devuelve el resultado parcial (`ray_march_simd.h:205`), GLSL y SPIR-V empujan `"0.0"` (`glsl_gen.cpp:360`, `spirv_gen.cpp:100`) y el JIT hace `default: break` (`jit_compiler.cpp:380`). Si se añaden opcodes sin tocar esto, un lector viejo convierte la instrucción nueva en 0 sin avisar. Cualquier decisión de formato debe incluir el endurecimiento de los cinco.
 
 **Opciones para 2.0c.3:** (a) rechazar los seis operadores y el path `--render` hasta que exista opcode, o (b) implementarlos en el bytecode. La decisión corresponde al usuario; este registro no la toma.
+
+**Implementación de `--render`/`--gte` (2026-11-12):** se elige (a) para el path de render: fallar antes de escribir nada en vez de dibujar `params[i].constant`.
+
+- **`herm/herm_render.{h,cpp}`:** `validateRenderCompatibility(const Rih&)` recorre nodos y defs. Rechaza cualquier parámetro SDF o transformación (`translate`/`rotate`/`scale`) que sea expresión y contenga `x`, `y`, `z`, `nx`, `ny`, `nz`, `vx`, `vy`, `vz`, `lx`, `ly` o `lz`. Permite `w`/`t` (tiempo) porque `evaluateFrame` las pliega en el fotograma actual. `CUSTOM` queda exento: `evalSdfTree` ya evalúa su expresión por muestra.
+- **`herm/main.cpp`:** llama a `validateRenderCompatibility` cuando `render` o `emit_gte`, antes del bucle de fotogramas y antes de escribir PNG/GTE. En el path de un solo fotograma, `--render`/`--gte` ahora construyen `evaluateFrame(rih, 0.0f)` antes de `renderRih`; así las expresiones constantes/temporales se pliegan y no se leen como `0`.
+- **`libreria/tests/test_dl32_render_ok.herm`:** caso positivo con `sphere(1.5 * 0.5)` y `sphere(0.65 + sin(w*2)*0.35)`; `--render` debe salir 0.
+- **`libreria/tests/test_dl32_render_fail.herm`:** caso negativo con `sphere(0.75 + x)`; `--render`/`--gte` deben salir 1 sin escribir imagen, mientras `--ont` y `.rih` siguen funcionando.
+
+**Evidencia (2026-11-12, 64×64):**
+- `sphere(0.75)` y `sphere(1.5 * 0.5)` producen el mismo PNG (MD5 `4B13377CD3AF8D0D90FC26FFE4E0989F`, 392 B); antes del fix la expresión constante caía a `sphere(0)`.
+- `sphere(0.65)` y `sphere(0.65 + sin(w*2)*0.35)` en W=1 producen el mismo PNG (MD5 `B0AA23E8C70CCC0007DBD665780E0074`, 359 B); antes ambos daban `sphere(0)` (257 B).
+- `sphere(0.75 + x)` con `--render` sale con código 1, sin PNG, y el mensaje `el parametro 0 del nodo 'n' depende de x/y/z ('0.75 + x') y --render no puede evaluarlo por muestra; usa --ont o elimina la dependencia espacial`. Igual con `--gte` y con `--frames`.
+- El mismo caso con `--ont` sale con código 0 y con `.rih` sale con código 0 conservando `{ "expr": "0.75 + x" }`: el fallo es exclusivo del render CPU, no del bytecode ni del formato.
+- Barrido de `libreria/tests/*.herm` con `--render`: 29/47 salen 0; 1 falla por DL-32 (`test_physics_lib`, parámetro espacial `0.25 + 0.05*sin(...)`); 17 fallan por causas preexistentes ya documentadas (sintaxis, imports, `dsin`, `round`, etc.).
+
+**Alcance restante de DL-32:** los cinco operadores (`smooth_union`, `smooth_subtract`, `smooth_intersect`, `repeat`/`twist`/`elongate`/`displace`) siguen emitiendo la versión sharp o pass-through en `.ont` sin avisar; `plane`/`capsule`/`cone` siguen divergiendo entre bytecode y `--render`. Requieren decisión propia (opcode nuevo o rechazo ruidoso) y no bloquean el cierre de Fase 2.
 
 ---
 

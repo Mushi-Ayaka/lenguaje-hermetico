@@ -132,6 +132,10 @@ int main(int argc, char* argv[]) {
         // otra cosa. Fallar antes de escribir cualquier archivo.
         if (emit_ont) herm::validateOntCompatibility(rih);
 
+        // DL-32: --render/--gte no pueden evaluar por muestra. Fallar antes de
+        // escribir el PNG/GTE en vez de dibujar params[i].constant (0).
+        if (render || emit_gte) herm::validateRenderCompatibility(rih);
+
         auto parse_end = std::chrono::high_resolution_clock::now();
         auto parse_ms = std::chrono::duration_cast<std::chrono::milliseconds>(parse_end - start).count();
 
@@ -226,7 +230,10 @@ int main(int argc, char* argv[]) {
                 if (dot != std::string::npos) png_path = png_path.substr(0, dot);
                 png_path += ".png";
 
-                auto pixels = herm::renderRih(rih, (int)rih.scene.width, (int)rih.scene.height);
+                // DL-32: plegar w/constantes antes de renderizar. Sin esto,
+                // renderRih lee params[i].constant (0) y dibuja otra cosa.
+                auto frame_rih = herm::evaluateFrame(rih, 0.0f);
+                auto pixels = herm::renderRih(frame_rih, (int)frame_rih.scene.width, (int)frame_rih.scene.height);
                 bool ok = herm::writePng(pixels, (int)rih.scene.width, (int)rih.scene.height, png_path);
 
                 auto emit_end = std::chrono::high_resolution_clock::now();
@@ -247,8 +254,9 @@ int main(int argc, char* argv[]) {
                 if (dot != std::string::npos) gte_path = gte_path.substr(0, dot);
                 gte_path += ".gte";
 
-                auto pixels = herm::renderRih(rih, (int)rih.scene.width, (int)rih.scene.height);
-                bool ok = herm::writeGte(rih, pixels, (int)rih.scene.width, (int)rih.scene.height, gte_path);
+                auto frame_rih = herm::evaluateFrame(rih, 0.0f);
+                auto pixels = herm::renderRih(frame_rih, (int)frame_rih.scene.width, (int)frame_rih.scene.height);
+                bool ok = herm::writeGte(frame_rih, pixels, (int)frame_rih.scene.width, (int)frame_rih.scene.height, gte_path);
 
                 auto emit_end = std::chrono::high_resolution_clock::now();
                 auto total_ms = std::chrono::duration_cast<std::chrono::milliseconds>(emit_end - start).count();

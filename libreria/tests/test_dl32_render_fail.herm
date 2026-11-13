@@ -1,0 +1,22 @@
+// Test DL-32 (negativo): --render no puede evaluar un parametro SDF por muestra.
+// Esperado:
+//   herm test_dl32_render_fail.herm --render -o out  -> exit 1, sin PNG
+//     "el parametro 0 del nodo 'spatial_radius' depende de x/y/z ..."
+//   herm test_dl32_render_fail.herm --gte -o out     -> exit 1, sin GTE
+//   herm test_dl32_render_fail.herm --ont -o out     -> exit 0 (el bytecode si
+//     puede compilar la expresion; el fallo es exclusivo del render CPU).
+//   herm test_dl32_render_fail.herm -o out           -> exit 0 (.rih conserva
+//     la expresion, no la pliega con x=0).
+
+scene {
+    axes { X: 32, Y: 32, W: 1 }
+    camera { position: [0, 0, 3]; target: [0, 0, 0]; fov: 50; }
+    background: [0, 0, 0];
+}
+
+material "m" {}
+
+node "spatial_radius" {
+    sdf: sphere(0.75 + x);
+    material: "m";
+}

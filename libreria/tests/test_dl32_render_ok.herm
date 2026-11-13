@@ -1,0 +1,25 @@
+// Test DL-32 (positivo): --render debe plegar constantes y expresiones temporales.
+// Esperado:
+//   herm test_dl32_render_ok.herm --render -o out  -> exit 0
+//   sphere(1.5 * 0.5) y sphere(0.75) producen el mismo PNG.
+//   sphere(0.65 + sin(w*2)*0.35) en W=1 produce el mismo PNG que sphere(0.65).
+
+scene {
+    axes { X: 64, Y: 64, W: 1 }
+    camera { position: [0, 0, 3]; target: [0, 0, 0]; fov: 50; }
+    background: [0, 0, 0];
+}
+
+material "m" {}
+
+node "constant_fold" {
+    sdf: sphere(1.5 * 0.5);
+    position: [-1, 0, 0];
+    material: "m";
+}
+
+node "temporal_w" {
+    sdf: sphere(0.65 + sin(w * 2.0) * 0.35);
+    position: [1, 0, 0];
+    material: "m";
+}

@@ -1,5 +1,19 @@
 # Changelog
 
+## 2026-11-12 — DL-32: `--render`/`--gte` fallan ruidosamente con parámetros espaciales
+
+### Cambios
+- **`herm/herm_render.{h,cpp}` (nuevo `validateRenderCompatibility`):** recorre nodos y defs y rechaza parámetros SDF o transformaciones que dependan de `x/y/z` (o variables de sombreado). Permite expresiones solo temporales (`w`/`t`) y deja pasar `CUSTOM`, que ya se evalúa por muestra.
+- **`herm/main.cpp`:** valida antes de renderizar cuando se usa `--render` o `--gte`, de modo que no se escribe PNG/GTE con una imagen incorrecta. En el path de un solo fotograma se pliega `evaluateFrame(rih, 0.0f)` antes de `renderRih`, así las expresiones constantes/temporales dejan de leerse como `0`.
+- **Tests nuevos:** `libreria/tests/test_dl32_render_ok.herm` (constantes + `w`, debe salir 0) y `test_dl32_render_fail.herm` (`sphere(0.75 + x)`, debe salir 1 sin imagen).
+
+### Verificación (2026-11-12, 64×64)
+- `sphere(0.75)` y `sphere(1.5 * 0.5)` dan el mismo PNG (`4B13377CD3AF8D0D90FC26FFE4E0989F`, 392 B).
+- `sphere(0.65)` y `sphere(0.65 + sin(w*2)*0.35)` en W=1 dan el mismo PNG (`B0AA23E8C70CCC0007DBD665780E0074`, 359 B); antes ambos daban el PNG de `sphere(0)` (257 B).
+- `sphere(0.75 + x)` con `--render` sale 1 sin PNG y con el error que nombra parámetro, nodo, expresión y línea; igual con `--gte` y `--frames`. Con `--ont` y con `.rih` sale 0 y conserva la expresión.
+- Barrido de `libreria/tests/*.herm` con `--render`: 29/47 salen 0; 1 falla por DL-32 (`test_physics_lib`); 17 son fallos preexistentes.
+- **Pendiente de DL-32:** los cinco operadores SDF (`smooth_*`, `repeat`/`twist`/`elongate`/`displace`) y la divergencia `plane`/`capsule`/`cone` entre bytecode y render CPU. No bloquean el cierre de Fase 2.
+
 ## 2026-11-12 — DL-09 implementado: fin de la RAM bomb del resolver (A+B)
 
 ### Cambios

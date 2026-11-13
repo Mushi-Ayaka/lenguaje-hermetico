@@ -1,16 +1,97 @@
 #include "herm_render.h"
 #include "herm_eval.h"
 #include <cmath>
+#include <cctype>
 #include <limits>
 #include <algorithm>
 #include <fstream>
 #include <sstream>
+#include <stdexcept>
 #include <unordered_map>
 #include <stack>
 #define STB_IMAGE_WRITE_IMPLEMENTATION
 #include "../3rdparty/stb_image_write.h"
 
 namespace herm {
+
+// ============================================================================
+// DL-32: validacion del path --render
+// ============================================================================
+
+namespace {
+
+bool isIdentChar(char c) {
+    return std::isalnum((unsigned char)c) || c == '_';
+}
+
+// Variables que solo existen por muestra. `w`/`t` quedan fuera: son tiempo y
+// evaluateFrame puede plegarlas. Las de sombreado tambien se rechazan porque
+// evalSdfTree no las proporciona.
+bool usesSpatialVar(const std::string& text) {
+    static const char* vars[] = {
+        "x", "y", "z",
+        "nx", "ny", "nz",
+        "vx", "vy", "vz",
+        "lx", "ly", "lz"
+    };
+    size_t i = 0;
+    while (i < text.size()) {
+        if (std::isalpha((unsigned char)text[i]) || text[i] == '_') {
+            size_t start = i;
+            while (i < text.size() && isIdentChar(text[i])) i++;
+            std::string name = text.substr(start, i - start);
+            for (const char* v : vars) {
+                if (name == v) return true;
+            }
+        } else {
+            i++;
+        }
+    }
+    return false;
+}
+
+std::string lineSuffix(int line) {
+    return line > 0 ? " (linea " + std::to_string(line) + ")" : "";
+}
+
+} // namespace
+
+void validateRenderCompatibility(const Rih& rih) {
+    auto checkNode = [](const Node& n) {
+        for (const auto& sdf : n.sdf_nodes) {
+            // CUSTOM se evalua por muestra en evalSdfTree; el resto de
+            // primitivas lee params[i].constant.
+            if (sdf.type == SdfType::CUSTOM) continue;
+            for (int i = 0; i < 4; i++) {
+                const Expr& p = sdf.params[i];
+                if (!p.is_expr || !usesSpatialVar(p.expression)) continue;
+                throw std::runtime_error(
+                    "el parametro " + std::to_string(i) + " del nodo '" +
+                    n.name + "' depende de x/y/z ('" + p.expression +
+                    "') y --render no puede evaluarlo por muestra; usa --ont "
+                    "o elimina la dependencia espacial" + lineSuffix(p.line));
+            }
+        }
+
+        auto checkTransform = [&](const Expr (&values)[3], const char* field) {
+            for (int i = 0; i < 3; i++) {
+                if (!values[i].is_expr || !usesSpatialVar(values[i].expression))
+                    continue;
+                throw std::runtime_error(
+                    "la transformacion '" + std::string(field) + "[" +
+                    std::to_string(i) + "]' del nodo '" + n.name +
+                    "' depende de x/y/z ('" + values[i].expression +
+                    "') y --render no puede evaluarla por muestra" +
+                    lineSuffix(values[i].line));
+            }
+        };
+        checkTransform(n.transform.translate, "translate");
+        checkTransform(n.transform.rotate, "rotate");
+        checkTransform(n.transform.scale, "scale");
+    };
+    for (const auto& n : rih.nodes) checkNode(n);
+    for (const auto& n : rih.defs)  checkNode(n);
+}
 
 // ============================================================================
 // SDF primitives

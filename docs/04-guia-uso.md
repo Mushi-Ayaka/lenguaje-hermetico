@@ -365,6 +365,8 @@ Ejemplos:
   herm escena.herm --render --frames 0-29 -o fotograma_
 ```
 
+`--render` y `--gte` pliegan constantes y expresiones temporales (`w`/`t`). Si un parámetro SDF o una transformación depende de `x`/`y`/`z` (o de variables de sombreado), fallan con error y no escriben PNG/GTE: usa `--ont` para el camino de bytecode.
+
 ## 14. Ejemplo completo: Bodegón
 
 ```
