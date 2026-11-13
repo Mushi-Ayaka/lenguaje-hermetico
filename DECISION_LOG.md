@@ -804,6 +804,12 @@ Esto también rompe la paridad y no lo arregla ningún opcode nuevo. Debe entrar
 - **FTZ:** NVIDIA flush-ea entradas/salidas denormales en trascendentes (`log(1e-38) = -inf`, `atan(1e-38) = 0`); la CPU x86 las conserva. La paridad bit a bit en todo el dominio no es alcanzable sin igualar el FTZ o excluir denormales.
 - **La tabla de 1 ULP de este registro no se cumple en el hardware objetivo.** No se modifica aquí: cualquier tabla nueva, criterio híbrido para `log*` y regla de denormales debe registrarse en **DL-37** antes de escribir `tests/test_eval_parity.cpp`.
 
+**Cierre de 2.0c.4 — división IEEE (2026-11-12): CERRADO SIN CAMBIOS.**
+- **CPU:** los consumidores ya cumplen desde 2.0c.3b. `ONT_DIV` es `a / b` sin máscara (`render/bytecode_vm.h:77-78`), el SIMD usa `_mm_div_ps` (`render/ray_march_simd.h:106-109`) y el JIT usa `divps` (`render/jit_compiler.cpp:366-374`). El path `BcOp` antiguo también quedó sin máscara.
+- **GPU:** `tests/test_eval_parity.exe` da `div` **5/5, 0 ULP, 0 denormales excluidos** con `--szinp` (modo A) y también sin `--szinp` (modo B) en la RTX 3060 Laptop. Los cinco vectores incluyen `1/0=+inf`, `-1/0=-inf`, `0/0=NaN`, `1/-0=-inf`, `-1/-0=+inf`.
+- **Decisión:** no se añade workaround ni se cambia el generador. 2.0c.4 no requiere código propio; queda cerrado con la evidencia de 2.0c.3d. En modo B la especificación sigue sin garantizar determinismo de NaN/inf: el motor lo declara y loguea, pero no lo enmascara.
+- **Nota:** esto no declara paridad 17/17 ni toca DL-39. La reasociación sigue medida y sin implementar.
+
 ---
 
 ## DL-36 — 2.0c.3b: compilador de expresiones de parámetro SDF a bytecode y los 12 opcodes.
@@ -1360,6 +1366,15 @@ Hoy el shader es uno `ray_march.comp` o el especializado. Con bake, es dos rutas
 
 **Archivos afectados:** `herm_parser.cpp`, `herm_resolver.cpp`, `herm_eval.cpp` (si aplica).
 
+**Estado (2026-11-12): CERRADA.**
+- **55/55 librerías compilan** con `build\herm.exe`; barrido completo sin fallos.
+- **RAM bomb resuelta:** `libreria/tests/v_lets.herm` (6 librerías + 31 `let`) da **peak 2,5–5,3 MB, 47–204 ms**, frente a 1568 MB / 12.973 ms del 2026-10-16. Criterio < 100 MB cumplido.
+- **Paridad del corpus:** 1042 funciones, 55/55 librerías, 1042 nodos / 5210 muestras, 0 fallos de categoría y 0 nodos con fallo SIMD; dos corridas con 5025/5025 filas idénticas. El test de opcodes da 70/70 en modo A y también en modo B.
+- **Reescrituras:** las 20 librerías reescritas el 2026-11-04 fueron una decisión previa del usuario para eliminar sintaxis que el lenguaje rechaza por diseño (DL-13/DR-03). Desde entonces **ninguna librería adicional requiere reescritura manual**; el criterio se interpreta sobre el estado actual, no como prohibición retroactiva.
+- **2.0d (benchmarks `--render`):** los PNG/benchmarks anteriores son **obsoletos** y no sirven de referencia: `--render` ignoraba en silencio los parámetros con expresión hasta DL-32 (2026-11-12), y no se localizaron los PNG originales en los repos. No bloquea la corrección de Fase 2; queda como paso de rendimiento si se fija un baseline nuevo.
+- **Deudas que no bloquean el cierre:** operadores SDF de DL-32 en `.ont` (fallback silencioso), DL-39 (reasociación medida, no implementada), `plane`/`capsule`/`cone` divergentes entre bytecode y render CPU, y DL-28 (`ior`/`transmission`).
+- **Fase 3** queda como siguiente fase; no se abre en este cierre.
+
 ---
 
 ## Fase 3 — Pipeline semántico
@@ -1639,9 +1654,9 @@ Paso 5.13 (nuevo) — Gradiente analítico.
 
 - **Fase 0:** cerrada — tag `pre-reforma`, 55 librerías migradas (v0.15). La cola de reescritura se cerró el 2026-11-04 (55/55 compilan, v0.20).
 - **Fase 1:** cerrada — DL-07 a DL-21 decididas y registradas (v0.16–v0.18). DL-22 a DL-25 son decisiones de Fase 5, marcadas PENDIENTE a propósito.
-- **Fase 2:** abierta por mandato del usuario (2026-11-04), en curso. **Paso 2.0a/2.0b:** implementados (v0.21, DL-29). **Paso 2.0c.1:** implementado (v0.22, DL-31). **Paso 2.0c.2:** implementado y validado (v0.23, DL-34). **Paso 2.0c.2b:** implementado y validado (v0.24, DL-33); 0 fallos de notación científica. **Paso 2.0c.3:** siguiente; criterio corregido: "todas las que compilan producen paridad", no 55/55. **DL-32:** medido (0/55 librerías con operadores; 20/49 escenas afectadas por `--render`), orden pendiente de confirmación. **Paso 2.0d:** pendiente de localizar los PNG de referencia. El Paso 2.0 **no está cerrado**.
+- **Fase 2:** **CERRADA (2026-11-12).** 55/55 librerías compilan. **DL-09 A+B:** plegado constante y memoización de `fn`; la RAM bomb baja de 1568 MB a 2,5–5,3 MB. **2.0c.3d:** paridad 1042 nodos / 5210 muestras, 0 fallos, 70/70 opcodes en modos A y B. **2.0c.4:** cerrado sin cambios (división IEEE correcta en CPU y GPU). **DL-32:** `--render`/`--gte` fallan ruidosamente con parámetros espaciales, sin escribir PNG/GTE; los operadores SDF en `.ont` siguen pendientes. **2.0d:** benchmarks `--render` anteriores obsoletos y sin PNG de referencia; queda como paso de rendimiento. Deudas no bloqueantes: operadores SDF de DL-32, DL-39, `plane`/`capsule`/`cone` y DL-28.
 - **Fases 3-6:** pendientes.
-- **Decisiones abiertas:** DL-23, DL-24, DL-25 (Fase 5); DL-28 (`ior`/`transmission` en `material`); DL-32 (fallbacks de operadores SDF y `--render`; medido, orden pendiente); 2.0c.4 (división IEEE vs 0-silencioso).
+- **Decisiones abiertas:** DL-23, DL-24, DL-25 (Fase 5); DL-28 (`ior`/`transmission` en `material`); DL-32 (solo los fallbacks de operadores SDF en `.ont`); DL-39 (reasociación medida, no implementada); 2.0d (baseline de benchmarks `--render`).
 
 ---
 
